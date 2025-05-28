@@ -1,0 +1,30 @@
+# Core types and traits for chain-independent ZK storage path generation
+[package]
+name = "traverse-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Core types and traits for chain-independent ZK storage path generation"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+# no_std compatible dependencies
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+thiserror = { version = "1.0", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+
+# Optional std support
+serde_json = { version = "1.0", default-features = false, features = ["alloc"], optional = true }
+
+[features]
+default = ["std"]
+std = ["serde/std", "sha2/std", "hex/std", "serde_json?/std"]
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true 

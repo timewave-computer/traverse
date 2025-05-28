@@ -1,0 +1,90 @@
+# Rust
+/target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Additional Rust artifacts
+.cargo/
+*.orig
+*.rej
+
+# IDE and Editor files
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Nix
+result
+result-*
+.direnv/
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Testing
+coverage/
+*.profraw
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Cache directories
+.cache/
+node_modules/
+
+# Generated files
+generated/
+*.generated.*
+
+# Documentation build artifacts
+book/
+docs/book/
+
+# Blockchain specific
+keystore/
+wallets/
+*.key
+*.pem
+geth/
+data/
+
+# ZK specific
+*.zkey
+*.ptau
+circuit.wasm
+verification_key.json
+witness.wtns
+
+# Backup files
+*.bak
+*.backup
+
+# Working
+work/

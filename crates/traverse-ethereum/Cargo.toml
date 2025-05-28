@@ -1,0 +1,35 @@
+# Ethereum-specific implementation for ZK storage path generation
+[package]
+name = "traverse-ethereum"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Ethereum-specific implementation for ZK storage path generation"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = []
+valence = ["dep:valence-domain-clients"]
+
+[dependencies]
+traverse-core = { path = "../traverse-core", features = ["std", "serde_json"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+hex.workspace = true
+tiny-keccak.workspace = true
+ethers.workspace = true
+rlp.workspace = true
+tokio.workspace = true
+
+# Optional valence-domain-clients integration
+valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", rev = "2678b24d534a6e18b01ebcb2f54ca819f9587e22", features = ["ethereum"], optional = true }
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true 

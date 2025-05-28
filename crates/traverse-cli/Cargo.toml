@@ -1,0 +1,35 @@
+# CLI tool for ZK storage path generation
+[package]
+name = "traverse-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "CLI tool for ZK storage path generation"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = []
+valence = ["traverse-ethereum/valence"]
+
+[[bin]]
+name = "zkpath"
+path = "src/main.rs"
+
+[dependencies]
+traverse-core = { path = "../traverse-core", features = ["std", "serde_json"] }
+traverse-ethereum = { path = "../traverse-ethereum" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true 

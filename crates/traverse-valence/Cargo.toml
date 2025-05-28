@@ -1,0 +1,36 @@
+# Valence coprocessor integration for traverse
+[package]
+name = "traverse-valence"
+version = "0.1.0"
+edition = "2021"
+authors.workspace = true
+license = "Apache-2.0"
+repository.workspace = true
+homepage.workspace = true
+description = "Valence coprocessor integration for traverse ZK storage path generator"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+# Core traverse functionality
+traverse-core = { path = "../traverse-core", default-features = false }
+
+# Valence coprocessor integration (no_std)
+# Note: Using local path for now until we have the actual valence-coprocessor crate
+# valence-coprocessor = { git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false }
+
+# no_std compatible dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow.workspace = true
+hex = { workspace = true }
+
+[features]
+default = ["alloc"]
+alloc = []
+std = ["alloc", "traverse-core/std", "anyhow/std"]
+
+[[example]]
+name = "valence_integration"
+path = "../../examples/valence_integration.rs"
+required-features = ["std"] 
