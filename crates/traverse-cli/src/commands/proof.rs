@@ -5,11 +5,13 @@
 use std::path::Path;
 use anyhow::Result;
 use tracing::info;
-use traverse_ethereum::EthereumProofFetcher;
 use traverse_core::CoprocessorQueryPayload;
 
-#[cfg(feature = "valence")]
+#[cfg(feature = "client")]
 use valence_domain_clients::evm::{GenericClient, chains::ethereum::Ethereum};
+
+#[cfg(not(feature = "client"))]
+use traverse_ethereum::EthereumProofFetcher;
 
 /// Execute generate-proof command
 pub fn cmd_generate_proof(
@@ -32,7 +34,7 @@ pub fn cmd_generate_proof(
     let mut slot_array = [0u8; 32];
     slot_array.copy_from_slice(&slot_bytes);
     
-    #[cfg(feature = "valence")]
+    #[cfg(feature = "client")]
     {
         // Use valence-domain-clients for actual proof fetching
         info!("Using valence-domain-clients for proof generation");
@@ -106,10 +108,10 @@ pub fn cmd_generate_proof(
         })?;
     }
     
-    #[cfg(not(feature = "valence"))]
+    #[cfg(not(feature = "client"))]
     {
         // Fallback to mock implementation
-        info!("Using mock implementation (valence feature not enabled)");
+        info!("Using mock implementation (client feature not enabled)");
         
         let _proof_fetcher = EthereumProofFetcher {
             rpc_url: rpc.to_string(),
@@ -122,7 +124,7 @@ pub fn cmd_generate_proof(
         println!("  Slot: 0x{}", hex::encode(slot_array));
         println!();
         println!("To enable live proof generation, rebuild with:");
-        println!("  cargo build --features valence");
+        println!("  cargo build --features client");
         println!();
         
         // Create a mock CoprocessorQueryPayload to show the expected output format
@@ -144,7 +146,7 @@ pub fn cmd_generate_proof(
         
         println!();
         println!("Note: This is a mock implementation. For live proof generation,");
-        println!("  rebuild with --features valence flag.");
+        println!("  rebuild with --features client flag.");
     }
     
     Ok(())

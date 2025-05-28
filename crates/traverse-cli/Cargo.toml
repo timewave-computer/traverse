@@ -13,7 +13,7 @@ categories.workspace = true
 
 [features]
 default = []
-valence = ["traverse-ethereum/valence"]
+client = ["traverse-ethereum/client"]
 
 [[bin]]
 name = "zkpath"

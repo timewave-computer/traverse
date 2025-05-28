@@ -41,7 +41,7 @@ pub mod traits;
 pub use error::TraverseError;
 pub use layout::{LayoutInfo, StorageEntry, TypeInfo};
 pub use key::{Key, StaticKeyPath, CoprocessorQueryPayload};
-pub use traits::{KeyResolver, ProofFetcher};
+pub use traits::KeyResolver;
 
 #[cfg(feature = "std")]
-pub use traits::LayoutCompiler; 
+pub use traits::{ProofFetcher, LayoutCompiler}; 

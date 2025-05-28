@@ -60,7 +60,34 @@ cargo run -- resolve-all --layout crates/traverse-ethereum/tests/data/erc20_layo
 echo "_balances[0x742d35cc6ab8b23c0532c65c6b555f09f9d40894]" > queries.txt
 echo "_totalSupply" >> queries.txt
 cargo run -- batch-resolve queries.txt --layout crates/traverse-ethereum/tests/data/erc20_layout.json
+
+# Generate storage proofs (mock implementation by default)
+cargo run -- generate-proof \
+  --slot 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef \
+  --rpc https://mainnet.infura.io/v3/YOUR_API_KEY \
+  --contract 0xA0b86a33E6417c7eDFeb7c14eDe3e5C8b7db1234
 ```
+
+#### Live Proof Generation
+
+By default, the `generate-proof` command uses a mock implementation. To enable live proof generation using [valence-domain-clients](https://github.com/timewave-computer/valence-domain-clients), build with the `client` feature:
+
+```bash
+# Build with client feature for live proof generation
+cargo build --features client
+
+# Generate real storage proofs from Ethereum
+cargo run --features client -- generate-proof \
+  --slot 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef \
+  --rpc https://mainnet.infura.io/v3/YOUR_API_KEY \
+  --contract 0xA0b86a33E6417c7eDFeb7c14eDe3e5C8b7db1234 \
+  --output proof.json
+```
+
+The client feature integrates with valence-domain-clients to:
+- Fetch real storage proofs via `eth_getProof` RPC calls
+- Convert proof data to `CoprocessorQueryPayload` format
+- Support retry logic and error handling for production use
 
 #### Testing & Validation
 

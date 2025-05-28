@@ -13,7 +13,7 @@ categories.workspace = true
 
 [features]
 default = []
-valence = ["dep:valence-domain-clients"]
+client = ["dep:valence-domain-clients"]
 
 [dependencies]
 traverse-core = { path = "../traverse-core", features = ["std", "serde_json"] }
