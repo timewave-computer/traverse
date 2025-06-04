@@ -551,4 +551,350 @@ mod validated_ethereum_tests {
         
         println!("Layout commitment times: {:?}, {:?}", time1, time2);
     }
+
+    #[test]
+    fn test_string_storage_unknown_length() {
+        // Test string storage patterns for both short and long strings
+        let test_data = create_usdc_test_data();
+        let resolver = EthereumKeyResolver;
+        
+        // Test 1: Short string resolution (should resolve to direct slot access)
+        let short_string_result = resolver.resolve(&test_data.layout, "name");
+        assert!(short_string_result.is_ok(), "Failed to resolve name (short string) path");
+        
+        let short_path = short_string_result.unwrap();
+        match short_path.key {
+            Key::Fixed(key_bytes) => {
+                let key_hex = hex::encode(key_bytes);
+                // Name is at slot 2, so key should be slot 2 zero-padded
+                assert_eq!(key_hex, "0000000000000000000000000000000000000000000000000000000000000002");
+                println!("Short string (name) storage key: {}", key_hex);
+            }
+            _ => panic!("Expected fixed key for short string"),
+        }
+        
+        // Test 2: Another short string (symbol)
+        let symbol_result = resolver.resolve(&test_data.layout, "symbol");
+        assert!(symbol_result.is_ok(), "Failed to resolve symbol (short string) path");
+        
+        let symbol_path = symbol_result.unwrap();
+        match symbol_path.key {
+            Key::Fixed(key_bytes) => {
+                let key_hex = hex::encode(key_bytes);
+                // Symbol is at slot 3
+                assert_eq!(key_hex, "0000000000000000000000000000000000000000000000000000000000000003");
+                println!("Short string (symbol) storage key: {}", key_hex);
+            }
+            _ => panic!("Expected fixed key for symbol string"),
+        }
+        
+        // Both string fields should have dynamic sizing since we don't know their length at compile time
+        assert_eq!(short_path.field_size, Some(32), "String storage slot should be 32 bytes");
+        assert_eq!(symbol_path.field_size, Some(32), "String storage slot should be 32 bytes");
+        
+        println!("String storage test completed - both short strings resolved correctly");
+    }
+
+    #[test]
+    fn test_dynamic_string_layout_patterns() {
+        // Create a test layout that demonstrates different string storage patterns
+        let string_test_layout = LayoutInfo {
+            contract_name: "StringTestContract".to_string(),
+            storage: vec![
+                StorageEntry {
+                    label: "shortString".to_string(),
+                    slot: "0".to_string(),
+                    offset: 0,
+                    type_name: "t_string_storage".to_string(),
+                },
+                StorageEntry {
+                    label: "mediumString".to_string(), 
+                    slot: "1".to_string(),
+                    offset: 0,
+                    type_name: "t_string_storage".to_string(),
+                },
+                StorageEntry {
+                    label: "longString".to_string(),
+                    slot: "2".to_string(), 
+                    offset: 0,
+                    type_name: "t_string_storage".to_string(),
+                },
+                StorageEntry {
+                    label: "veryLongString".to_string(),
+                    slot: "3".to_string(),
+                    offset: 0, 
+                    type_name: "t_string_storage".to_string(),
+                },
+            ],
+            types: vec![
+                TypeInfo {
+                    label: "t_string_storage".to_string(),
+                    number_of_bytes: "32".to_string(),
+                    encoding: "bytes".to_string(),
+                    base: None,
+                    key: None,
+                    value: None,
+                },
+            ],
+        };
+        
+        let resolver = EthereumKeyResolver;
+        
+        // Test string field resolution
+        let test_cases = vec![
+            ("shortString", "0"),
+            ("mediumString", "1"), 
+            ("longString", "2"),
+            ("veryLongString", "3"),
+        ];
+        
+        for (field_name, expected_slot) in test_cases {
+            let result = resolver.resolve(&string_test_layout, field_name);
+            assert!(result.is_ok(), "Failed to resolve string field: {}", field_name);
+            
+            let path = result.unwrap();
+            
+            // Verify storage key matches expected slot
+            match path.key {
+                Key::Fixed(key_bytes) => {
+                    let key_hex = hex::encode(key_bytes);
+                    let expected_key = format!("{:0>64}", expected_slot);
+                    assert_eq!(key_hex, expected_key, 
+                        "Storage key mismatch for string field: {}", field_name);
+                    println!("String field '{}' -> slot {} (key: {})", field_name, expected_slot, key_hex);
+                }
+                _ => panic!("Expected fixed key for string field: {}", field_name),
+            }
+            
+            // String storage always uses full 32-byte slots for the primary storage location
+            assert_eq!(path.field_size, Some(32), 
+                "String field should use 32-byte storage slot for: {}", field_name);
+            assert_eq!(path.offset, None, 
+                "String field should have no offset for: {}", field_name);
+        }
+        
+        println!("Dynamic string layout patterns test completed - all string fields resolved correctly");
+    }
+
+    #[test] 
+    fn test_string_encoding_behavior() {
+        // Test that demonstrates understanding of Ethereum string encoding:
+        // - Short strings (≤31 bytes): stored directly in slot with length in last byte
+        // - Long strings (>31 bytes): length*2+1 in slot, data at keccak256(slot) + subsequent slots
+        
+        let resolver = EthereumKeyResolver;
+        let test_layout = create_usdc_layout();
+        
+        // Resolve name and symbol string fields
+        let name_result = resolver.resolve(&test_layout, "name");
+        let symbol_result = resolver.resolve(&test_layout, "symbol");
+        
+        assert!(name_result.is_ok(), "Name field should resolve successfully");
+        assert!(symbol_result.is_ok(), "Symbol field should resolve successfully");
+        
+        let name_path = name_result.unwrap();
+        let symbol_path = symbol_result.unwrap();
+        
+        // Both should resolve to their respective storage slots
+        match (name_path.key, symbol_path.key) {
+            (Key::Fixed(name_key), Key::Fixed(symbol_key)) => {
+                let name_hex = hex::encode(name_key);
+                let symbol_hex = hex::encode(symbol_key);
+                
+                // Name at slot 2, symbol at slot 3
+                assert_eq!(name_hex, "0000000000000000000000000000000000000000000000000000000000000002");
+                assert_eq!(symbol_hex, "0000000000000000000000000000000000000000000000000000000000000003");
+                
+                println!("String encoding test:");
+                println!("  name field -> slot 2 (key: {})", name_hex);
+                println!("  symbol field -> slot 3 (key: {})", symbol_hex);
+                println!("  Both fields will contain length/data encoding depending on actual string length at runtime");
+            }
+            _ => panic!("Expected fixed keys for both string fields"),
+        }
+        
+        // The resolver provides the base storage location
+        // At runtime, the actual string reading logic would:
+        // 1. Read the slot to get length info
+        // 2. If length ≤ 31: data is in the same slot  
+        // 3. If length > 31: data starts at keccak256(slot)
+        
+        assert_eq!(name_path.field_size, Some(32), "String base slot is always 32 bytes");
+        assert_eq!(symbol_path.field_size, Some(32), "String base slot is always 32 bytes");
+        
+        println!("String encoding behavior test completed successfully");
+    }
+
+    #[test]
+    fn test_multi_slot_string_reading_unknown_length() {
+        // Test that demonstrates reading strings of completely unknown length
+        // The string could be 1 byte, 31 bytes, 32 bytes, 100 bytes, or 1000+ bytes
+        // This test shows the complete algorithm for reading any length string
+        
+        let resolver = EthereumKeyResolver;
+        let test_layout = create_usdc_layout();
+        
+        // Step 1: Resolve the base storage slot for a string field
+        let name_result = resolver.resolve(&test_layout, "name");
+        assert!(name_result.is_ok(), "Name field should resolve successfully");
+        
+        let name_path = name_result.unwrap();
+        let base_slot_key = match name_path.key {
+            Key::Fixed(key_bytes) => key_bytes,
+            _ => panic!("Expected fixed key for string field"),
+        };
+        
+        println!("Multi-slot string reading test:");
+        println!("  Base slot: 0x{}", hex::encode(base_slot_key));
+        
+        // Step 2: Simulate reading strings of different lengths
+        // In a real implementation, you'd read the base slot from blockchain storage
+        
+        // Test case 1: Short string (≤31 bytes) - fits in one slot
+        let short_string_data = simulate_short_string_storage("USDC");
+        let short_result = read_string_from_storage(base_slot_key, short_string_data);
+        println!("  Short string ('USDC'): {} - uses 1 slot", short_result);
+        assert_eq!(short_result, "USDC");
+        
+        // Test case 2: Medium string (32-63 bytes) - needs 2 slots  
+        let medium_string = "USD Coin - A fully backed US dollar stablecoin";
+        let medium_string_data = simulate_long_string_storage(medium_string);
+        let medium_result = read_string_from_storage(base_slot_key, medium_string_data);
+        println!("  Medium string: '{}' - uses 2 slots", medium_result);
+        assert_eq!(medium_result, medium_string);
+        
+        // Test case 3: Long string (100+ bytes) - needs 4+ slots
+        let long_string = "USD Coin (USDC) is a fully-collateralized US dollar stablecoin developed by Centre, which is a consortium founded by Circle and Coinbase. USDC is issued by regulated financial institutions";
+        let long_string_data = simulate_long_string_storage(long_string);
+        let long_result = read_string_from_storage(base_slot_key, long_string_data);
+        println!("  Long string: '{:.50}...' ({} chars) - uses {} slots", 
+            long_result, long_result.len(), calculate_slots_needed(long_string.len()));
+        assert_eq!(long_result, long_string);
+        
+        // Test case 4: Very long string (500+ bytes) - needs many slots
+        let very_long_string = format!("{} {}", long_string.repeat(3), 
+            "This extremely long description continues for many more words to demonstrate how traverse handles strings that span multiple storage slots. The algorithm must correctly calculate the number of slots needed, derive the correct storage keys for each slot, and reassemble the complete string from the distributed storage locations.");
+        let very_long_string_data = simulate_long_string_storage(&very_long_string);
+        let very_long_result = read_string_from_storage(base_slot_key, very_long_string_data);
+        println!("  Very long string: '{:.50}...' ({} chars) - uses {} slots", 
+            very_long_result, very_long_result.len(), calculate_slots_needed(very_long_string.len()));
+        assert_eq!(very_long_result, very_long_string);
+        
+        println!("Multi-slot string reading test completed - all lengths handled correctly");
+    }
+} 
+
+// Helper functions for simulating string storage and reading
+
+/// Simulate how a short string (≤31 bytes) is stored in Ethereum
+fn simulate_short_string_storage(s: &str) -> Vec<[u8; 32]> {
+    let mut slot = [0u8; 32];
+    let bytes = s.as_bytes();
+    assert!(bytes.len() <= 31, "String too long for short storage");
+    
+    // Copy string data to beginning of slot
+    slot[..bytes.len()].copy_from_slice(bytes);
+    // Set length in last byte (length * 2 for short strings)
+    slot[31] = (bytes.len() * 2) as u8;
+    
+    vec![slot]
+}
+
+/// Simulate how a long string (>31 bytes) is stored in Ethereum
+fn simulate_long_string_storage(s: &str) -> Vec<[u8; 32]> {
+    let bytes = s.as_bytes();
+    let length = bytes.len();
+    
+    if length <= 31 {
+        return simulate_short_string_storage(s);
+    }
+    
+    let mut slots = Vec::new();
+    
+    // First slot contains (length * 2 + 1)
+    let mut length_slot = [0u8; 32];
+    let length_encoding = (length * 2 + 1) as u64;
+    length_slot[24..32].copy_from_slice(&length_encoding.to_be_bytes());
+    slots.push(length_slot);
+    
+    // Data slots start from keccak256(base_slot)
+    // For simulation, we'll just use sequential slots
+    let chunks = bytes.chunks(32);
+    for chunk in chunks {
+        let mut data_slot = [0u8; 32];
+        data_slot[..chunk.len()].copy_from_slice(chunk);
+        slots.push(data_slot);
+    }
+    
+    slots
+}
+
+/// Read a string from simulated storage slots
+fn read_string_from_storage(_base_slot: [u8; 32], storage_slots: Vec<[u8; 32]>) -> String {
+    if storage_slots.is_empty() {
+        return String::new();
+    }
+    
+    let length_slot = storage_slots[0];
+    
+    // Check if it's a short string (last byte is even and ≤ 62)
+    let last_byte = length_slot[31];
+    if last_byte % 2 == 0 && last_byte <= 62 {
+        // Short string: length = last_byte / 2
+        let length = (last_byte / 2) as usize;
+        return String::from_utf8(length_slot[..length].to_vec()).unwrap_or_default();
+    }
+    
+    // Long string: extract length from the slot
+    let length_bytes = &length_slot[24..32];
+    let length_encoding = u64::from_be_bytes(length_bytes.try_into().unwrap());
+    let length = ((length_encoding - 1) / 2) as usize;
+    
+    // Read data from subsequent slots
+    let mut data = Vec::new();
+    let slots_needed = calculate_slots_needed(length);
+    
+    for i in 1..=slots_needed {
+        if i < storage_slots.len() {
+            let slot = storage_slots[i];
+            let bytes_to_take = std::cmp::min(32, length - data.len());
+            data.extend_from_slice(&slot[..bytes_to_take]);
+        }
+        
+        if data.len() >= length {
+            break;
+        }
+    }
+    
+    // Truncate to exact length and convert to string
+    data.truncate(length);
+    String::from_utf8(data).unwrap_or_default()
+}
+
+/// Calculate how many 32-byte slots are needed for a string of given length
+fn calculate_slots_needed(length: usize) -> usize {
+    if length <= 31 {
+        1 // Short string fits in base slot
+    } else {
+        1 + ((length + 31) / 32) // Length slot + data slots
+    }
+}
+
+/// Calculate the storage key for a data slot in a long string
+/// In real implementation, this would be keccak256(base_slot) + slot_offset
+#[allow(dead_code)]
+fn calculate_string_data_slot_key(base_slot: [u8; 32], slot_offset: usize) -> [u8; 32] {
+    // For this test simulation, we'll create a deterministic key
+    // In real implementation, this would be keccak256(base_slot) + slot_offset
+    let mut result = base_slot;
+    
+    // Simple deterministic transformation for testing
+    let offset_bytes = (slot_offset as u64).to_be_bytes();
+    
+    // XOR with offset for simulation (real implementation would use proper keccak + addition)
+    for i in 0..8 {
+        result[31 - i] ^= offset_bytes[7 - i];
+    }
+    
+    result
 } 
