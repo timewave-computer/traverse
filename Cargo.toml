@@ -8,13 +8,44 @@ members = [
 ]
 resolver = "2"
 
+# Root package to support examples
+[package]
+name = "traverse"
+version = "0.1.0"
+edition = "2021"
+authors = ["Timewave Labs"]
+license = "Apache-2.0"
+repository = "https://github.com/timewave-computer/traverse"
+homepage = "https://github.com/timewave-computer/traverse"
+description = "Chain-independent ZK storage path generator for blockchain state verification"
+keywords = ["zk", "blockchain", "ethereum", "storage", "proof"]
+categories = ["cryptography", "development-tools"]
+
+# Dependencies for examples
+[dependencies]
+traverse-core = { path = "crates/traverse-core" }
+traverse-ethereum = { path = "crates/traverse-ethereum" }
+traverse-valence = { path = "crates/traverse-valence" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+
+# Examples
+[[example]]
+name = "usdt_live_proof"
+path = "examples/usdt_live_proof.rs"
+
+[[example]]
+name = "valence_integration"
+path = "examples/valence_integration.rs"
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["Traverse Team"]
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/yourusername/traverse"
-homepage = "https://github.com/yourusername/traverse"
+authors = ["Timewave Labs"]
+license = "Apache-2.0"
+repository = "https://github.com/timewave-computer/traverse"
+homepage = "https://github.com/timewave-computer/traverse"
 description = "Chain-independent ZK storage path generator for blockchain state verification"
 keywords = ["zk", "blockchain", "ethereum", "storage", "proof"]
 categories = ["cryptography", "development-tools"]

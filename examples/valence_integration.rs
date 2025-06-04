@@ -180,6 +180,11 @@ fn create_example_batch_payload() -> serde_json::Value {
     })
 }
 
+// Convert ValenceError to Box<dyn std::error::Error>
+fn convert_valence_error(err: ValenceError) -> Box<dyn std::error::Error> {
+    Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("{}", err)))
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Traverse Valence Coprocessor Integration Example");
     println!("====================================================");
@@ -200,7 +205,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Received coprocessor JSON payload");
     
     // 2. Controller phase: Parse JSON and create witnesses
-    let witnesses = example_controller_get_witnesses(&payload)?;
+    let witnesses = example_controller_get_witnesses(&payload)
+        .map_err(convert_valence_error)?;
     println!("Controller created {} witnesses", witnesses.len());
     
     // 3. Extract query info for circuit verification
@@ -213,14 +219,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &witnesses,
         &layout_commitment,
         &[query],
-    )?;
+    ).map_err(convert_valence_error)?;
     println!("Circuit verified {} storage proofs", balances.len());
     
     // 5. Domain phase: Validate state proofs
     let storage_proof: StorageProof = serde_json::from_value(
         payload["storage_proof"].clone()
     )?;
-    let validated_proofs = example_domain_validate_proofs(&[storage_proof], 18500000)?;
+    let validated_proofs = example_domain_validate_proofs(&[storage_proof], 18500000)
+        .map_err(convert_valence_error)?;
     println!("Domain validated {} state proofs", validated_proofs.len());
     
     println!("\nResults:");
@@ -236,7 +243,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Received batch coprocessor JSON payload");
     
     // 2. Controller phase: Process batch
-    let batch_witnesses = example_controller_get_witnesses(&batch_payload)?;
+    let batch_witnesses = example_controller_get_witnesses(&batch_payload)
+        .map_err(convert_valence_error)?;
     println!("Controller created {} witnesses from batch", batch_witnesses.len());
     
     // 3. Extract batch queries
@@ -252,7 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &batch_witnesses,
         &layout_commitment,
         &batch_queries,
-    )?;
+    ).map_err(convert_valence_error)?;
     
     // 5. Domain phase: Validate batch
     let batch_storage_proofs: Vec<StorageProof> = batch_payload["storage_batch"]
@@ -261,7 +269,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .map(|item| serde_json::from_value(item["storage_proof"].clone()).unwrap())
         .collect();
-    let _batch_validated_proofs = example_domain_validate_proofs(&batch_storage_proofs, 18500000)?;
+    let _batch_validated_proofs = example_domain_validate_proofs(&batch_storage_proofs, 18500000)
+        .map_err(convert_valence_error)?;
     
     println!("\nBatch Results:");
     for (i, balance) in batch_balances.iter().enumerate() {

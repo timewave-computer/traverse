@@ -14,46 +14,35 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use traverse_core::{LayoutInfo, KeyResolver, Key, StaticKeyPath, CoprocessorQueryPayload};
+use traverse_core::{Key, StaticKeyPath, CoprocessorQueryPayload};
 
-/// Example circuit function that verifies an ERC20 balance proof
-/// 
-/// In a real ZK circuit, this would be called with:
-/// - A pre-computed StaticKeyPath (generated at compile time)
-/// - A CoprocessorQueryPayload (provided at runtime by the prover)
-/// - The expected layout commitment (baked into the circuit)
-/// 
-/// # Arguments
-/// 
-/// * `path` - Pre-computed storage path for the balance query
-/// * `payload` - Runtime proof data from eth_getProof
-/// * `expected_commitment` - Layout commitment ensuring ABI alignment
-/// * `expected_address` - The address whose balance we're verifying
-/// * `min_balance` - Minimum balance required for the proof to succeed
-/// 
-/// # Returns
-/// 
-/// * `Ok(true)` - Proof is valid and balance meets minimum requirement
-/// * `Ok(false)` - Proof is valid but balance is insufficient  
-/// * `Err(_)` - Proof validation failed
+/// Example circuit function for verifying ERC20 balance from storage proof
+///
+/// This demonstrates the typical pattern for circuit-based storage verification:
+/// 1. Verify layout commitment matches expected
+/// 2. Verify storage key matches the computed path  
+/// 3. Extract and validate the storage value
+/// 4. Perform business logic on the extracted value
 pub fn verify_erc20_balance(
     path: &StaticKeyPath,
     payload: &CoprocessorQueryPayload,
     expected_commitment: &[u8; 32],
-    expected_address: &[u8; 20],
+    _expected_address: &[u8; 20],
     min_balance: u64,
 ) -> Result<bool, &'static str> {
-    // 1. Verify layout commitment matches expected
+    // Layout commitment verification
     if &path.layout_commitment != expected_commitment {
-        return Err("Layout commitment mismatch - circuit compiled with different ABI");
+        return Err("Layout commitment mismatch");
     }
     
-    // 2. Verify the storage key matches what we expect for this address
-    if payload.key != match &path.key {
+    // Key verification - ensure the storage key matches our computed path
+    let storage_key = match &path.key {
         Key::Fixed(key) => *key,
-        Key::Variable(_) => return Err("Expected fixed key for ERC20 balance"),
-    } {
-        return Err("Storage key mismatch");
+        Key::Variable(_) => return Err("Expected fixed key for balance"),
+    };
+    
+    if payload.key != storage_key {
+        return Err("Storage key mismatch for balance");
     }
     
     // 3. Extract balance from storage value
@@ -71,8 +60,8 @@ pub fn verify_erc20_allowance(
     path: &StaticKeyPath,
     payload: &CoprocessorQueryPayload,
     expected_commitment: &[u8; 32],
-    owner: &[u8; 20],
-    spender: &[u8; 20],
+    _owner: &[u8; 20],
+    _spender: &[u8; 20],
     min_allowance: u64,
 ) -> Result<bool, &'static str> {
     // Layout commitment verification
@@ -145,7 +134,7 @@ pub mod precomputed_paths {
 pub fn example_circuit_main() -> Result<bool, &'static str> {
     // Example runtime data (would come from the prover)
     let proof_payload = CoprocessorQueryPayload {
-        key: precomputed_paths::BALANCE_PATH_742D35.key.clone().into(),
+        key: key_to_bytes(precomputed_paths::BALANCE_PATH_742D35.key.clone()),
         value: [
             // Example: 1000 tokens (1000 * 10^18 wei)
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -172,16 +161,15 @@ pub fn example_circuit_main() -> Result<bool, &'static str> {
     )
 }
 
-impl From<Key> for [u8; 32] {
-    fn from(key: Key) -> [u8; 32] {
-        match key {
-            Key::Fixed(bytes) => bytes,
-            Key::Variable(vec) => {
-                let mut result = [0u8; 32];
-                let len = core::cmp::min(vec.len(), 32);
-                result[32 - len..].copy_from_slice(&vec[vec.len() - len..]);
-                result
-            }
+/// Helper function to convert Key to byte array
+fn key_to_bytes(key: Key) -> [u8; 32] {
+    match key {
+        Key::Fixed(bytes) => bytes,
+        Key::Variable(vec) => {
+            let mut result = [0u8; 32];
+            let len = core::cmp::min(vec.len(), 32);
+            result[32 - len..].copy_from_slice(&vec[vec.len() - len..]);
+            result
         }
     }
 }
@@ -234,24 +222,38 @@ pub mod integration_patterns {
     pub mod best_practices {
         //! Recommendations for using traverse in production circuits
         
-        /// 1. Always use pre-computed paths
-        /// - Generate paths at compile time using the CLI
-        /// - Embed as constants to avoid dynamic allocations
-        /// - Verify layout commitments to prevent ABI mismatches
+        /// Testing utilities and best practices
+        pub struct TestingGuidelines;
         
-        /// 2. Validate all inputs
-        /// - Check storage key matches expected
-        /// - Verify proof structure before processing
-        /// - Handle edge cases gracefully
-        
-        /// 3. Optimize for circuit constraints
-        /// - Minimize dynamic allocations
-        /// - Use fixed-size arrays where possible
-        /// - Consider proof size vs verification cost
-        
-        /// 4. Test thoroughly
-        /// - Unit test individual verification functions
-        /// - Integration test with real blockchain data
-        /// - Fuzz test with malformed inputs
+        impl TestingGuidelines {
+            /// Provides testing recommendations for circuit development
+            /// 
+            /// Covers:
+            /// 1. Always use pre-computed paths
+            /// 2. Validate all inputs  
+            /// 3. Optimize for circuit constraints
+            /// 4. Test thoroughly
+            pub fn get_testing_recommendations() -> &'static str {
+                "Follow the documented testing patterns for reliable circuit development"
+            }
+        }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_example_circuit() {
+        let result = example_circuit_main();
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+}
+
+// Main function for the example
+fn main() {
+    // This example is designed for no_std environments
+    // In practice, this would be compiled for RISC-V circuits
 } 
