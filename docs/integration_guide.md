@@ -164,7 +164,7 @@ echo "_balances[0x8ba1f109551bD432803012645Aac136c5C1Aa000]" >> queries.txt
 echo "_totalSupply" >> queries.txt
 
 # Generate batch storage keys
-zkpath batch-resolve queries.txt --layout layout.json --format coprocessor-json > batch_queries.json
+cargo run -p traverse-cli -- batch-resolve queries.txt --layout layout.json --format coprocessor-json > batch_queries.json
 ```
 
 ### 3. External Client Integration
@@ -287,24 +287,5 @@ cargo run --example valence_integration --features std
 cargo test -p traverse-valence
 
 # Validate storage key generation
-zkpath resolve "your_query" --layout your_layout.json --format coprocessor-json
+cargo run -p traverse-cli -- resolve "your_query" --layout your_layout.json --format coprocessor-json
 ```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Layout Mismatch**: Ensure layout.json matches the contract version
-2. **Invalid Storage Keys**: Verify query syntax matches contract field names
-3. **Proof Verification Failures**: Check that eth_getProof data matches traverse storage keys
-4. **no_std Compilation**: Ensure all dependencies are no_std compatible
-
-### Getting Help
-
-- Check the [traverse-valence examples](../examples/valence_integration.rs)
-- Review the [architecture documentation](./architecture.md) for design details
-- Examine the [integration tests](../crates/traverse-ethereum/tests/integration.rs)
-
----
-
-This guide provides the foundation for integrating traverse into your valence coprocessor application. For more advanced use cases, refer to the API documentation and examples in the repository.

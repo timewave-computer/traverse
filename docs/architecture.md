@@ -149,12 +149,12 @@ Command-line interface for external storage key generation.
 - `resolve`: Generate single storage key with coprocessor JSON export
 - `resolve-all`: Generate all possible storage keys from layout
 - `batch-resolve`: Process multiple queries from file
-- `generate-proof`: Mock proof generation (extensible)
+- `generate-proof`: Generate storage proofs (requires client feature for live proofs)
 
 **Coprocessor Integration**:
 ```bash
 # Generate storage key for valence coprocessor
-zkpath resolve "_balances[0x742d35...]" \
+traverse-cli resolve "_balances[0x742d35...]" \
   --layout contract.json \
   --format coprocessor-json > query.json
 ```
@@ -213,10 +213,10 @@ This phase runs on developer machines, CI/CD systems, and external clients where
 **Example**:
 ```bash
 # 1. Compile contract layout
-zkpath compile-layout Token.abi.json > layout.json
+traverse-cli compile-layout Token.abi.json > layout.json
 
 # 2. Generate storage keys
-zkpath resolve "_balances[0x742d35...]" --layout layout.json --format coprocessor-json
+traverse-cli resolve "_balances[0x742d35...]" --layout layout.json --format coprocessor-json
 
 # 3. External client combines with eth_getProof data
 # 4. Submit JSON payload to coprocessor
@@ -274,7 +274,7 @@ sequenceDiagram
     participant Coproc as Coprocessor
     participant Circuit as ZK Circuit
     
-    Dev->>CLI: zkpath resolve query --format coprocessor-json
+    Dev->>CLI: traverse-cli resolve query --format coprocessor-json
     CLI->>Dev: storage_key + layout_commitment
     
     Client->>RPC: eth_getProof(contract, [storage_key], block)
@@ -354,8 +354,8 @@ The system employs several optimization strategies for production performance. B
 1. **Development**:
    ```bash
    # Generate storage keys during development
-   zkpath compile-layout contracts/Token.abi.json > layouts/token.json
-   zkpath resolve-all --layout layouts/token.json --format coprocessor-json > keys/token_keys.json
+   traverse-cli compile-layout contracts/Token.abi.json > layouts/token.json
+   traverse-cli resolve-all --layout layouts/token.json --format coprocessor-json > keys/token_keys.json
    ```
 
 2. **Integration**:
