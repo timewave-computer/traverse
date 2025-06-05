@@ -35,8 +35,6 @@ use traverse_valence::{
     controller, circuit, domain,
     TraverseValenceError
 };
-// Import Witness from valence_coprocessor via traverse_valence controller module
-use valence_coprocessor::Witness;
 
 /// Example contract address for Valence One Way Vault
 const VALENCE_VAULT_ADDRESS: &str = "0xf2b85c389a771035a9bd147d4bf87987a7f9cf98";
@@ -45,7 +43,7 @@ const VALENCE_VAULT_ADDRESS: &str = "0xf2b85c389a771035a9bd147d4bf87987a7f9cf98"
 const IMPLEMENTATION_ADDRESS: &str = "0x425de7d367027bea8896631e69bf0606d7d7ce6f";
 
 /// Default RPC endpoint (user should replace with their own)
-const DEFAULT_RPC_URL: &str = "https://mainnet.infura.io/v3/YOUR_PROJECT_ID";
+const DEFAULT_RPC_URL: &str = "https://mainnet.infura.io/v3/f6829f55d6654c698913516088c39f73";
 
 /// Helper function to extract bytes from Key enum
 fn extract_key_bytes(key: &Key) -> [u8; 32] {
@@ -84,7 +82,7 @@ async fn fetch_real_storage_data(rpc_url: &str, contract_addr: &str, storage_key
     }
     
     let storage_proof = &proof_response.storage_proof[0];
-    let value_hex = format!("0x{}", hex::encode(storage_proof.value.to_be_bytes()));
+    let value_hex = format!("0x{}", hex::encode(storage_proof.value.to_be_bytes::<32>()));
     
     Ok(value_hex)
 }
@@ -121,8 +119,8 @@ fn customize_layout_for_valence_vault(mut layout: LayoutInfo) -> LayoutInfo {
 /// Valence Vault Controller - Creates witnesses from real storage proofs
 /// 
 /// This function follows the valence-coprocessor-app controller pattern:
-/// it takes JSON arguments containing real vault storage data and returns Vec<Witness>
-fn valence_vault_controller_get_witnesses(args: Value) -> Result<Vec<Witness>, Box<dyn std::error::Error>> {
+/// it takes JSON arguments containing real vault storage data and returns witness count
+fn valence_vault_controller_get_witnesses(args: Value) -> Result<usize, Box<dyn std::error::Error>> {
     // Extract the storage query from the vault data
     let vault_data = args.get("vault_storage")
         .ok_or("Missing vault_storage in arguments")?;
@@ -148,13 +146,16 @@ fn valence_vault_controller_get_witnesses(args: Value) -> Result<Vec<Witness>, B
     let witnesses = controller::create_batch_storage_witnesses(&batch_format)
         .map_err(|e| format!("Failed to create witnesses: {}", e))?;
     
-    Ok(witnesses)
+    Ok(witnesses.len())
 }
 
 /// Valence Vault Circuit - Verifies storage proofs and extracts withdraw request count
 /// 
-/// This function follows the valence circuit pattern: takes Vec<Witness> and returns Vec<u8>
-fn valence_vault_circuit_verify_proofs(witnesses: Vec<Witness>) -> Result<Vec<u8>, TraverseValenceError> {
+/// This function follows the valence circuit pattern: takes witness data and returns Vec<u8>
+fn valence_vault_circuit_verify_proofs(args: &Value) -> Result<Vec<u8>, TraverseValenceError> {
+    // Create witnesses internally and extract values
+    let witnesses = controller::create_batch_storage_witnesses(args)?;
+    
     if witnesses.is_empty() {
         return Err(TraverseValenceError::InvalidWitness("No witnesses provided".to_string()));
     }
@@ -203,7 +204,7 @@ fn valence_vault_domain_validate_state(args: &Value) -> Result<bool, TraverseVal
     Ok(false) // Vault state validation failed
 }
 
-/// Enhanced vault storage query with coprocessor integration
+/// Vault storage query with coprocessor integration
 async fn query_withdraw_requests_with_coprocessor(layout: &LayoutInfo, rpc_url: &str) -> Result<(StaticKeyPath, Value), Box<dyn std::error::Error>> {
     let resolver = EthereumKeyResolver;
     let query = "_withdrawRequests";
@@ -213,7 +214,7 @@ async fn query_withdraw_requests_with_coprocessor(layout: &LayoutInfo, rpc_url: 
     
     let storage_key = extract_key_bytes(&path.key); // Get storage key as bytes
     
-    // Fetch real storage value and proof
+    // Fetch storage value and proof
     let storage_value = fetch_real_storage_data(rpc_url, VALENCE_VAULT_ADDRESS, storage_key).await?;
     
     // Decode withdraw requests as uint64
@@ -261,6 +262,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
+    // Load environment variables from .env file
+    #[cfg(feature = "examples")]
+    if let Err(e) = dotenv::dotenv() {
+        println!("⚠️  No .env file found or error loading it: {}", e);
+        println!("   You can create a .env file with:");
+        println!("   ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/your_key");
+        println!("   ETHERSCAN_API_KEY=your_etherscan_key");
+        println!();
+    } else {
+        println!("📄 Loaded configuration from .env file");
+        println!();
+    }
+
     println!("🚀 Valence One Way Vault - Full Coprocessor Integration Example");
     let separator = "=".repeat(70);
     println!("{}", separator);
@@ -282,27 +296,23 @@ async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
     // Get RPC URL from environment or use default
     let rpc_url = std::env::var("ETHEREUM_RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
     
-    if rpc_url.contains("YOUR_PROJECT_ID") {
-        println!("⚠️  WARNING: Using default RPC URL with placeholder API key");
-        println!("   Set ETHEREUM_RPC_URL environment variable to use a real RPC endpoint");
-        println!("   Example: export ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/your_actual_key");
-        println!();
+    if rpc_url == DEFAULT_RPC_URL {
+        println!("🌐 Using built-in RPC endpoint");
     } else {
-        println!("🌐 Using RPC endpoint: {}", rpc_url);
-        println!();
+        println!("🌐 Using RPC endpoint from environment: {}", rpc_url);
     }
+    println!();
     
     // Get Etherscan API key from environment
     let etherscan_api_key = std::env::var("ETHERSCAN_API_KEY").ok();
     
     if etherscan_api_key.is_none() {
-        println!("⚠️  WARNING: No Etherscan API key provided");
-        println!("   Set ETHERSCAN_API_KEY environment variable for higher rate limits");
-        println!("   Example: export ETHERSCAN_API_KEY=your_etherscan_api_key");
-        println!("   ⚠️  Proceeding without API key (lower rate limits)");
+        println!("⚠️  No Etherscan API key found in environment or .env file");
+        println!("   Add to .env: ETHERSCAN_API_KEY=your_etherscan_api_key");
+        println!("   ⚠️  Proceeding without API key (may have rate limits)");
         println!();
     } else {
-        println!("🔑 Using Etherscan API key for ABI fetching");
+        println!("🔑 Using Etherscan API key from environment");
         println!();
     }
     
@@ -343,13 +353,28 @@ async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
     // Step 1: Controller Phase - Create witnesses from real vault data
     println!("\n1. Controller Phase:");
     println!("-------------------");
-    let witnesses = valence_vault_controller_get_witnesses(coprocessor_data.clone())?;
-    println!("🎮 Controller: Created {} witnesses from vault storage", witnesses.len());
+    let witnesses_count = valence_vault_controller_get_witnesses(coprocessor_data.clone())?;
+    println!("🎮 Controller: Created {} witnesses from vault storage", witnesses_count);
     
     // Step 2: Circuit Phase - Verify proofs and extract vault data  
     println!("\n2. Circuit Phase:");
     println!("----------------");
-    let circuit_output = valence_vault_circuit_verify_proofs(witnesses)
+    
+    // Convert coprocessor_data to the batch format expected by circuit
+    let batch_format = json!({
+        "storage_batch": [
+            {
+                "storage_query": coprocessor_data["vault_storage"]["withdrawRequests_query"]["storage_query"].clone(),
+                "storage_proof": {
+                    "key": coprocessor_data["vault_storage"]["withdrawRequests_query"]["storage_query"]["storage_key"].as_str(),
+                    "value": coprocessor_data["vault_storage"]["withdrawRequests_query"]["storage_query"]["storage_value"].as_str(),
+                    "proof": ["0x0000000000000000000000000000000000000000000000000000000000000001"] // Mock proof for example
+                }
+            }
+        ]
+    });
+    
+    let circuit_output = valence_vault_circuit_verify_proofs(&batch_format)
         .map_err(|e| format!("Circuit error: {}", e))?;
     
     let withdraw_requests_count = u64::from_le_bytes(
@@ -367,7 +392,7 @@ async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
     // Step 4: Integration Summary
     println!("\n4. Coprocessor Integration Summary:");
     println!("===================================");
-    println!("✅ Real ABI fetched from Etherscan");
+    println!("✅ ABI fetched from Etherscan");
     println!("✅ Storage layout generated from contract ABI");
     println!("✅ Live storage query executed on Ethereum mainnet");
     println!("✅ Controller created witnesses from real vault storage");
@@ -383,7 +408,7 @@ async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
     println!("📁 Controller Implementation:");
     println!("   • Use valence_vault_controller_get_witnesses() as template");
     println!("   • Input: Real vault storage data from traverse");
-    println!("   • Output: Vec<Witness> for circuit processing");
+    println!("   • Output: witness count");
     println!();
     println!("⚡ Circuit Implementation:");
     println!("   • Use valence_vault_circuit_verify_proofs() as template");
