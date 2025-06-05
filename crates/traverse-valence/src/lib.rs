@@ -2,8 +2,31 @@
 //! 
 //! This crate provides integration between the traverse storage path generator
 //! and the valence coprocessor framework. It includes controller helpers for
-//! creating witnesses, circuit helpers for proof verification, and domain
-//! helpers for state proof validation.
+//! witness creation, circuit helpers for proof verification, and domain helpers
+//! for state validation.
+//!
+//! ## Architecture
+//!
+//! The valence coprocessor uses a three-tier architecture:
+//! - **Controller**: Creates witnesses from JSON arguments
+//! - **Circuit**: Verifies proofs and computes outputs
+//! - **Domain**: Validates blockchain state proofs
+//!
+//! ## Example Usage
+//!
+//! ```rust,ignore
+//! use traverse_valence::{controller, circuit, domain};
+//! use valence_coprocessor::Witness;
+//!
+//! // Controller: Create witnesses from traverse output
+//! let witnesses = controller::create_storage_witnesses(&json_args)?;
+//!
+//! // Circuit: Verify and extract values
+//! let results = circuit::verify_and_extract(&witnesses)?;
+//!
+//! // Domain: Validate state proofs
+//! let state_proof = domain::get_state_proof(&args)?;
+//! ```
 
 #![no_std]
 extern crate alloc;
@@ -18,17 +41,15 @@ use serde::{Deserialize, Serialize};
 pub mod controller;
 pub mod circuit;
 pub mod domain;
-pub mod utils;
 
-// Re-export key types and functions for convenience
-pub use controller::{create_storage_witness, create_batch_storage_witnesses};
-pub use circuit::{verify_storage_proof, extract_u64_value, extract_address_value};
-pub use domain::{EthereumBlockHeader, ValidatedStateProof, validate_storage_proof, validate_ethereum_state_proof};
-pub use utils::parse_hex_32;
+// Re-export the module contents at the crate root for convenience
+pub use controller::*;
+pub use circuit::*;
+pub use domain::*;
 
 /// Error type for valence coprocessor integration
 #[derive(Debug)]
-pub enum ValenceError {
+pub enum TraverseValenceError {
     /// JSON parsing or serialization error
     Json(String),
     /// Invalid storage key format
@@ -37,21 +58,30 @@ pub enum ValenceError {
     ProofVerificationFailed(String),
     /// Layout commitment mismatch
     LayoutMismatch(String),
+    /// Invalid witness format
+    InvalidWitness(String),
 }
 
-impl core::fmt::Display for ValenceError {
+impl core::fmt::Display for TraverseValenceError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            ValenceError::Json(msg) => write!(f, "JSON error: {}", msg),
-            ValenceError::InvalidStorageKey(msg) => write!(f, "Invalid storage key: {}", msg),
-            ValenceError::ProofVerificationFailed(msg) => write!(f, "Proof verification failed: {}", msg),
-            ValenceError::LayoutMismatch(msg) => write!(f, "Layout mismatch: {}", msg),
+            TraverseValenceError::Json(msg) => write!(f, "JSON error: {}", msg),
+            TraverseValenceError::InvalidStorageKey(msg) => write!(f, "Invalid storage key: {}", msg),
+            TraverseValenceError::ProofVerificationFailed(msg) => write!(f, "Proof verification failed: {}", msg),
+            TraverseValenceError::LayoutMismatch(msg) => write!(f, "Layout mismatch: {}", msg),
+            TraverseValenceError::InvalidWitness(msg) => write!(f, "Invalid witness: {}", msg),
         }
     }
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for ValenceError {}
+impl std::error::Error for TraverseValenceError {}
+
+impl From<TraverseValenceError> for anyhow::Error {
+    fn from(err: TraverseValenceError) -> Self {
+        anyhow::anyhow!("{}", err)
+    }
+}
 
 /// Coprocessor-compatible storage query format (matches CLI output)
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -77,20 +107,4 @@ pub struct StorageProof {
     pub value: String,
     /// Merkle proof nodes (hex encoded)
     pub proof: Vec<String>,
-}
-
-/// Mock witness type (placeholder until we integrate actual valence-coprocessor)
-#[derive(Debug, Clone)]
-pub enum MockWitness {
-    /// Raw data witness
-    Data(Vec<u8>),
-    /// Storage proof witness
-    StateProof {
-        /// Storage key
-        key: [u8; 32],
-        /// Storage value
-        value: [u8; 32],
-        /// Proof nodes
-        proof: Vec<[u8; 32]>,
-    },
 } 

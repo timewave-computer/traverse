@@ -4,8 +4,8 @@
 //! response from the USDT contract on Ethereum mainnet.
 
 use serde_json::json;
-use traverse_core::{LayoutInfo, StorageEntry, TypeInfo, CoprocessorQueryPayload};
-use traverse_valence::{controller, circuit, ValenceError};
+use traverse_core::{LayoutInfo, StorageEntry, TypeInfo};
+use traverse_valence::{controller, circuit, TraverseValenceError};
 use traverse_valence::{CoprocessorStorageQuery, StorageProof};
 
 /// Your actual eth_getProof response from USDT contract
@@ -85,9 +85,9 @@ fn pad_hex_to_32_bytes(hex_str: &str) -> String {
     }
 }
 
-// Convert ValenceError to Box<dyn std::error::Error>
-fn convert_valence_error(err: ValenceError) -> Box<dyn std::error::Error> {
-    Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("{}", err)))
+// Convert TraverseValenceError to Box<dyn std::error::Error>
+fn convert_valence_error(err: TraverseValenceError) -> Box<dyn std::error::Error> {
+    Box::new(std::io::Error::other(format!("{}", err)))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -167,11 +167,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Step 5: Verify the proof in circuit context
     println!("5. Verifying storage proof (circuit simulation)...");
-    let verification_result = circuit::verify_storage_proof(
-        &witness,
-        &layout_commitment,
-        &storage_query,
-    ).map_err(convert_valence_error)?;
+    let verification_result = circuit::verify_storage_proof(&witness)
+        .map_err(convert_valence_error)?;
     
     println!("   [OK] Proof verification passed");
     println!("   [OK] Extracted value length: {} bytes", verification_result.len());
@@ -190,8 +187,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("      - Last 20 bytes (address): 0x{}", hex::encode(&storage_bytes[storage_bytes.len().saturating_sub(20)..]));
     println!();
     
-    // Step 7: Convert to CoprocessorQueryPayload format
-    println!("7. Converting to coprocessor format...");
+    // Step 7: Convert to circuit format
+    println!("7. Converting to circuit format...");
     let mut key_bytes = [0u8; 32];
     let key_decoded = hex::decode(storage_proof.key.strip_prefix("0x").unwrap_or(&storage_proof.key))?;
     key_bytes.copy_from_slice(&key_decoded);
@@ -200,82 +197,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let padded_value_decoded = hex::decode(padded_value)?;
     value_bytes.copy_from_slice(&padded_value_decoded);
     
-    let proof_nodes: Vec<[u8; 32]> = storage_proof.proof
-        .iter()
-        .filter_map(|node_hex| {
-            let clean_hex = node_hex.strip_prefix("0x").unwrap_or(node_hex);
-            if clean_hex.len() >= 64 {
-                // Take first 32 bytes if proof node is longer than 32 bytes
-                let mut node_bytes = [0u8; 32];
-                if let Ok(decoded) = hex::decode(&clean_hex[..64]) {
-                    node_bytes.copy_from_slice(&decoded);
-                    Some(node_bytes)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .collect();
-    
-    let coprocessor_payload = CoprocessorQueryPayload {
-        key: key_bytes,
-        value: value_bytes,
-        proof: proof_nodes,
-    };
-    
-    println!("   [OK] Coprocessor payload created");
-    println!("   [OK] Key: 0x{}", hex::encode(coprocessor_payload.key));
-    println!("   [OK] Value: 0x{}", hex::encode(coprocessor_payload.value));
-    println!("   [OK] Proof nodes: {} (truncated to 32-byte hashes)", coprocessor_payload.proof.len());
+    println!("   [OK] Storage key (32 bytes): 0x{}", hex::encode(key_bytes));
+    println!("   [OK] Storage value (32 bytes): 0x{}", hex::encode(value_bytes));
     println!();
     
-    // Step 8: Show complete integration path
-    println!("8. Complete Traverse Integration");
-    println!("===================================");
-    println!("Your eth_getProof query successfully flows through:");
-    println!("   1. [OK] RPC Response -> StorageProof");
-    println!("   2. [OK] StorageProof -> CoprocessorStorageQuery");  
-    println!("   3. [OK] Layout Compilation -> LayoutInfo");
-    println!("   4. [OK] Witness Generation -> MockWitness");
-    println!("   5. [OK] Circuit Verification -> Verified Value");
-    println!("   6. [OK] Final Output -> CoprocessorQueryPayload");
+    // Step 8: Summary and integration notes
+    println!("8. Integration Summary:");
+    println!("======================");
+    println!("✓ Successfully parsed real eth_getProof response");
+    println!("✓ Created traverse layout for USDT contract");
+    println!("✓ Generated storage witness using controller helpers");
+    println!("✓ Verified storage proof using circuit helpers");
+    println!("✓ Analyzed storage value content");
     println!();
     
-    println!("Next Steps:");
-    println!("   - Use this pattern for any storage slot on any contract");
-    println!("   - Integrate with valence-coprocessor for ZK circuit generation");
-    println!("   - Scale to batch processing for multiple storage queries");
-    println!("   - Add contract-specific layout compilation from ABI");
+    println!("This example demonstrates the complete traverse workflow:");
+    println!("1. Real blockchain data → 2. Layout definition → 3. Witness creation → 4. Circuit verification");
     println!();
     
-    // Save the complete payload for reference
-    let output_json = serde_json::to_string_pretty(&json!({
-        "traverse_flow_demo": {
-            "input": {
-                "contract": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-                "slot": storage_proof.key,
-                "block": "0xf2232774da1c842a03bfaf8805b4b372fc6b6e6a508aa9b9a11c5848ade082de",
-                "rpc_method": "eth_getProof"
-            },
-            "traverse_processing": {
-                "layout_commitment": hex::encode(layout_commitment),
-                "storage_query": storage_query,
-                "verification_status": "passed"
-            },
-            "output": {
-                "coprocessor_payload": {
-                    "key": hex::encode(coprocessor_payload.key),
-                    "value": hex::encode(coprocessor_payload.value),
-                    "proof_nodes": coprocessor_payload.proof.len()
-                }
-            }
-        }
-    }))?;
-    
-    std::fs::write("usdt_traverse_flow.json", output_json)?;
-    println!("Complete flow data saved to: usdt_traverse_flow.json");
+    println!("Next steps for production ZK applications:");
+    println!("- Use this pattern in your valence coprocessor implementation");
+    println!("- Add merkle proof verification for full trustlessness");  
+    println!("- Integrate with your specific contract layouts");
     
     Ok(())
 } 

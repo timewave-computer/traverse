@@ -23,19 +23,16 @@ let witnesses = controller::create_batch_storage_witnesses(&batch_json)?;
 
 ### Layout Commitment Verification
 
-**Problem**: Circuit safety requires deterministic layout verification.
+**Note**: The current traverse-valence implementation provides basic proof verification. Layout commitment verification would be handled by external validation logic.
 
-**Solution**: Always verify layout commitments in circuits:
+**Solution**: Use basic storage proof verification:
 
 ```rust
-// ✅ Required: Verify layout commitment matches expected
-let result = circuit::verify_storage_proof(
-    &witness,
-    &expected_layout_commitment, // Must match compile-time commitment
-    &query,
-)?;
+// ✅ Basic proof verification (current implementation)
+let result = circuit::verify_storage_proof(&witness)?;
 
-// ❌ Never skip layout verification in production
+// Note: Full layout commitment verification would be implemented
+// as part of external validation logic
 ```
 
 ### Field Size Optimization
@@ -46,11 +43,11 @@ let result = circuit::verify_storage_proof(
 
 ```rust
 // ✅ Good: Use specific extraction functions
-let balance: u64 = circuit::extract_u64_value(&witness, &commitment, &query)?;
-let address: [u8; 20] = circuit::extract_address_value(&witness, &commitment, &query)?;
+let balance: u64 = circuit::extract_u64_value(&witness)?;
+let address: [u8; 20] = circuit::extract_address_value(&witness)?;
 
-// ❌ Bad: Always extracting maximum field size
-let field_bytes = circuit::verify_storage_proof(&witness, &commitment, &query)?;
+// ❌ Bad: Always extracting raw bytes
+let field_bytes = circuit::verify_storage_proof(&witness)?;
 // Manual conversion loses type safety and optimization opportunities
 ```
 
@@ -59,27 +56,17 @@ let field_bytes = circuit::verify_storage_proof(&witness, &commitment, &query)?;
 **Efficient Multi-Query Pattern**:
 
 ```rust
+use traverse_valence::TraverseValenceError;
+
 // Process multiple storage queries efficiently
 pub fn verify_multiple_balances(
     batch_json: &Value,
-    layout_commitment: &[u8; 32],
-) -> Result<Vec<(String, u64)>, ValenceError> {
+) -> Result<Vec<u64>, TraverseValenceError> {
     let witnesses = controller::create_batch_storage_witnesses(batch_json)?;
     
-    let queries: Vec<CoprocessorStorageQuery> = batch_json["storage_batch"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|item| serde_json::from_value(item["storage_query"].clone()).unwrap())
-        .collect();
+    let balances = circuit::extract_multiple_u64_values(&witnesses)?;
     
-    let mut results = Vec::new();
-    for (witness, query) in witnesses.iter().zip(queries.iter()) {
-        let balance = circuit::extract_u64_value(witness, layout_commitment, query)?;
-        results.push((query.query.clone(), balance));
-    }
-    
-    Ok(results)
+    Ok(balances)
 }
 ```
 
@@ -87,23 +74,12 @@ pub fn verify_multiple_balances(
 
 ### Layout Commitment Security
 
-**Critical**: Layout commitments prevent circuit manipulation attacks.
+**Note**: Layout commitment security would be implemented as part of external validation workflows since the current traverse-valence implementation focuses on basic proof processing.
 
 ```rust
-// ✅ Compile-time layout commitment (recommended)
-const EXPECTED_LAYOUT: [u8; 32] = [
-    0xf6, 0xdc, 0x3c, 0x4a, 0x79, 0xe9, 0x55, 0x65,
-    // ... rest of commitment hash
-];
-
-// ✅ Runtime verification against trusted source
-let trusted_layout = load_trusted_layout_commitment();
-if &query_commitment != &trusted_layout {
-    return Err(ValenceError::LayoutMismatch("Untrusted layout".into()));
-}
-
-// ❌ Never trust layout commitments from untrusted sources
-let untrusted_commitment = json_args["layout_commitment"]; // DANGEROUS
+// Note: Layout commitment validation would be handled externally
+// Current implementation provides basic proof verification
+let result = circuit::verify_storage_proof(&witness)?;
 ```
 
 ### Storage Key Validation
@@ -113,17 +89,19 @@ let untrusted_commitment = json_args["layout_commitment"]; // DANGEROUS
 **Solution**: Validate storage keys against expected patterns:
 
 ```rust
+use traverse_valence::TraverseValenceError;
+
 // ✅ Good: Validate storage key derivation
-pub fn validate_balance_query(query: &str, expected_slot: u8) -> Result<(), ValenceError> {
+pub fn validate_balance_query(query: &str, expected_slot: u8) -> Result<(), TraverseValenceError> {
     // Parse query to ensure it's a balance lookup
     if !query.starts_with("_balances[") {
-        return Err(ValenceError::InvalidStorageKey("Not a balance query".into()));
+        return Err(TraverseValenceError::InvalidStorageKey("Not a balance query".into()));
     }
     
     // Validate address format
     let address_part = &query[10..query.len()-1]; // Extract address
     if !is_valid_ethereum_address(address_part) {
-        return Err(ValenceError::InvalidStorageKey("Invalid address".into()));
+        return Err(TraverseValenceError::InvalidStorageKey("Invalid address".into()));
     }
     
     Ok(())
@@ -139,22 +117,21 @@ pub fn validate_field_access(query: &str) -> bool {
 
 ### Proof Verification Security
 
-**Critical**: Always verify proofs in circuit context:
+**Basic**: Current implementation provides basic proof verification:
 
 ```rust
-// ✅ Good: Full proof verification
+// ✅ Good: Basic proof verification (current implementation)
+let verified_value = circuit::verify_storage_proof(&witness)?;
+
+// Additional validation can be implemented externally
 let validated_proof = domain::validate_ethereum_state_proof(
     &storage_proof,
     &block_header,
-    &contract_address,
 )?;
 
 if !validated_proof.is_valid {
-    return Err(ValenceError::ProofVerificationFailed("Invalid proof".into()));
+    return Err(TraverseValenceError::ProofVerificationFailed("Invalid proof".into()));
 }
-
-// ❌ Bad: Trusting external proof data without verification
-let value = storage_proof.value; // DANGEROUS - unverified data
 ```
 
 ## Error Handling Patterns
@@ -162,22 +139,26 @@ let value = storage_proof.value; // DANGEROUS - unverified data
 ### Comprehensive Error Handling
 
 ```rust
-use traverse_valence::ValenceError;
+use traverse_valence::TraverseValenceError;
+use valence_coprocessor::Witness;
 
-pub fn robust_witness_creation(json_args: &Value) -> Result<MockWitness, anyhow::Error> {
+pub fn robust_witness_creation(json_args: &Value) -> Result<Witness, anyhow::Error> {
     let witness = controller::create_storage_witness(json_args)
         .map_err(|e| match e {
-            ValenceError::Json(msg) => {
+            TraverseValenceError::Json(msg) => {
                 anyhow::anyhow!("JSON parsing failed: {}. Check input format.", msg)
             },
-            ValenceError::InvalidStorageKey(msg) => {
+            TraverseValenceError::InvalidStorageKey(msg) => {
                 anyhow::anyhow!("Storage key validation failed: {}. Verify query syntax.", msg)
             },
-            ValenceError::ProofVerificationFailed(msg) => {
+            TraverseValenceError::ProofVerificationFailed(msg) => {
                 anyhow::anyhow!("Proof verification failed: {}. Check eth_getProof data.", msg)
             },
-            ValenceError::LayoutMismatch(msg) => {
+            TraverseValenceError::LayoutMismatch(msg) => {
                 anyhow::anyhow!("Layout mismatch: {}. Contract version mismatch?", msg)
+            },
+            TraverseValenceError::InvalidWitness(msg) => {
+                anyhow::anyhow!("Invalid witness: {}. Check witness format.", msg)
             },
         })?;
     
@@ -190,7 +171,7 @@ pub fn robust_witness_creation(json_args: &Value) -> Result<MockWitness, anyhow:
 ```rust
 pub fn process_batch_with_partial_failures(
     batch_json: &Value,
-) -> (Vec<MockWitness>, Vec<String>) {
+) -> (Vec<Witness>, Vec<String>) {
     let mut witnesses = Vec::new();
     let mut errors = Vec::new();
     

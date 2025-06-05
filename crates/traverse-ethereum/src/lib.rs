@@ -6,11 +6,13 @@
 mod layout;
 mod resolver;
 mod proof;
+mod abi_fetcher;
 
 // Re-export the main types for backward compatibility
 pub use layout::EthereumLayoutCompiler;
 pub use resolver::EthereumKeyResolver;
 pub use proof::EthereumProofFetcher;
+pub use abi_fetcher::AbiFetcher;
 
 // Include RLP encoding/decoding tests
 #[cfg(test)]

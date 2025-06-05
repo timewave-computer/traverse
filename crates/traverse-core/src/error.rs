@@ -21,6 +21,8 @@ pub enum TraverseError {
     ProofGeneration(String),
     /// Invalid query format with details about what went wrong
     InvalidQuery(String),
+    /// Network error for HTTP requests (e.g., API calls)
+    Network(String),
     /// IO error (only available with std feature)
     #[cfg(feature = "std")]
     Io(Box<dyn std::error::Error + Send + Sync>),
@@ -35,6 +37,7 @@ impl core::fmt::Display for TraverseError {
             TraverseError::PathResolution(msg) => write!(f, "Path resolution failed: {}", msg),
             TraverseError::ProofGeneration(msg) => write!(f, "Proof generation failed: {}", msg),
             TraverseError::InvalidQuery(msg) => write!(f, "Invalid query format: {}", msg),
+            TraverseError::Network(msg) => write!(f, "Network error: {}", msg),
             #[cfg(feature = "std")]
             TraverseError::Io(err) => write!(f, "IO error: {}", err),
             TraverseError::Serialization(msg) => write!(f, "Serialization error: {}", msg),

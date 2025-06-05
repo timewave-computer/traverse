@@ -31,12 +31,12 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-traverse-valence = { git = "https://github.com/your-org/traverse", features = ["alloc"] }
+traverse-valence = { git = "https://github.com/timewave-computer/traverse", features = ["alloc"] }
 
 # For std-compatible components (controller only if needed)
 [dependencies.traverse-valence-std]
 package = "traverse-valence"
-git = "https://github.com/your-org/traverse"
+git = "https://github.com/timewave-computer/traverse"
 features = ["std"]
 optional = true
 ```
@@ -46,11 +46,12 @@ optional = true
 Update your `controller/src/lib.rs`:
 
 ```rust
-use traverse_valence::{controller, CoprocessorStorageQuery, StorageProof, MockWitness, ValenceError};
+use traverse_valence::{controller, CoprocessorStorageQuery, StorageProof, TraverseValenceError};
 use serde_json::Value;
+use valence_coprocessor::Witness;
 
 /// Controller implementation for storage proof verification
-pub fn get_witnesses(json_args: Value) -> Result<Vec<MockWitness>, anyhow::Error> {
+pub fn get_witnesses(json_args: Value) -> Result<Vec<Witness>, anyhow::Error> {
     // Check if this is a batch operation
     if json_args.get("storage_batch").is_some() {
         let witnesses = controller::create_batch_storage_witnesses(&json_args)
@@ -69,18 +70,17 @@ pub fn get_witnesses(json_args: Value) -> Result<Vec<MockWitness>, anyhow::Error
 Update your `circuit/src/lib.rs`:
 
 ```rust
-use traverse_valence::{circuit, CoprocessorStorageQuery, MockWitness, ValenceError};
+use traverse_valence::{circuit, CoprocessorStorageQuery, TraverseValenceError};
+use valence_coprocessor::Witness;
 
 /// Verify storage proofs and extract balance values
 pub fn verify_storage_proofs(
-    witnesses: &[MockWitness],
-    layout_commitment: &[u8; 32],
-    queries: &[CoprocessorStorageQuery],
-) -> Result<Vec<u64>, ValenceError> {
+    witnesses: &[Witness],
+) -> Result<Vec<u64>, TraverseValenceError> {
     let mut balances = Vec::new();
     
-    for (witness, query) in witnesses.iter().zip(queries.iter()) {
-        let balance = circuit::extract_u64_value(witness, layout_commitment, query)?;
+    for witness in witnesses {
+        let balance = circuit::extract_u64_value(witness)?;
         balances.push(balance);
     }
     
@@ -89,14 +89,12 @@ pub fn verify_storage_proofs(
 
 /// Extract address values from storage proofs
 pub fn extract_addresses(
-    witnesses: &[MockWitness],
-    layout_commitment: &[u8; 32],
-    queries: &[CoprocessorStorageQuery],
-) -> Result<Vec<[u8; 20]>, ValenceError> {
+    witnesses: &[Witness],
+) -> Result<Vec<[u8; 20]>, TraverseValenceError> {
     let mut addresses = Vec::new();
     
-    for (witness, query) in witnesses.iter().zip(queries.iter()) {
-        let address = circuit::extract_address_value(witness, layout_commitment, query)?;
+    for witness in witnesses {
+        let address = circuit::extract_address_value(witness)?;
         addresses.push(address);
     }
     
@@ -109,14 +107,14 @@ pub fn extract_addresses(
 Update your `domain/src/lib.rs`:
 
 ```rust
-use traverse_valence::{domain, StorageProof, ValenceError};
+use traverse_valence::{domain, StorageProof, TraverseValenceError};
 
 /// Validate Ethereum state proofs for your application
 pub fn validate_storage_proofs(
-    storage_proofs: &[StorageProof],
+    storage_proofs: &[serde_json::Value],
     block_number: u64,
     expected_state_root: &[u8; 32],
-) -> Result<Vec<domain::ValidatedStateProof>, ValenceError> {
+) -> Result<Vec<domain::ValidatedStateProof>, TraverseValenceError> {
     let mut validated_proofs = Vec::new();
     
     for proof in storage_proofs {
@@ -126,12 +124,9 @@ pub fn validate_storage_proofs(
             hash: [0u8; 32], // Would be provided by your application
         };
         
-        let account_address = [0u8; 20]; // Your contract address
-        
         let validated_proof = domain::validate_ethereum_state_proof(
             proof,
             &block_header,
-            &account_address,
         )?;
         
         validated_proofs.push(validated_proof);
@@ -149,13 +144,13 @@ First, obtain your contract's storage layout and use traverse CLI to generate st
 
 ```bash
 # Option 1: Using existing layout file
-zkpath resolve "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" \
+cargo run -p traverse-cli -- resolve "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" \
   --layout contract_layout.json \
   --format coprocessor-json > balance_query.json
 
 # Option 2: Compile from ABI first
-zkpath compile-layout MyContract.abi.json > layout.json
-zkpath resolve "_balances[0x742d35...]" --layout layout.json --format coprocessor-json
+cargo run -p traverse-cli -- compile-layout MyContract.abi.json > layout.json
+cargo run -p traverse-cli -- resolve "_balances[0x742d35...]" --layout layout.json --format coprocessor-json
 ```
 
 ### 2. Batch Processing
@@ -213,7 +208,7 @@ let balance_queries = [
 ];
 
 let witnesses = get_witnesses(coprocessor_json)?;
-let balances = verify_storage_proofs(&witnesses, &layout_commitment, &queries)?;
+let balances = verify_storage_proofs(&witnesses)?;
 
 println!("User balances: {:?}", balances);
 ```
@@ -242,23 +237,23 @@ for contract_data in coprocessor_batch_json["contracts"].as_array() {
 ### Error Handling
 
 ```rust
-use traverse_valence::ValenceError;
+use traverse_valence::TraverseValenceError;
 
 match controller::create_storage_witness(&json_args) {
     Ok(witness) => { /* Process witness */ },
-    Err(ValenceError::Json(msg)) => {
+    Err(TraverseValenceError::Json(msg)) => {
         // Handle JSON parsing errors
         return Err(anyhow::anyhow!("JSON error: {}", msg));
     },
-    Err(ValenceError::InvalidStorageKey(msg)) => {
+    Err(TraverseValenceError::InvalidStorageKey(msg)) => {
         // Handle invalid storage key format
         return Err(anyhow::anyhow!("Invalid storage key: {}", msg));
     },
-    Err(ValenceError::ProofVerificationFailed(msg)) => {
+    Err(TraverseValenceError::ProofVerificationFailed(msg)) => {
         // Handle proof verification failures
         return Err(anyhow::anyhow!("Proof verification failed: {}", msg));
     },
-    Err(ValenceError::LayoutMismatch(msg)) => {
+    Err(TraverseValenceError::LayoutMismatch(msg)) => {
         // Handle layout commitment mismatches
         return Err(anyhow::anyhow!("Layout mismatch: {}", msg));
     },
@@ -267,10 +262,9 @@ match controller::create_storage_witness(&json_args) {
 
 ### Security Considerations
 
-1. **Layout Commitment**: Always verify layout commitments match expected values
-2. **Storage Key Validation**: Validate storage keys are correctly derived
-3. **Proof Verification**: Use traverse-valence circuit helpers for secure proof verification
-4. **Block Validation**: Ensure block headers and state roots are validated in domain layer
+1. **Storage Key Validation**: Validate storage keys are correctly derived
+2. **Proof Verification**: Use traverse-valence circuit helpers for secure proof verification  
+3. **Block Validation**: Ensure block headers and state roots are validated in domain layer
 
 ## Debugging and Testing
 
@@ -280,7 +274,6 @@ match controller::create_storage_witness(&json_args) {
 #[cfg(debug_assertions)]
 {
     println!("Debug: Processing witness: {:?}", witness);
-    println!("Debug: Layout commitment: {:02x?}", layout_commitment);
 }
 ```
 
@@ -309,9 +302,9 @@ zkpath resolve "your_query" --layout your_layout.json --format coprocessor-json
 ### Getting Help
 
 - Check the [traverse-valence examples](../examples/valence_integration.rs)
-- Review the [ADR](./adr_00.md) for architectural details
+- Review the [architecture documentation](./architecture.md) for design details
 - Examine the [integration tests](../crates/traverse-ethereum/tests/integration.rs)
 
 ---
 
-This guide provides the foundation for integrating traverse into your valence coprocessor application. For more advanced use cases, refer to the API documentation and examples in the repository. 
+This guide provides the foundation for integrating traverse into your valence coprocessor application. For more advanced use cases, refer to the API documentation and examples in the repository.

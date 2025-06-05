@@ -26,9 +26,10 @@ tiny-keccak.workspace = true
 ethers.workspace = true
 rlp.workspace = true
 tokio.workspace = true
+reqwest = { version = "0.11", features = ["json"] }
 
 # Optional valence-domain-clients integration
-valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", rev = "2678b24d534a6e18b01ebcb2f54ca819f9587e22", features = ["ethereum"], optional = true }
+valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", branch = "main", optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

@@ -40,71 +40,80 @@ cargo run -- --help
 
 ```bash
 # Show available commands and help
-cargo run -- --help
+cargo run -p traverse-cli -- --help
 
 # Compile a contract layout (using existing test data)
-cargo run -- compile-layout crates/traverse-ethereum/tests/data/erc20_layout.json
+cargo run -p traverse-cli -- compile-layout crates/traverse-ethereum/tests/data/erc20_layout.json
 
 # Resolve a simple storage field
-cargo run -- resolve "_totalSupply" --layout crates/traverse-ethereum/tests/data/erc20_layout.json
+cargo run -p traverse-cli -- resolve "_totalSupply" --layout crates/traverse-ethereum/tests/data/erc20_layout.json
 
 # Resolve a mapping query with coprocessor JSON format
-cargo run -- resolve "_balances[0x742d35cc6ab8b23c0532c65c6b555f09f9d40894]" \
+cargo run -p traverse-cli -- resolve "_balances[0x742d35cc6ab8b23c0532c65c6b555f09f9d40894]" \
   --layout crates/traverse-ethereum/tests/data/erc20_layout.json \
   --format coprocessor-json
 
 # Resolve all possible paths from a layout
-cargo run -- resolve-all --layout crates/traverse-ethereum/tests/data/erc20_layout.json
+cargo run -p traverse-cli -- resolve-all --layout crates/traverse-ethereum/tests/data/erc20_layout.json
 
 # Process multiple queries from a file (batch operation)
 echo "_balances[0x742d35cc6ab8b23c0532c65c6b555f09f9d40894]" > queries.txt
 echo "_totalSupply" >> queries.txt
-cargo run -- batch-resolve queries.txt --layout crates/traverse-ethereum/tests/data/erc20_layout.json
+cargo run -p traverse-cli -- batch-resolve queries.txt --layout crates/traverse-ethereum/tests/data/erc20_layout.json
 
 # Generate storage proofs (mock implementation by default)
-cargo run -- generate-proof \
+cargo run -p traverse-cli -- generate-proof \
   --slot 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef \
   --rpc https://mainnet.infura.io/v3/YOUR_API_KEY \
   --contract 0xA0b86a33E6417c7eDFeb7c14eDe3e5C8b7db1234
-```
 
-#### Live Proof Generation
-
-By default, the `generate-proof` command uses a mock implementation. To enable live proof generation using [valence-domain-clients](https://github.com/timewave-computer/valence-domain-clients), build with the `client` feature:
-
-```bash
-# Build with client feature for live proof generation
-cargo build --features client
-
-# Generate real storage proofs from Ethereum
-cargo run --features client -- generate-proof \
+# Generate real storage proof with traverse-cli
+cargo run -p traverse-cli --features client -- generate-proof \
   --slot 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef \
   --rpc https://mainnet.infura.io/v3/YOUR_API_KEY \
   --contract 0xA0b86a33E6417c7eDFeb7c14eDe3e5C8b7db1234 \
   --output proof.json
+
+# Real contract ABI fetching and storage layout generation
+# Example: Valence One Way Vault storage queries
+export ETHERSCAN_API_KEY=your_etherscan_api_key
+export ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/your_infura_key
+cargo run --example valence_vault_storage
+
+# Example with client feature for live RPC calls
+cargo run --example valence_vault_storage --features client
 ```
 
-The client feature integrates with valence-domain-clients to:
-- Fetch real storage proofs via `eth_getProof` RPC calls
-- Convert proof data to `CoprocessorQueryPayload` format
-- Support retry logic and error handling for production use
+#### Examples
 
-#### Testing & Validation
+Traverse includes several examples demonstrating real-world usage:
 
 ```bash
-# Run all tests
-cargo test --all
+# Circuit Usage Example
+# Demonstrates no_std circuit patterns and pre-computed storage paths
+cargo run --features examples --example circuit_usage
 
-# Test no_std compatibility
-cargo test -p traverse-core --no-default-features
+# USDT Live Proof Example  
+# Shows complete integration with real Ethereum storage proofs
+cargo run --features examples --example usdt_live_proof
 
-# Run integration tests with realistic data
-cargo test -p traverse-ethereum --test integration
-
-# Run integration tests with verbose output
-cargo test -p traverse-ethereum --test integration -- --nocapture
+# Valence Integration Example
+# Demonstrates traverse-valence coprocessor integration
+cargo run --features examples --example valence_integration
 ```
 
-#### Credit
+The examples showcase:
+- **Circuit Usage**: No-std compatible circuit patterns for ZK applications
+- **USDT Live Proof**: Real-time storage proof processing from actual eth_getProof responses
+- **Valence Integration**: Complete three-tier integration with valence coprocessor framework
 
-Cover: Steinberg, Saul, The Labyrinth (New York: Harper & Brothers, 1960).
+The **Valence Vault Storage** example showcases:
+- Real-time ABI fetching from Etherscan API
+- Automatic storage layout generation from contract ABIs  
+- Live storage queries via Ethereum RPC calls
+- Coprocessor-compatible JSON output generation
+- Environment variable configuration for API keys
+
+#### Live Proof Generation
+
+By default, the `

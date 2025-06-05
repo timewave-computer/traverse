@@ -13,7 +13,7 @@ categories.workspace = true
 
 [features]
 default = []
-client = ["traverse-ethereum/client"]
+client = ["traverse-ethereum/client", "dep:valence-domain-clients", "dep:alloy"]
 
 [[bin]]
 name = "zkpath"
@@ -30,6 +30,10 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 hex.workspace = true
+
+# Optional valence-domain-clients integration for live proof generation
+valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", branch = "main", optional = true }
+alloy = { version = "0.9.2", features = ["provider-http"], optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true 

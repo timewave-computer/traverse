@@ -177,21 +177,23 @@ Valence coprocessor integration with no_std compatibility.
 ```rust
 // Controller helpers (anyhow compatible)
 pub mod controller {
-    pub fn create_storage_witness(json_args: &Value) -> Result<MockWitness, ValenceError>;
-    pub fn create_batch_storage_witnesses(json_args: &Value) -> Result<Vec<MockWitness>, ValenceError>;
+    pub fn create_storage_witness(json_args: &Value) -> Result<Witness, TraverseValenceError>;
+    pub fn create_batch_storage_witnesses(json_args: &Value) -> Result<Vec<Witness>, TraverseValenceError>;
 }
 
 // Circuit helpers (no_std)
 pub mod circuit {
-    pub fn verify_storage_proof(witness: &MockWitness, commitment: &[u8; 32], query: &CoprocessorStorageQuery) -> Result<Vec<u8>, ValenceError>;
-    pub fn extract_u64_value(witness: &MockWitness, commitment: &[u8; 32], query: &CoprocessorStorageQuery) -> Result<u64, ValenceError>;
-    pub fn extract_address_value(witness: &MockWitness, commitment: &[u8; 32], query: &CoprocessorStorageQuery) -> Result<[u8; 20], ValenceError>;
+    pub fn verify_storage_proof(witness: &Witness) -> Result<Vec<u8>, TraverseValenceError>;
+    pub fn extract_u64_value(witness: &Witness) -> Result<u64, TraverseValenceError>;
+    pub fn extract_address_value(witness: &Witness) -> Result<[u8; 20], TraverseValenceError>;
+    pub fn extract_multiple_u64_values(witnesses: &[Witness]) -> Result<Vec<u64>, TraverseValenceError>;
 }
 
 // Domain helpers (no_std)
 pub mod domain {
-    pub fn validate_ethereum_state_proof(proof: &StorageProof, header: &EthereumBlockHeader, account: &[u8; 20]) -> Result<ValidatedStateProof, ValenceError>;
-    pub fn process_eth_get_proof_response(json: &Value, expected_key: &[u8; 32]) -> Result<ValidatedStateProof, ValenceError>;
+    pub fn parse_state_proof_data(args: &Value) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), TraverseValenceError>;
+    pub fn parse_block_data(args: &Value) -> Result<(u64, Vec<u8>, Vec<u8>), TraverseValenceError>;
+    pub fn validate_ethereum_state_proof(storage_proof: &Value, block_header: &EthereumBlockHeader) -> Result<ValidatedStateProof, TraverseValenceError>;
 }
 ```
 
@@ -235,10 +237,10 @@ This phase runs within WASM runtimes and ZK circuits in constrained memory envir
 
 2. **Circuit** (no_std, ZK-compatible):
    ```rust
-   pub fn verify_and_extract(witnesses: &[Witness]) -> Result<Vec<u64>, CircuitError> {
+   pub fn verify_and_extract(witnesses: &[Witness]) -> Result<Vec<u64>, TraverseValenceError> {
        let mut results = Vec::new();
        for witness in witnesses {
-           let balance = circuit::extract_u64_value(witness, &LAYOUT_COMMITMENT, &query)?;
+           let balance = circuit::extract_u64_value(witness)?;
            results.push(balance);
        }
        Ok(results)
@@ -247,9 +249,14 @@ This phase runs within WASM runtimes and ZK circuits in constrained memory envir
 
 3. **Domain** (no_std, validation):
    ```rust
-   pub fn validate_state_proofs(proofs: &[StorageProof]) -> Result<bool, DomainError> {
+   pub fn validate_state_proofs(proofs: &[Value]) -> Result<bool, TraverseValenceError> {
        for proof in proofs {
-           let validated = domain::validate_ethereum_state_proof(proof, &header, &account)?;
+           let header = domain::EthereumBlockHeader {
+               number: 0,
+               state_root: [0u8; 32],
+               hash: [0u8; 32],
+           };
+           let validated = domain::validate_ethereum_state_proof(proof, &header)?;
            if !validated.is_valid { return Ok(false); }
        }
        Ok(true)
@@ -364,5 +371,5 @@ The system employs several optimization strategies for production performance. B
    let witnesses = controller::create_batch_storage_witnesses(&json_args)?;
    
    // Circuit verifies proofs and extracts values
-   let balances = circuit::extract_u64_values(&witnesses, &LAYOUT_COMMITMENT, &queries)?;
+   let balances = circuit::extract_multiple_u64_values(&witnesses)?;
    ```

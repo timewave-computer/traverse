@@ -6,15 +6,21 @@
 //! Key concepts demonstrated:
 //! - Pre-computed storage paths for deterministic circuit behavior
 //! - Layout commitments for circuit-ABI alignment verification
-//! - Working with CoprocessorQueryPayload for proof verification
+//! - Working with storage proofs for verification
 //! - No-std compatibility patterns
-
-#![no_std]
 
 extern crate alloc;
 use alloc::vec::Vec;
 
-use traverse_core::{Key, StaticKeyPath, CoprocessorQueryPayload};
+use traverse_core::{Key, StaticKeyPath};
+
+/// Storage proof payload format for circuit verification
+#[derive(Debug, Clone)]
+pub struct CircuitStorageProof {
+    pub key: [u8; 32],
+    pub value: [u8; 32],
+    pub proof: Vec<Vec<u8>>, // Merkle proof nodes
+}
 
 /// Example circuit function for verifying ERC20 balance from storage proof
 ///
@@ -25,7 +31,7 @@ use traverse_core::{Key, StaticKeyPath, CoprocessorQueryPayload};
 /// 4. Perform business logic on the extracted value
 pub fn verify_erc20_balance(
     path: &StaticKeyPath,
-    payload: &CoprocessorQueryPayload,
+    payload: &CircuitStorageProof,
     expected_commitment: &[u8; 32],
     _expected_address: &[u8; 20],
     min_balance: u64,
@@ -58,7 +64,7 @@ pub fn verify_erc20_balance(
 /// Demonstrates how to work with nested mappings like allowances[owner][spender]
 pub fn verify_erc20_allowance(
     path: &StaticKeyPath,
-    payload: &CoprocessorQueryPayload,
+    payload: &CircuitStorageProof,
     expected_commitment: &[u8; 32],
     _owner: &[u8; 20],
     _spender: &[u8; 20],
@@ -109,7 +115,7 @@ pub mod precomputed_paths {
     ];
     
     // Example pre-computed path for balances[0x742d35Cc...]
-    // In reality, this would be computed by: zkpath resolve "balances[0x742d35...]" --layout contract.json
+    // In reality, this would be computed by: cargo run -- resolve "balances[0x742d35...]" --layout contract.json
     pub const BALANCE_PATH_742D35: StaticKeyPath = StaticKeyPath {
         name: "balances[0x742d35Cc6634C0532925a3b8D97C2e0D8b2D9C]",
         key: Key::Fixed([
@@ -133,7 +139,7 @@ pub mod precomputed_paths {
 /// 3. Circuit verifies proofs and performs computation
 pub fn example_circuit_main() -> Result<bool, &'static str> {
     // Example runtime data (would come from the prover)
-    let proof_payload = CoprocessorQueryPayload {
+    let proof_payload = CircuitStorageProof {
         key: key_to_bytes(precomputed_paths::BALANCE_PATH_742D35.key.clone()),
         value: [
             // Example: 1000 tokens (1000 * 10^18 wei)
@@ -146,9 +152,9 @@ pub fn example_circuit_main() -> Result<bool, &'static str> {
     };
     
     let expected_address = [
-        0x74, 0x2d, 0x35, 0xCc, 0x66, 0x34, 0xC0, 0x53,
-        0x29, 0x25, 0xa3, 0xb8, 0xD9, 0x7C, 0x2e, 0x0D,
-        0x8b, 0x2D, 0x9C, 0x00
+        0x74, 0x2d, 0x35, 0xcc, 0x66, 0x34, 0xc0, 0x53,
+        0x29, 0x25, 0xa3, 0xb8, 0xd9, 0x7c, 0x2e, 0x0d,
+        0x8b, 0x2d, 0x9c, 0x00
     ];
     
     // Verify the balance is at least 500 tokens
@@ -176,10 +182,9 @@ fn key_to_bytes(key: Key) -> [u8; 32] {
 
 /// Integration patterns for different ZK proving systems
 pub mod integration_patterns {
-    //! Examples of how to integrate traverse with different ZK systems
-    
+    /// Examples of how to integrate traverse with different ZK systems
     /// Pattern for Succinct's RISC-V based system
-    /// 
+    ///
     /// Key principles:
     /// - All storage paths are compile-time constants
     /// - Layout commitments ensure reproducible builds
@@ -194,48 +199,37 @@ pub mod integration_patterns {
             layout_commitment: &'static [u8; 32],
             
             // Runtime witness data
-            proof_data: &CoprocessorQueryPayload,
+            proof_data: &CircuitStorageProof,
         ) -> bool {
             // Verify layout alignment
             if &path.layout_commitment != layout_commitment {
                 return false;
             }
             
-            // Verify storage key matches
+            // Verify storage key matches computed path
             let expected_key = match &path.key {
                 Key::Fixed(key) => *key,
-                Key::Variable(_) => return false, // Not supported in this example
+                Key::Variable(_) => return false, // Variable keys require runtime computation
             };
             
             if proof_data.key != expected_key {
                 return false;
             }
             
-            // Additional proof verification would go here
-            // (Merkle path verification, etc.)
-            
+            // Example verification logic
+            // In practice, this would include Merkle proof verification
             true
         }
     }
     
-    /// Best practices for circuit development
+    /// Testing and validation patterns for circuit development
     pub mod best_practices {
-        //! Recommendations for using traverse in production circuits
-        
-        /// Testing utilities and best practices
-        pub struct TestingGuidelines;
-        
-        impl TestingGuidelines {
-            /// Provides testing recommendations for circuit development
-            /// 
-            /// Covers:
-            /// 1. Always use pre-computed paths
-            /// 2. Validate all inputs  
-            /// 3. Optimize for circuit constraints
-            /// 4. Test thoroughly
-            pub fn get_testing_recommendations() -> &'static str {
-                "Follow the documented testing patterns for reliable circuit development"
-            }
+        /// Generate test vectors for circuit validation
+        pub fn get_testing_recommendations() -> &'static str {
+            "1. Use deterministic test data for reproducible circuit behavior\n\
+             2. Verify layout commitments match between compile-time and runtime\n\
+             3. Test edge cases like empty proofs and invalid keys\n\
+             4. Validate field extraction for packed storage layouts"
         }
     }
 }
@@ -243,7 +237,7 @@ pub mod integration_patterns {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_example_circuit() {
         let result = example_circuit_main();
@@ -252,8 +246,29 @@ mod tests {
     }
 }
 
-// Main function for the example
 fn main() {
-    // This example is designed for no_std environments
-    // In practice, this would be compiled for RISC-V circuits
+    println!("Circuit Usage Example");
+    println!("====================");
+    
+    match example_circuit_main() {
+        Ok(verified) => {
+            if verified {
+                println!("✓ Circuit verification passed");
+                println!("✓ Balance requirement satisfied");
+            } else {
+                println!("✗ Circuit verification failed");
+                println!("✗ Balance requirement not met");
+            }
+        }
+        Err(e) => {
+            println!("✗ Circuit error: {}", e);
+        }
+    }
+    
+    println!("\nThis example demonstrates no_std circuit patterns for traverse.");
+    println!("Key concepts shown:");
+    println!("- Pre-computed storage paths as compile-time constants");
+    println!("- Layout commitment verification");
+    println!("- Storage key validation");
+    println!("- Value extraction and business logic");
 } 
