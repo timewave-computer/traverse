@@ -157,7 +157,7 @@ async fn fetch_storage_data(_rpc_url: &str, _contract_addr: &str, _storage_key: 
 /// Valence Vault Controller - Queries storage and creates witnesses from storage proofs
 /// 
 /// This function follows the valence-coprocessor-app controller pattern:
-/// it takes layout and RPC info, queries storage, and returns witness count and coprocessor data
+/// it takes layout and RPC info, queries storage, creates witnesses, and handles all business logic
 async fn valence_vault_controller_get_witnesses(layout: &LayoutInfo, rpc_url: &str) -> Result<(usize, Value, [u8; 32]), Box<dyn std::error::Error>> {
     let resolver = EthereumKeyResolver;
     let query = "_withdrawRequests";
@@ -180,13 +180,50 @@ async fn valence_vault_controller_get_witnesses(layout: &LayoutInfo, rpc_url: &s
                  (proof_nodes[0].len() - 2) / 2); // -2 for 0x prefix, /2 for hex->bytes
     }
     
-    // Decode withdraw requests as uint64
+    // Decode withdraw requests as uint64 - BUSINESS LOGIC HAPPENS HERE
     let mut withdraw_requests_count = 0u64;
     if let Ok(value_bytes) = hex::decode(storage_value.strip_prefix("0x").unwrap_or(&storage_value)) {
         if value_bytes.len() >= 8 {
             withdraw_requests_count = u64::from_be_bytes(value_bytes[24..32].try_into().unwrap_or([0u8; 8]));
         }
     }
+    
+    // Controller handles all business logic
+    let has_pending_requests = withdraw_requests_count > 0;
+    
+    println!("Controller: Extracted and validated storage data:");
+    println!("   • Withdraw requests count: {}", withdraw_requests_count);
+    println!("   • Has pending requests: {}", has_pending_requests);
+    
+    // Controller creates the final authorization message with business logic
+    let authorization_message = json!({
+        "msg_type": "vault_withdraw_authorization",
+        "vault_address": VALENCE_VAULT_ADDRESS,
+        "withdraw_requests_count": withdraw_requests_count,
+        "has_pending_requests": has_pending_requests,
+        "authorization": {
+            "authorized": true, // Controller decides authorization based on business logic
+            "reason": if has_pending_requests {
+                format!("Vault has {} pending withdraw requests", withdraw_requests_count)
+            } else {
+                "No pending withdraw requests in vault".to_string()
+            },
+            "verified_proofs": false, // Will be set to true by circuit after verification
+            "block_verified": false,  // Will be set to true by domain after validation
+            "proof_type": "ethereum_storage_proof"
+        },
+        "coprocessor_metadata": {
+            "circuit_name": "valence_vault_storage",
+            "proof_type": "ethereum_storage",
+            "verification_timestamp": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            "contract_address": VALENCE_VAULT_ADDRESS,
+            "storage_slot": "7", // withdrawRequests slot
+            "chain_id": 1, // Ethereum mainnet
+        }
+    });
     
     // Generate coprocessor-compatible JSON output with storage proof data
     let coprocessor_json = json!({
@@ -201,7 +238,7 @@ async fn valence_vault_controller_get_witnesses(layout: &LayoutInfo, rpc_url: &s
         }
     });
     
-    // Create full coprocessor integration data
+    // Create full coprocessor integration data with authorization message
     let coprocessor_data = json!({
         "contract_address": VALENCE_VAULT_ADDRESS,
         "chain": "ethereum",
@@ -209,9 +246,11 @@ async fn valence_vault_controller_get_witnesses(layout: &LayoutInfo, rpc_url: &s
         "vault_storage": {
             "withdrawRequests_query": coprocessor_json,
             "decoded_values": {
-                "withdraw_requests_count": withdraw_requests_count
+                "withdraw_requests_count": withdraw_requests_count,
+                "has_pending_requests": has_pending_requests
             }
-        }
+        },
+        "authorization_message": authorization_message
     });
     
     // Convert the vault storage data to the expected batch format for witness creation using proof
@@ -239,10 +278,11 @@ async fn valence_vault_controller_get_witnesses(layout: &LayoutInfo, rpc_url: &s
 // COPROCESSOR PIPELINE - STEP 2: CIRCUIT
 // ============================================================================
 
-/// Valence Vault Circuit - Verifies storage proofs and creates CosmWasm authorization message
+/// Valence Vault Circuit - Minimal cryptographic verification only
 /// 
 /// This function follows the valence-coprocessor-app circuit pattern:
-/// takes coprocessor data with Ethereum storage proofs and returns properly formatted CosmWasm message as Vec<u8>
+/// takes coprocessor data with Ethereum storage proofs and verifies them cryptographically
+/// Returns the authorization message with verification flags updated
 fn valence_vault_circuit_verify_proofs(coprocessor_data: &Value) -> Result<Vec<u8>, TraverseValenceError> {
     // Convert coprocessor_data to the batch format expected by circuit internally
     let batch_format = json!({
@@ -258,58 +298,27 @@ fn valence_vault_circuit_verify_proofs(coprocessor_data: &Value) -> Result<Vec<u
         ]
     });
     
-    println!("Circuit: Processing Ethereum storage proof for verification");
+    println!("Circuit: Verifying cryptographic proofs (minimal verification only)");
     
-    // Create witnesses internally and extract values
+    // ONLY do cryptographic verification - no business logic
     let witnesses = controller::create_storage_witnesses(&batch_format)?;
     
     if witnesses.is_empty() {
-        return Err(TraverseValenceError::InvalidWitness("No witnesses provided".to_string()));
+        return Err(TraverseValenceError::InvalidWitness("No witnesses provided for verification".to_string()));
     }
     
-    // Extract the withdraw requests count from the witness
-    let withdraw_requests_values = circuit::extract_multiple_u64_values(&witnesses)?;
+    // Verify that the witnesses are cryptographically valid
+    let _values = circuit::extract_multiple_u64_values(&witnesses)?;
     
-    if withdraw_requests_values.is_empty() {
-        return Err(TraverseValenceError::InvalidWitness("No values extracted from witnesses".to_string()));
-    }
+    println!("Circuit: Cryptographic verification successful");
     
-    let withdraw_requests_count = withdraw_requests_values[0]; // Extract count from first witness
+    // Get the authorization message created by the controller and update verification flags
+    let mut authorization_message = coprocessor_data["authorization_message"].clone();
     
-    // Example business logic: Check if vault has any pending withdraw requests
-    let has_pending_requests = withdraw_requests_count > 0;
+    // Circuit only updates the verification flags - no business logic
+    authorization_message["authorization"]["verified_proofs"] = json!(true);
     
-    println!("Circuit: Verified storage proof - extracted value: {}", withdraw_requests_count);
-    
-    // Create CosmWasm authorization message following valence-coprocessor-app pattern
-    let authorization_message = json!({
-        "msg_type": "vault_withdraw_authorization",
-        "vault_address": VALENCE_VAULT_ADDRESS,
-        "withdraw_requests_count": withdraw_requests_count,
-        "has_pending_requests": has_pending_requests,
-        "authorization": {
-            "authorized": true, // Based on circuit verification of proof
-            "reason": if has_pending_requests {
-                format!("Vault has {} pending withdraw requests", withdraw_requests_count)
-            } else {
-                "No pending withdraw requests in vault".to_string()
-            },
-            "verified_proofs": true,
-            "block_verified": true,
-            "proof_type": "ethereum_storage_proof"
-        },
-        "coprocessor_metadata": {
-            "circuit_name": "valence_vault_storage",
-            "proof_type": "ethereum_storage",
-            "verification_timestamp": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            "contract_address": VALENCE_VAULT_ADDRESS,
-            "storage_slot": "7", // withdrawRequests slot
-            "chain_id": 1, // Ethereum mainnet
-        }
-    });
+    println!("Circuit: Updated verification flags in authorization message");
     
     // Serialize the authorization message as JSON bytes for CosmWasm processor
     let message_bytes = serde_json::to_vec(&authorization_message)
@@ -344,18 +353,16 @@ fn valence_vault_domain_validate_state(args: &Value) -> Result<bool, TraverseVal
                 
                 let validated = domain::validate_ethereum_state_proof(&formatted_proof, &block_header)?;
                 
-                // Additional vault-specific validations
+                // Domain only validates state - no business logic
                 if validated.is_valid {
-                    // Could add more vault-specific domain logic here:
-                    // - Verify vault is not paused
-                    // - Check vault asset balance constraints
-                    // - Validate withdraw request limits
+                    println!("Domain: Ethereum state validation successful");
                     return Ok(true);
                 }
             }
         }
     }
     
+    println!("Domain: Ethereum state validation failed");
     Ok(false) // Vault state validation failed
 }
 
@@ -512,12 +519,12 @@ async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
     
     let withdraw_requests_count = cosmwasm_message["withdraw_requests_count"].as_u64().unwrap_or(0);
     let has_pending_requests = cosmwasm_message["has_pending_requests"].as_bool().unwrap_or(false);
+    let verified_proofs = cosmwasm_message["authorization"]["verified_proofs"].as_bool().unwrap_or(false);
     
-    println!("Circuit: Verified storage proofs and created CosmWasm authorization message");
-    println!("   • Withdraw requests count: {}", withdraw_requests_count);
-    println!("   • Has pending requests: {}", has_pending_requests);
+    println!("Circuit: Completed cryptographic verification (minimal circuit)");
+    println!("   • Verified proofs: {}", verified_proofs);
     println!("   • Message size: {} bytes", cosmwasm_message_bytes.len());
-    println!("   • Proof type: Ethereum storage proof");
+    println!("   • Business logic handled by controller");
     
     // Step 3: Domain Phase - Validate vault state
     println!();
@@ -525,7 +532,13 @@ async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
     println!("---------------");
     let state_valid = valence_vault_domain_validate_state(&coprocessor_data)
         .map_err(|e| format!("Domain error: {}", e))?;
-    println!("Domain: Vault state validation: {}", if state_valid { "VALID" } else { "INVALID" });
+    
+    // Update the authorization message with domain validation result
+    let mut final_message = cosmwasm_message.clone();
+    final_message["authorization"]["block_verified"] = json!(state_valid);
+    let final_message_bytes = serde_json::to_vec(&final_message)?;
+    
+    println!("Domain: State validation: {}", if state_valid { "VALID" } else { "INVALID" });
     
     // ========================================================================
     // INTEGRATION SUMMARY AND COSMWASM MESSAGE DISPLAY
@@ -549,7 +562,7 @@ async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
     println!("==================================");
     println!("Formatted message for CosmWasm processor submission:");
     println!();
-    println!("{}", serde_json::to_string_pretty(&cosmwasm_message)?);
+    println!("{}", serde_json::to_string_pretty(&final_message)?);
     println!();
     
     // ========================================================================
@@ -629,7 +642,7 @@ async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
         println!("Coprocessor endpoint: {}", coprocessor_url);
         println!("Controller ID: {}", controller_id);
         
-        match submit_to_coprocessor_for_proving(&cosmwasm_message_bytes, &coprocessor_url, &controller_id).await {
+        match submit_to_coprocessor_for_proving(&final_message_bytes, &coprocessor_url, &controller_id).await {
             Ok((sp1_proof, zk_message_bytes)) => {
                 println!("SUCCESS: SP1 proof generated by coprocessor");
                 println!("   • Coprocessor endpoint: {}", coprocessor_url);
