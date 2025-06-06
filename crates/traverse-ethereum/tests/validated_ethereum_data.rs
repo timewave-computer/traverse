@@ -283,6 +283,121 @@ fn create_uniswap_v2_layout() -> LayoutInfo {
     }
 }
 
+// Helper functions for simulating string storage and reading
+
+/// Simulate how a short string (≤31 bytes) is stored in Ethereum
+fn simulate_short_string_storage(s: &str) -> Vec<[u8; 32]> {
+    let mut slot = [0u8; 32];
+    let bytes = s.as_bytes();
+    assert!(bytes.len() <= 31, "String too long for short storage");
+    
+    // Copy string data to beginning of slot
+    slot[..bytes.len()].copy_from_slice(bytes);
+    // Set length in last byte (length * 2 for short strings)
+    slot[31] = (bytes.len() * 2) as u8;
+    
+    vec![slot]
+}
+
+/// Simulate how a long string (>31 bytes) is stored in Ethereum
+fn simulate_long_string_storage(s: &str) -> Vec<[u8; 32]> {
+    let bytes = s.as_bytes();
+    let length = bytes.len();
+    
+    if length <= 31 {
+        return simulate_short_string_storage(s);
+    }
+    
+    let mut slots = Vec::new();
+    
+    // First slot contains (length * 2 + 1)
+    let mut length_slot = [0u8; 32];
+    let length_encoding = (length * 2 + 1) as u64;
+    length_slot[24..32].copy_from_slice(&length_encoding.to_be_bytes());
+    slots.push(length_slot);
+    
+    // Data slots start from keccak256(base_slot)
+    // For simulation, we'll just use sequential slots
+    let chunks = bytes.chunks(32);
+    for chunk in chunks {
+        let mut data_slot = [0u8; 32];
+        data_slot[..chunk.len()].copy_from_slice(chunk);
+        slots.push(data_slot);
+    }
+    
+    slots
+}
+
+/// Read a string from simulated storage slots
+fn read_string_from_storage(_base_slot: [u8; 32], storage_slots: Vec<[u8; 32]>) -> String {
+    if storage_slots.is_empty() {
+        return String::new();
+    }
+    
+    let length_slot = storage_slots[0];
+    
+    // Check if it's a short string (last byte is even and ≤ 62)
+    let last_byte = length_slot[31];
+    if last_byte % 2 == 0 && last_byte <= 62 {
+        // Short string: length = last_byte / 2
+        let length = (last_byte / 2) as usize;
+        return String::from_utf8(length_slot[..length].to_vec()).unwrap_or_default();
+    }
+    
+    // Long string: extract length from the slot
+    let length_bytes = &length_slot[24..32];
+    let length_encoding = u64::from_be_bytes(length_bytes.try_into().unwrap());
+    let length = ((length_encoding - 1) / 2) as usize;
+    
+    // Read data from subsequent slots
+    let mut data = Vec::new();
+    let slots_needed = calculate_slots_needed(length);
+    
+    for i in 1..=slots_needed {
+        if i < storage_slots.len() {
+            let slot = storage_slots[i];
+            let bytes_to_take = std::cmp::min(32, length - data.len());
+            data.extend_from_slice(&slot[..bytes_to_take]);
+        }
+        
+        if data.len() >= length {
+            break;
+        }
+    }
+    
+    // Truncate to exact length and convert to string
+    data.truncate(length);
+    String::from_utf8(data).unwrap_or_default()
+}
+
+/// Calculate how many 32-byte slots are needed for a string of given length
+fn calculate_slots_needed(length: usize) -> usize {
+    if length <= 31 {
+        1 // Short string fits in base slot
+    } else {
+        1 + length.div_ceil(32) // Length slot + data slots
+    }
+}
+
+/// Calculate the storage key for a data slot in a long string
+/// In real implementation, this would be keccak256(base_slot) + slot_offset
+#[allow(dead_code)]
+fn calculate_string_data_slot_key(base_slot: [u8; 32], slot_offset: usize) -> [u8; 32] {
+    // For this test simulation, we'll create a deterministic key
+    // In real implementation, this would be keccak256(base_slot) + slot_offset
+    let mut result = base_slot;
+    
+    // Simple deterministic transformation for testing
+    let offset_bytes = (slot_offset as u64).to_be_bytes();
+    
+    // XOR with offset for simulation (real implementation would use proper keccak + addition)
+    for i in 0..8 {
+        result[31 - i] ^= offset_bytes[7 - i];
+    }
+    
+    result
+}
+
 #[cfg(test)]
 mod validated_ethereum_tests {
     use super::*;
@@ -782,119 +897,4 @@ mod validated_ethereum_tests {
         
         println!("Multi-slot string reading test completed - all lengths handled correctly");
     }
-} 
-
-// Helper functions for simulating string storage and reading
-
-/// Simulate how a short string (≤31 bytes) is stored in Ethereum
-fn simulate_short_string_storage(s: &str) -> Vec<[u8; 32]> {
-    let mut slot = [0u8; 32];
-    let bytes = s.as_bytes();
-    assert!(bytes.len() <= 31, "String too long for short storage");
-    
-    // Copy string data to beginning of slot
-    slot[..bytes.len()].copy_from_slice(bytes);
-    // Set length in last byte (length * 2 for short strings)
-    slot[31] = (bytes.len() * 2) as u8;
-    
-    vec![slot]
-}
-
-/// Simulate how a long string (>31 bytes) is stored in Ethereum
-fn simulate_long_string_storage(s: &str) -> Vec<[u8; 32]> {
-    let bytes = s.as_bytes();
-    let length = bytes.len();
-    
-    if length <= 31 {
-        return simulate_short_string_storage(s);
-    }
-    
-    let mut slots = Vec::new();
-    
-    // First slot contains (length * 2 + 1)
-    let mut length_slot = [0u8; 32];
-    let length_encoding = (length * 2 + 1) as u64;
-    length_slot[24..32].copy_from_slice(&length_encoding.to_be_bytes());
-    slots.push(length_slot);
-    
-    // Data slots start from keccak256(base_slot)
-    // For simulation, we'll just use sequential slots
-    let chunks = bytes.chunks(32);
-    for chunk in chunks {
-        let mut data_slot = [0u8; 32];
-        data_slot[..chunk.len()].copy_from_slice(chunk);
-        slots.push(data_slot);
-    }
-    
-    slots
-}
-
-/// Read a string from simulated storage slots
-fn read_string_from_storage(_base_slot: [u8; 32], storage_slots: Vec<[u8; 32]>) -> String {
-    if storage_slots.is_empty() {
-        return String::new();
-    }
-    
-    let length_slot = storage_slots[0];
-    
-    // Check if it's a short string (last byte is even and ≤ 62)
-    let last_byte = length_slot[31];
-    if last_byte % 2 == 0 && last_byte <= 62 {
-        // Short string: length = last_byte / 2
-        let length = (last_byte / 2) as usize;
-        return String::from_utf8(length_slot[..length].to_vec()).unwrap_or_default();
-    }
-    
-    // Long string: extract length from the slot
-    let length_bytes = &length_slot[24..32];
-    let length_encoding = u64::from_be_bytes(length_bytes.try_into().unwrap());
-    let length = ((length_encoding - 1) / 2) as usize;
-    
-    // Read data from subsequent slots
-    let mut data = Vec::new();
-    let slots_needed = calculate_slots_needed(length);
-    
-    for i in 1..=slots_needed {
-        if i < storage_slots.len() {
-            let slot = storage_slots[i];
-            let bytes_to_take = std::cmp::min(32, length - data.len());
-            data.extend_from_slice(&slot[..bytes_to_take]);
-        }
-        
-        if data.len() >= length {
-            break;
-        }
-    }
-    
-    // Truncate to exact length and convert to string
-    data.truncate(length);
-    String::from_utf8(data).unwrap_or_default()
-}
-
-/// Calculate how many 32-byte slots are needed for a string of given length
-fn calculate_slots_needed(length: usize) -> usize {
-    if length <= 31 {
-        1 // Short string fits in base slot
-    } else {
-        1 + ((length + 31) / 32) // Length slot + data slots
-    }
-}
-
-/// Calculate the storage key for a data slot in a long string
-/// In real implementation, this would be keccak256(base_slot) + slot_offset
-#[allow(dead_code)]
-fn calculate_string_data_slot_key(base_slot: [u8; 32], slot_offset: usize) -> [u8; 32] {
-    // For this test simulation, we'll create a deterministic key
-    // In real implementation, this would be keccak256(base_slot) + slot_offset
-    let mut result = base_slot;
-    
-    // Simple deterministic transformation for testing
-    let offset_bytes = (slot_offset as u64).to_be_bytes();
-    
-    // XOR with offset for simulation (real implementation would use proper keccak + addition)
-    for i in 0..8 {
-        result[31 - i] ^= offset_bytes[7 - i];
-    }
-    
-    result
 } 

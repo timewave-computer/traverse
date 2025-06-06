@@ -417,7 +417,7 @@ sequenceDiagram
     Note over Circuit,Coproc: Can return JSON validation, typed values, or ABI-encoded Valence messages
 ```
 
-## Security Architecture
+## Traverse Phases
 
 The layout commitment system provides deterministic behavior where the same layout always produces the same commitment, while any layout change produces a different commitment for tamper detection. Commitments can be verified directly in ZK circuits and are cryptographically secure through SHA256-based collision resistance.
 
@@ -613,40 +613,3 @@ pub fn verify_storage_proof(
 ### Optimization Strategies
 
 The system employs several optimization strategies for production performance. Batch operations process multiple queries together for efficiency, while proof compression minimizes proof node storage overhead. Layout caching pre-computes layout commitments to avoid repeated calculations, and field-specific extraction functions provide optimized access patterns for common data types.
-
-## Deployment Phases
-
-1. **Development**:
-   ```bash
-   # Generate storage keys during development
-   traverse-cli compile-layout contracts/Token.abi.json > layouts/token.json
-   traverse-cli resolve-all --layout layouts/token.json --format coprocessor-json > keys/token_keys.json
-   ```
-
-2. **Integration**:
-   ```rust
-   // Add traverse-valence to coprocessor app
-   [dependencies]
-   traverse-valence = { version = "0.1.0", default-features = false }
-   ```
-
-3. **Runtime**:
-   ```rust
-   // Standard Valence entry points for storage proof verification
-   pub fn get_witnesses(args: Value) -> anyhow::Result<Vec<Witness>> {
-       controller::create_storage_witnesses(&args)
-   }
-   
-   pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
-       circuit::verify_storage_proofs_and_extract(witnesses)
-   }
-   
-   // Custom extraction for specific use cases
-   let balances = circuit::extract_multiple_u64_values(&witnesses)?;
-   let addresses = circuit::extract_multiple_address_values(&witnesses)?;
-   
-   // Generate Valence-compatible ABI-encoded messages
-   #[cfg(feature = "alloy")]
-   let zk_message = messages::create_storage_validation_message(validation_result, 1);
-   let abi_encoded = messages::abi_encoding::encode_zk_message(&zk_message)?;
-   ```
