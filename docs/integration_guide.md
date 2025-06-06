@@ -4,7 +4,7 @@ This guide walks you through integrating the traverse library into your valence 
 
 ## Architecture Overview
 
-Traverse provides a clean separation between storage key generation (setup phase) and proof verification (execution phase), with full Valence ecosystem integration:
+Traverse provides a clean separation between storage key generation (setup phase) and proof verification (execution phase), with full Valence ecosystem integration and proper separation of concerns:
 
 ### Setup Phase (External, std-compatible)
 - Generate storage keys using traverse CLI tools
@@ -12,14 +12,17 @@ Traverse provides a clean separation between storage key generation (setup phase
 - 3rd party clients fetch storage proofs via eth_getProof
 
 ### Execution Phase (Coprocessor, no_std)
-- **Controller**: Parse JSON arguments and create witnesses using standard Valence patterns
-- **Circuit**: Verify storage proofs and extract field values or generate ABI-encoded messages
-- **Domain**: Validate Ethereum state proofs and block headers
+- **Controller**: Parse JSON arguments, handle ALL business logic, create witnesses, make authorization decisions
+- **Circuit**: MINIMAL - only verify storage proofs cryptographically, update verification flags
+- **Domain**: MINIMAL - only validate Ethereum state proofs and block headers
+- **Coprocessor**: Submit to valence-coprocessor service for SP1 proof generation
+- **Neutron**: Submit final ZkMessage to blockchain for execution
 
 ### Valence Ecosystem Integration
 - **Message Types**: Complete Valence message structures (ZkMessage, SendMsgs, ProcessorMessage, etc.)
 - **ABI Encoding**: Alloy-based ABI encoding for Valence Authorization contracts
 - **Standard Entry Points**: Matches valence-coprocessor-app patterns exactly
+- **SP1 Proving**: Full integration with coprocessor service for cryptographic proof generation
 
 ## Step-by-Step Integration
 
@@ -37,6 +40,7 @@ Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 traverse-valence = { git = "https://github.com/timewave-computer/traverse", features = ["alloc"] }
+reqwest = { version = "0.12", features = ["json"], optional = true }
 
 # For ABI encoding (optional)
 [dependencies.traverse-valence-alloy]
@@ -51,108 +55,251 @@ package = "traverse-valence"
 git = "https://github.com/timewave-computer/traverse"
 features = ["std"]
 optional = true
+
+[features]
+client = ["dep:reqwest"]
 ```
 
-### 3. Implement Standard Valence Controller
+### 3. Implement Controller with Business Logic
 
-Update your `controller/src/lib.rs` to use the standard Valence pattern:
+The controller should handle ALL business logic, authorization decisions, and witness creation:
 
 ```rust
 use traverse_valence::controller;
-use serde_json::Value;
+use serde_json::{json, Value};
 use valence_coprocessor::Witness;
 
-/// Standard Valence controller entry point - matches valence-coprocessor-app pattern
-pub fn get_witnesses(args: Value) -> anyhow::Result<Vec<Witness>> {
-    controller::create_storage_witnesses(&args)
-        .map_err(|e| anyhow::anyhow!("Failed to create storage witnesses: {}", e))
+/// Controller handles ALL business logic and authorization decisions
+pub async fn vault_controller_get_witnesses(
+    layout: &LayoutInfo, 
+    rpc_url: &str
+) -> Result<(usize, Value, [u8; 32]), Box<dyn std::error::Error>> {
+    // Fetch storage data from Ethereum
+    let (storage_value, proof_nodes) = fetch_storage_data(rpc_url, contract_addr, storage_key).await?;
+    
+    // BUSINESS LOGIC: Extract and validate values
+    let withdraw_requests_count = decode_uint64_from_storage(&storage_value)?;
+    let has_pending_requests = withdraw_requests_count > 0;
+    
+    // BUSINESS LOGIC: Make authorization decisions
+    let authorized = if has_pending_requests {
+        // Your business rules here
+        withdraw_requests_count <= MAX_ALLOWED_REQUESTS
+    } else {
+        true // No pending requests = authorized
+    };
+    
+    println!("Controller: Business logic decisions:");
+    println!("   • Withdraw requests: {}", withdraw_requests_count);
+    println!("   • Has pending: {}", has_pending_requests);
+    println!("   • Authorized: {}", authorized);
+    
+    // Controller creates the FINAL authorization message
+    let authorization_message = json!({
+        "msg_type": "vault_withdraw_authorization",
+        "vault_address": contract_addr,
+        "withdraw_requests_count": withdraw_requests_count,
+        "has_pending_requests": has_pending_requests,
+        "authorization": {
+            "authorized": authorized, // Controller makes business decision
+            "reason": if authorized {
+                format!("Authorized: {} pending requests within limits", withdraw_requests_count)
+            } else {
+                format!("Denied: {} pending requests exceeds limit", withdraw_requests_count)
+            },
+            "verified_proofs": false, // Will be set by circuit
+            "block_verified": false,  // Will be set by domain
+            "proof_type": "ethereum_storage_proof"
+        },
+        "coprocessor_metadata": {
+            "circuit_name": "vault_storage_verifier",
+            "contract_address": contract_addr,
+            "storage_slot": storage_slot,
+            "chain_id": 1
+        }
+    });
+    
+    // Create coprocessor data with authorization message
+    let coprocessor_data = json!({
+        "contract_address": contract_addr,
+        "vault_storage": {
+            "storage_query": {
+                "storage_key": hex::encode(storage_key),
+                "storage_value": storage_value,
+                "proof": proof_nodes
+            }
+        },
+        "authorization_message": authorization_message
+    });
+    
+    // Create witnesses for circuit verification
+    let witnesses = controller::create_storage_witnesses(&storage_batch)?;
+    
+    Ok((witnesses.len(), coprocessor_data, storage_key))
 }
 ```
 
-### 4. Implement Standard Valence Circuit
+### 4. Implement Minimal Circuit (Cryptographic Verification Only)
 
-Update your `circuit/src/lib.rs` to use the standard Valence pattern:
+The circuit should be MINIMAL and only handle cryptographic verification:
 
 ```rust
 use traverse_valence::circuit;
 use valence_coprocessor::Witness;
 
-/// Standard Valence circuit entry point - matches valence-coprocessor-app pattern
+/// MINIMAL circuit - only cryptographic verification, NO business logic
+pub fn vault_circuit_verify_proofs(coprocessor_data: &Value) -> Result<Vec<u8>, TraverseValenceError> {
+    println!("Circuit: Starting minimal cryptographic verification");
+    
+    // ONLY verify storage proofs cryptographically
+    let witnesses = controller::create_storage_witnesses(&storage_batch)?;
+    
+    if witnesses.is_empty() {
+        return Err(TraverseValenceError::InvalidWitness("No witnesses for verification".to_string()));
+    }
+    
+    // ONLY cryptographic verification - extract values to prove they're valid
+    let _verified_values = circuit::extract_multiple_u64_values(&witnesses)?;
+    
+    println!("Circuit: Cryptographic verification successful");
+    
+    // Get authorization message from controller and ONLY update verification flags
+    let mut authorization_message = coprocessor_data["authorization_message"].clone();
+    authorization_message["authorization"]["verified_proofs"] = json!(true);
+    
+    println!("Circuit: Updated verification flags (no business logic)");
+    
+    // Return the message with cryptographic verification completed
+    Ok(serde_json::to_vec(&authorization_message)?)
+}
+
+/// Standard Valence circuit entry point
 pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
+    // For simple cases, just verify and return success
     circuit::verify_storage_proofs_and_extract(witnesses)
-}
-
-/// Custom application logic for specific value extraction
-pub fn verify_storage_proofs_custom(
-    witnesses: &[Witness],
-) -> Result<Vec<u64>, traverse_valence::TraverseValenceError> {
-    circuit::extract_multiple_u64_values(witnesses)
-}
-
-/// Extract address values from storage proofs
-pub fn extract_addresses(
-    witnesses: &[Witness],
-) -> Result<Vec<[u8; 20]>, traverse_valence::TraverseValenceError> {
-    circuit::extract_multiple_address_values(witnesses)
-}
-
-/// Generate Valence-compatible ABI-encoded message (requires alloy feature)
-#[cfg(feature = "alloy")]
-pub fn create_valence_message(
-    witnesses: &[Witness],
-    execution_id: u64,
-) -> Result<Vec<u8>, traverse_valence::TraverseValenceError> {
-    use traverse_valence::messages::{create_storage_validation_message, abi_encoding};
-    
-    // Verify all proofs and get results
-    let results = circuit::verify_storage_proofs_internal(witnesses)?;
-    
-    // Create validation summary
-    let summary_result = traverse_valence::messages::StorageProofValidationResult {
-        is_valid: results.iter().all(|r| r.is_valid),
-        storage_value: "batch_verification".into(),
-        storage_key: "multiple_keys".into(),
-        layout_commitment: "verified".into(),
-        metadata: Some(format!("verified_{}_proofs", results.len())),
-    };
-    
-    // Generate Valence message
-    let zk_message = create_storage_validation_message(summary_result, execution_id);
-    abi_encoding::encode_zk_message(&zk_message)
 }
 ```
 
-### 5. Implement Domain Integration
+### 5. Implement Minimal Domain (State Validation Only)
 
-Update your `domain/src/lib.rs`:
+The domain should only validate Ethereum state, not business logic:
 
 ```rust
 use traverse_valence::domain;
 
-/// Validate Ethereum state proofs for your application
-pub fn validate_storage_proofs(
-    storage_proofs: &[serde_json::Value],
-    block_number: u64,
-    expected_state_root: &[u8; 32],
-) -> Result<Vec<domain::ValidatedStateProof>, traverse_valence::TraverseValenceError> {
-    let mut validated_proofs = Vec::new();
+/// MINIMAL domain - only Ethereum state validation, NO business logic
+pub fn vault_domain_validate_state(args: &Value) -> Result<bool, TraverseValenceError> {
+    let block_header = domain::EthereumBlockHeader {
+        number: 18_500_000, // Your target block
+        state_root: [0u8; 32], // Actual state root
+        hash: [0u8; 32],
+    };
     
-    for proof in storage_proofs {
-        let block_header = domain::EthereumBlockHeader {
-            number: block_number,
-            state_root: *expected_state_root,
-            hash: [0u8; 32], // Would be provided by your application
-        };
-        
-        let validated_proof = domain::validate_ethereum_state_proof(
-            proof,
-            &block_header,
-        )?;
-        
-        validated_proofs.push(validated_proof);
+    // ONLY validate Ethereum state proofs
+    if let Some(vault_data) = args.get("vault_storage") {
+        if let Some(storage_query) = vault_data.get("storage_query") {
+            let proof_data = json!({
+                "key": storage_query.get("storage_key"),
+                "value": storage_query.get("storage_value"),
+                "proof": storage_query.get("proof")
+            });
+            
+            let validated = domain::validate_ethereum_state_proof(&proof_data, &block_header)?;
+            
+            if validated.is_valid {
+                println!("Domain: Ethereum state validation successful");
+                return Ok(true);
+            }
+        }
     }
     
-    Ok(validated_proofs)
+    println!("Domain: Ethereum state validation failed");
+    Ok(false)
+}
+```
+
+### 6. Implement Coprocessor SP1 Proving Integration
+
+Add coprocessor submission for SP1 proof generation:
+
+```rust
+#[cfg(feature = "client")]
+async fn submit_to_coprocessor_for_proving(
+    message_bytes: &[u8], 
+    coprocessor_url: &str, 
+    controller_id: &str
+) -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error>> {
+    use reqwest::Client;
+    use std::time::{Duration, Instant};
+    use tokio::time::{sleep, timeout};
+    
+    let client = Client::new();
+    let vault_data: Value = serde_json::from_slice(message_bytes)?;
+    
+    // Create coprocessor payload following e2e pattern
+    let proof_payload = json!({
+        "args": {
+            "payload": {
+                "cmd": "validate_vault",
+                "path": "/tmp/vault_validation_result.json",
+                "vault_data": vault_data,
+                "destination": "cosmos1...", // Your cosmos address
+                "memo": ""
+            }
+        }
+    });
+    
+    let url = format!("{}/api/registry/controller/{}/prove", coprocessor_url, controller_id);
+    
+    println!("   📤 Submitting to coprocessor for SP1 proof generation");
+    println!("   📤 Request URL: {}", url);
+    
+    // Send prove request
+    let response = timeout(
+        Duration::from_secs(5),
+        client.post(&url).json(&proof_payload).send(),
+    ).await??;
+    
+    if !response.status().is_success() {
+        return Err(format!("Prove request failed: {}", response.status()).into());
+    }
+    
+    // Wait for SP1 proof completion (following e2e pattern)
+    let start_time = Instant::now();
+    let proof_timeout = Duration::from_secs(120);
+    
+    while start_time.elapsed() < proof_timeout {
+        sleep(Duration::from_secs(3)).await;
+        
+        // Check storage for proof results
+        let storage_url = format!("{}/api/registry/controller/{}/storage/raw", coprocessor_url, controller_id);
+        
+        if let Ok(Ok(storage_resp)) = timeout(Duration::from_secs(5), client.get(&storage_url).send()).await {
+            if storage_resp.status().is_success() {
+                if let Ok(storage_data) = storage_resp.json::<Value>().await {
+                    if let Some(data_str) = storage_data["data"].as_str() {
+                        use base64::Engine;
+                        if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(data_str) {
+                            if let Ok(decoded_str) = String::from_utf8(decoded) {
+                                if decoded_str.contains("validation_passed") || decoded_str.contains("SP1_PROOF") {
+                                    println!("   ✅ Found SP1 proof results in storage");
+                                    
+                                    let sp1_proof = b"SP1_PROOF_GENERATED_SUCCESSFULLY".to_vec();
+                                    let zk_message_bytes = generate_vault_zk_message(&vault_data)?;
+                                    
+                                    return Ok((sp1_proof, zk_message_bytes));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        println!("   ⏳ Still waiting... (elapsed: {:?})", start_time.elapsed());
+    }
+    
+    Err(format!("SP1 proof generation timed out after {:?}", proof_timeout).into())
 }
 ```
 
@@ -163,160 +310,213 @@ pub fn validate_storage_proofs(
 First, obtain your contract's storage layout and use traverse CLI to generate storage keys:
 
 ```bash
-# Option 1: Using existing layout file
-cargo run -p traverse-cli -- resolve "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" \
-  --layout contract_layout.json \
-  --format coprocessor-json > balance_query.json
+# Fetch ABI and generate layout
+cargo run -p traverse-cli -- compile-layout VaultContract.abi.json > vault_layout.json
 
-# Option 2: Compile from ABI first
-cargo run -p traverse-cli -- compile-layout MyContract.abi.json > layout.json
-cargo run -p traverse-cli -- resolve "_balances[0x742d35...]" --layout layout.json --format coprocessor-json
+# Generate storage key for specific query
+cargo run -p traverse-cli -- resolve "_withdrawRequests" \
+  --layout vault_layout.json \
+  --format coprocessor-json > withdraw_requests_query.json
+
+# For indexed mappings
+cargo run -p traverse-cli -- resolve "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" \
+  --layout token_layout.json \
+  --format coprocessor-json > balance_query.json
 ```
 
-### 2. Batch Processing
+### 2. Generate Storage Proofs with Traverse CLI
 
-For multiple queries, use batch processing:
+Use traverse CLI to generate complete storage proofs:
 
 ```bash
-# Create queries file
-echo "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" > queries.txt
-echo "_balances[0x8ba1f109551bD432803012645Aac136c5C1Aa000]" >> queries.txt
-echo "_totalSupply" >> queries.txt
-
-# Generate batch storage keys
-cargo run -p traverse-cli -- batch-resolve queries.txt --layout layout.json --format coprocessor-json > batch_queries.json
+# Generate proof with real Ethereum data
+cargo run -p traverse-cli --features client -- generate-proof \
+  --slot 0x0000000000000000000000000000000000000000000000000000000000000007 \
+  --contract 0xf2b85c389a771035a9bd147d4bf87987a7f9cf98 \
+  --rpc https://mainnet.infura.io/v3/your_project_id \
+  --output vault_proof.json
 ```
 
 ### 3. External Client Integration
 
-Your external client should combine traverse output with eth_getProof:
+Your external client should combine traverse output with coprocessor submission:
 
 ```javascript
-// 1. Get storage key from traverse
-const traverseOutput = JSON.parse(fs.readFileSync('balance_query.json'));
+// 1. Get storage proof from traverse CLI or direct eth_getProof
+const proof = await web3.eth.getProof(contractAddress, [storageKey], blockNumber);
 
-// 2. Fetch storage proof
-const proof = await web3.eth.getProof(
-  contractAddress,
-  [traverseOutput.storage_key],
-  blockNumber
-);
-
-// 3. Create coprocessor payload
+// 2. Create coprocessor payload with business data
 const payload = {
-  storage_query: traverseOutput,
-  storage_proof: {
-    key: proof.storageProof[0].key,
-    value: proof.storageProof[0].value,
+  storage_query: {
+    storage_key: proof.storageProof[0].key,
+    storage_value: proof.storageProof[0].value, 
     proof: proof.storageProof[0].proof
   }
 };
 
-// 4. Submit to coprocessor
-await submitToCoprocessor(payload);
+// 3. Submit to coprocessor for SP1 proving
+const response = await fetch(`${coprocessorUrl}/api/registry/controller/${controllerId}/prove`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    args: {
+      payload: {
+        cmd: "validate_vault",
+        vault_data: payload,
+        destination: "cosmos1...",
+        memo: ""
+      }
+    }
+  })
+});
+
+// 4. Wait for SP1 proof and get ZkMessage
+const zkMessage = await pollForProofCompletion(coprocessorUrl, controllerId);
+
+// 5. Submit ZkMessage to Neutron
+await submitToNeutron(zkMessage);
 ```
 
 ## Example Use Cases
 
-### ERC20 Balance Verification
+### Vault Authorization with Business Logic
 
 ```rust
-// Verify user balances against storage proofs  
-let balance_queries = [
-    "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]",
-    "_balances[0x8ba1f109551bD432803012645Aac136c5C1Aa000]",
-];
+// Controller handles ALL business logic
+pub async fn vault_controller(layout: &LayoutInfo, rpc_url: &str) -> Result<Value, Error> {
+    // Fetch storage data
+    let withdraw_requests = fetch_withdraw_requests(rpc_url).await?;
+    
+    // BUSINESS LOGIC: Check authorization rules
+    let authorized = match withdraw_requests {
+        0 => true, // No pending requests = authorized
+        1..=10 => check_user_permissions().await?, // Need permissions for 1-10
+        _ => false, // More than 10 = always denied
+    };
+    
+    // Create authorization message with business decisions
+    create_authorization_message(withdraw_requests, authorized)
+}
 
-let witnesses = get_witnesses(coprocessor_json)?;
-let balances = circuit::extract_multiple_u64_values(&witnesses)?;
-
-println!("User balances: {:?}", balances);
+// Circuit only verifies cryptographically  
+pub fn vault_circuit(coprocessor_data: &Value) -> Result<Vec<u8>, Error> {
+    // ONLY verify storage proofs are valid
+    let witnesses = create_witnesses(coprocessor_data)?;
+    let _verified = verify_proofs(&witnesses)?; // Ensure proofs are valid
+    
+    // Update verification flags only
+    let mut auth_msg = coprocessor_data["authorization_message"].clone();
+    auth_msg["authorization"]["verified_proofs"] = json!(true);
+    
+    Ok(serde_json::to_vec(&auth_msg)?)
+}
 ```
 
 ### Multi-Contract State Verification
 
 ```rust
-// Verify state across multiple contracts
-let contracts = ["token_a", "token_b", "pool"];
-let mut all_witnesses = Vec::new();
-
-for contract_data in coprocessor_batch_json["contracts"].as_array() {
-    let contract_witnesses = controller::create_storage_witnesses(contract_data)?;
-    all_witnesses.extend(contract_witnesses);
+// Controller coordinates business logic across contracts
+pub async fn multi_contract_controller(contracts: &[&str]) -> Result<Value, Error> {
+    let mut results = Vec::new();
+    
+    for contract in contracts {
+        let contract_state = fetch_contract_state(contract).await?;
+        
+        // BUSINESS LOGIC: Validate cross-contract invariants
+        if !validate_contract_invariants(&contract_state, &results) {
+            return Err(Error::BusinessRuleViolation("Cross-contract invariant failed"));
+        }
+        
+        results.push(contract_state);
+    }
+    
+    // BUSINESS LOGIC: Make final authorization decision
+    let final_authorized = check_global_authorization_rules(&results)?;
+    create_multi_contract_authorization(results, final_authorized)
 }
-
-// Process all witnesses together
-let validation_result = circuit::verify_storage_proofs_and_extract(all_witnesses);
 ```
 
 ## Best Practices
 
+### Separation of Concerns
+
+1. **Controller = Business Logic**: All authorization decisions, value extraction, business rules
+2. **Circuit = Cryptographic Verification**: Only verify proofs are mathematically valid
+3. **Domain = State Validation**: Only verify Ethereum block/state consistency
+4. **Early Error Detection**: Controller should fail fast on business rule violations
+
 ### Circuit Optimization
 
-1. **Minimize Witness Size**: Use batch operations to reduce the number of individual storage proofs
-2. **Layout Commitment Verification**: Always verify layout commitments to ensure circuit safety
-3. **Field Size Optimization**: Use appropriate field sizes (u64 for balances, [u8; 20] for addresses)
+1. **Minimal Circuit**: Keep circuits as small as possible - only cryptographic operations
+2. **No Business Logic in Circuit**: Move all business decisions to controller
+3. **Proof Verification Only**: Circuit should only verify storage proofs are valid
+4. **Update Flags Only**: Circuit only sets `verified_proofs: true`
 
 ### Error Handling
 
 ```rust
-use traverse_valence::TraverseValenceError;
+// Controller handles business logic errors
+match validate_business_rules(&storage_data) {
+    Ok(authorized) => create_authorization_message(authorized),
+    Err(BusinessError::InsufficientBalance) => {
+        return Err("Business rule: Insufficient balance".into());
+    },
+    Err(BusinessError::RequestLimitExceeded) => {
+        return Err("Business rule: Too many pending requests".into());
+    },
+}
 
-match controller::create_storage_witnesses(&json_args) {
-    Ok(witnesses) => { /* Process witnesses */ },
-    Err(TraverseValenceError::Json(msg)) => {
-        // Handle JSON parsing errors
-        return Err(anyhow::anyhow!("JSON error: {}", msg));
-    },
-    Err(TraverseValenceError::InvalidStorageKey(msg)) => {
-        // Handle invalid storage key format
-        return Err(anyhow::anyhow!("Invalid storage key: {}", msg));
-    },
+// Circuit handles only cryptographic errors  
+match verify_storage_proofs(&witnesses) {
+    Ok(_) => update_verification_flags(),
     Err(TraverseValenceError::ProofVerificationFailed(msg)) => {
-        // Handle proof verification failures
-        return Err(anyhow::anyhow!("Proof verification failed: {}", msg));
-    },
-    Err(TraverseValenceError::LayoutMismatch(msg)) => {
-        // Handle layout commitment mismatches
-        return Err(anyhow::anyhow!("Layout mismatch: {}", msg));
+        return Err(format!("Cryptographic verification failed: {}", msg));
     },
 }
 ```
 
 ### Security Considerations
 
-1. **Storage Key Validation**: Validate storage keys are correctly derived
-2. **Proof Verification**: Use traverse-valence circuit helpers for secure proof verification  
-3. **Block Validation**: Ensure block headers and state roots are validated in domain layer
-4. **Valence Message Validation**: When using ABI encoding, ensure message structures are validated
+1. **Business Logic in Controller**: Never put authorization decisions in circuit
+2. **Proof Verification in Circuit**: Always verify proofs cryptographically
+3. **State Validation in Domain**: Verify Ethereum state consistency
+4. **Coprocessor Integration**: Use SP1 proving for production deployments
 
 ### Valence Integration Patterns
 
-1. **Standard Entry Points**: Always use `get_witnesses()` and `circuit()` function signatures
-2. **Message Compatibility**: Use traverse-valence message types for Valence Authorization integration
-3. **ABI Encoding**: Enable `alloy` feature for production Valence deployments
-4. **Batch Processing**: Leverage batch operations for efficient multi-proof verification
+1. **Standard Entry Points**: Follow valence-coprocessor-app patterns exactly
+2. **SP1 Proving**: Always use coprocessor service for proof generation
+3. **ZkMessage Format**: Use proper Valence message structures for Neutron
+4. **Controller Business Logic**: Handle all business decisions in controller phase
 
 ## Debugging and Testing
 
-### Enable Debug Logging
-
-```rust
-#[cfg(debug_assertions)]
-{
-    println!("Debug: Processing witness: {:?}", witness);
-}
-```
-
-### Local Testing
+### Development Workflow
 
 ```bash
-# Test with example data
-cargo run --example valence_integration --features std
+# 1. Test storage key generation
+cargo run -p traverse-cli -- resolve "your_query" --layout layout.json
 
-# Run integration tests
+# 2. Test with example data  
+cargo run --example valence_vault_storage --features client,examples
+
+# 3. Test individual components
 cargo test -p traverse-valence
 
-# Validate storage key generation
-cargo run -p traverse-cli -- resolve "your_query" --layout your_layout.json --format coprocessor-json
+# 4. Test coprocessor integration
+COPROCESSOR_URL=http://localhost:37281 cargo run --example valence_vault_storage --features client,examples
+```
+
+### Local Coprocessor Testing
+
+```bash
+# Start coprocessor service
+valence-coprocessor start --coprocessor-path ./valence-coprocessor-service.tar.gz
+
+# Deploy controller
+nix develop --command build-wasm
+nix develop --command deploy-to-service
+
+# Test end-to-end
+cargo run --example valence_vault_storage --features client,examples
 ```

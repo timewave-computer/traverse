@@ -297,9 +297,7 @@ fn valence_vault_circuit_verify_proofs(coprocessor_data: &Value) -> Result<Vec<u
             }
         ]
     });
-    
-    println!("Circuit: Verifying cryptographic proofs (minimal verification only)");
-    
+        
     // ONLY do cryptographic verification - no business logic
     let witnesses = controller::create_storage_witnesses(&batch_format)?;
     
@@ -309,17 +307,13 @@ fn valence_vault_circuit_verify_proofs(coprocessor_data: &Value) -> Result<Vec<u
     
     // Verify that the witnesses are cryptographically valid
     let _values = circuit::extract_multiple_u64_values(&witnesses)?;
-    
-    println!("Circuit: Cryptographic verification successful");
-    
+        
     // Get the authorization message created by the controller and update verification flags
     let mut authorization_message = coprocessor_data["authorization_message"].clone();
     
     // Circuit only updates the verification flags - no business logic
     authorization_message["authorization"]["verified_proofs"] = json!(true);
-    
-    println!("Circuit: Updated verification flags in authorization message");
-    
+        
     // Serialize the authorization message as JSON bytes for CosmWasm processor
     let message_bytes = serde_json::to_vec(&authorization_message)
         .map_err(|e| TraverseValenceError::Json(format!("Failed to serialize authorization message: {}", e)))?;
