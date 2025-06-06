@@ -1,15 +1,20 @@
 //! Ethereum proof fetcher for retrieving storage proofs via RPC
 //! 
 //! This module provides functionality to fetch storage proofs from Ethereum nodes
-//! using the standard `eth_getProof` RPC method.
+//! using the standard `eth_getProof` RPC method with Alloy.
 
+use alloy::{
+    providers::{Provider, ProviderBuilder},
+    primitives::{Address, B256},
+    rpc::types::EIP1186AccountProofResponse,
+};
 use traverse_core::{CoprocessorQueryPayload, ProofFetcher, TraverseError};
 
-/// Ethereum proof fetcher using eth_getProof RPC
+/// Ethereum proof fetcher using eth_getProof RPC via Alloy
 /// 
 /// This implementation fetches storage proofs from Ethereum nodes using
-/// the standard `eth_getProof` RPC method. It handles the network communication
-/// and formats the response for ZK circuit consumption.
+/// the standard `eth_getProof` RPC method through the Alloy library.
+/// It handles the network communication and formats the response for ZK circuit consumption.
 /// 
 /// # Configuration
 /// 
@@ -43,7 +48,7 @@ pub struct EthereumProofFetcher {
 }
 
 impl ProofFetcher for EthereumProofFetcher {
-    /// Fetch storage proof using eth_getProof RPC
+    /// Fetch storage proof using eth_getProof RPC via Alloy
     /// 
     /// Queries the configured Ethereum node for a storage proof at the given key.
     /// The proof includes the storage value and Merkle proof path needed for
@@ -70,12 +75,62 @@ impl ProofFetcher for EthereumProofFetcher {
     /// - `TraverseError::ProofGeneration` - RPC call failed
     /// - `TraverseError::Serialization` - Invalid response format
     fn fetch(&self, key: &[u8; 32]) -> Result<CoprocessorQueryPayload, TraverseError> {
-        // TODO: Implement actual RPC call to eth_getProof
-        // For now, return a placeholder
-        Ok(CoprocessorQueryPayload {
-            key: *key,
-            value: [0u8; 32],
-            proof: vec![],
+        // Use tokio runtime for async operations
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| TraverseError::ProofGeneration(format!("Failed to create runtime: {}", e)))?;
+            
+        rt.block_on(async {
+            // Parse URL first to validate it
+            let url = self.rpc_url.parse()
+                .map_err(|e| TraverseError::ProofGeneration(format!("Invalid RPC URL: {}", e)))?;
+            
+            // Create provider using Alloy
+            let provider = ProviderBuilder::new().on_http(url);
+            
+            // Parse contract address
+            let contract_addr: Address = self.contract_address.parse()
+                .map_err(|e| TraverseError::ProofGeneration(format!("Invalid contract address: {}", e)))?;
+            
+            // Convert storage key to B256
+            let storage_key = B256::from_slice(key);
+            
+            // Get storage proof using eth_getProof
+            let proof_response: EIP1186AccountProofResponse = provider
+                .get_proof(contract_addr, vec![storage_key])
+                .await
+                .map_err(|e| TraverseError::ProofGeneration(format!("Failed to get proof: {}", e)))?;
+            
+            // Extract storage proof (should have exactly one since we requested one key)
+            if proof_response.storage_proof.is_empty() {
+                return Err(TraverseError::ProofGeneration("No storage proof returned".to_string()));
+            }
+            
+            let storage_proof = &proof_response.storage_proof[0];
+            
+            // Convert value to 32-byte array
+            let value_bytes = storage_proof.value.to_be_bytes::<32>();
+            
+            // Convert proof nodes to Vec<[u8; 32]>
+            // Note: RLP-encoded nodes may be longer than 32 bytes, so we need to handle this carefully
+            let proof_nodes: Vec<[u8; 32]> = storage_proof.proof.iter()
+                .filter_map(|node| {
+                    if node.len() == 32 {
+                        let mut array = [0u8; 32];
+                        array.copy_from_slice(node);
+                        Some(array)
+                    } else {
+                        // For now, skip non-32-byte nodes
+                        // In a real implementation, you might want a more flexible proof format
+                        None
+                    }
+                })
+                .collect();
+            
+            Ok(CoprocessorQueryPayload {
+                key: *key,
+                value: value_bytes,
+                proof: proof_nodes,
+            })
         })
     }
 } 

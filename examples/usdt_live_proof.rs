@@ -85,11 +85,6 @@ fn pad_hex_to_32_bytes(hex_str: &str) -> String {
     }
 }
 
-// Convert TraverseValenceError to Box<dyn std::error::Error>
-fn convert_valence_error(err: TraverseValenceError) -> Box<dyn std::error::Error> {
-    Box::new(std::io::Error::other(format!("{}", err)))
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("USDT Live Storage Proof Example");
     println!("=====================================");
@@ -160,20 +155,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     
-    let witness = controller::create_storage_witness(&json_payload)
-        .map_err(convert_valence_error)?;
-    println!("   [OK] Storage witness created");
-    println!();
+    let witnesses = controller::create_storage_witnesses(&json_payload)
+        .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to create witness: {}", e))) as Box<dyn std::error::Error>)?;
+    let _witness = &witnesses[0]; // Get first witness for single query
     
-    // Step 5: Verify the proof in circuit context
-    println!("5. Verifying storage proof (circuit simulation)...");
-    let verification_result = circuit::verify_storage_proof(&witness)
-        .map_err(convert_valence_error)?;
-    
-    println!("   [OK] Proof verification passed");
-    println!("   [OK] Extracted value length: {} bytes", verification_result.len());
-    println!("   [OK] Raw value: 0x{}", hex::encode(&verification_result));
-    println!();
+    // 5. Verify the storage proof in a circuit-like environment
+    println!("5. Verifying storage proof...");
+    let verification_result = circuit::verify_storage_proofs_and_extract(witnesses.clone());
+    println!("   [OK] Verification result: {} bytes", verification_result.len());
     
     // Step 6: Analyze the storage value
     println!("6. Analyzing USDT slot 0 data...");

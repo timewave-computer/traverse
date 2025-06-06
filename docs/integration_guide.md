@@ -1,10 +1,10 @@
 # Traverse Valence Coprocessor Integration Guide
 
-This guide walks you through integrating the traverse library into your valence coprocessor application for Ethereum storage proof verification.
+This guide walks you through integrating the traverse library into your valence coprocessor application for Ethereum storage proof verification using the production-ready patterns from valence-coprocessor-app.
 
 ## Architecture Overview
 
-Traverse provides a clean separation between storage key generation (setup phase) and proof verification (execution phase):
+Traverse provides a clean separation between storage key generation (setup phase) and proof verification (execution phase), with full Valence ecosystem integration:
 
 ### Setup Phase (External, std-compatible)
 - Generate storage keys using traverse CLI tools
@@ -12,9 +12,14 @@ Traverse provides a clean separation between storage key generation (setup phase
 - 3rd party clients fetch storage proofs via eth_getProof
 
 ### Execution Phase (Coprocessor, no_std)
-- **Controller**: Parse JSON arguments and create witnesses
-- **Circuit**: Verify storage proofs and extract field values  
+- **Controller**: Parse JSON arguments and create witnesses using standard Valence patterns
+- **Circuit**: Verify storage proofs and extract field values or generate ABI-encoded messages
 - **Domain**: Validate Ethereum state proofs and block headers
+
+### Valence Ecosystem Integration
+- **Message Types**: Complete Valence message structures (ZkMessage, SendMsgs, ProcessorMessage, etc.)
+- **ABI Encoding**: Alloy-based ABI encoding for Valence Authorization contracts
+- **Standard Entry Points**: Matches valence-coprocessor-app patterns exactly
 
 ## Step-by-Step Integration
 
@@ -33,7 +38,14 @@ Add to your `Cargo.toml`:
 [dependencies]
 traverse-valence = { git = "https://github.com/timewave-computer/traverse", features = ["alloc"] }
 
-# For std-compatible components (controller only if needed)
+# For ABI encoding (optional)
+[dependencies.traverse-valence-alloy]
+package = "traverse-valence"
+git = "https://github.com/timewave-computer/traverse"
+features = ["alloy"]
+optional = true
+
+# For std-compatible components (optional)
 [dependencies.traverse-valence-std]
 package = "traverse-valence"
 git = "https://github.com/timewave-computer/traverse"
@@ -41,64 +53,72 @@ features = ["std"]
 optional = true
 ```
 
-### 3. Implement Controller Integration
+### 3. Implement Standard Valence Controller
 
-Update your `controller/src/lib.rs`:
+Update your `controller/src/lib.rs` to use the standard Valence pattern:
 
 ```rust
-use traverse_valence::{controller, CoprocessorStorageQuery, StorageProof, TraverseValenceError};
+use traverse_valence::controller;
 use serde_json::Value;
 use valence_coprocessor::Witness;
 
-/// Controller implementation for storage proof verification
-pub fn get_witnesses(json_args: Value) -> Result<Vec<Witness>, anyhow::Error> {
-    // Check if this is a batch operation
-    if json_args.get("storage_batch").is_some() {
-        let witnesses = controller::create_batch_storage_witnesses(&json_args)
-            .map_err(|e| anyhow::anyhow!("Failed to create batch witnesses: {}", e))?;
-        Ok(witnesses)
-    } else {
-        let witness = controller::create_storage_witness(&json_args)
-            .map_err(|e| anyhow::anyhow!("Failed to create witness: {}", e))?;
-        Ok(vec![witness])
-    }
+/// Standard Valence controller entry point - matches valence-coprocessor-app pattern
+pub fn get_witnesses(args: Value) -> anyhow::Result<Vec<Witness>> {
+    controller::create_storage_witnesses(&args)
+        .map_err(|e| anyhow::anyhow!("Failed to create storage witnesses: {}", e))
 }
 ```
 
-### 4. Implement Circuit Integration
+### 4. Implement Standard Valence Circuit
 
-Update your `circuit/src/lib.rs`:
+Update your `circuit/src/lib.rs` to use the standard Valence pattern:
 
 ```rust
-use traverse_valence::{circuit, CoprocessorStorageQuery, TraverseValenceError};
+use traverse_valence::circuit;
 use valence_coprocessor::Witness;
 
-/// Verify storage proofs and extract balance values
-pub fn verify_storage_proofs(
+/// Standard Valence circuit entry point - matches valence-coprocessor-app pattern
+pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
+    circuit::verify_storage_proofs_and_extract(witnesses)
+}
+
+/// Custom application logic for specific value extraction
+pub fn verify_storage_proofs_custom(
     witnesses: &[Witness],
-) -> Result<Vec<u64>, TraverseValenceError> {
-    let mut balances = Vec::new();
-    
-    for witness in witnesses {
-        let balance = circuit::extract_u64_value(witness)?;
-        balances.push(balance);
-    }
-    
-    Ok(balances)
+) -> Result<Vec<u64>, traverse_valence::TraverseValenceError> {
+    circuit::extract_multiple_u64_values(witnesses)
 }
 
 /// Extract address values from storage proofs
 pub fn extract_addresses(
     witnesses: &[Witness],
-) -> Result<Vec<[u8; 20]>, TraverseValenceError> {
-    let mut addresses = Vec::new();
+) -> Result<Vec<[u8; 20]>, traverse_valence::TraverseValenceError> {
+    circuit::extract_multiple_address_values(witnesses)
+}
+
+/// Generate Valence-compatible ABI-encoded message (requires alloy feature)
+#[cfg(feature = "alloy")]
+pub fn create_valence_message(
+    witnesses: &[Witness],
+    execution_id: u64,
+) -> Result<Vec<u8>, traverse_valence::TraverseValenceError> {
+    use traverse_valence::messages::{create_storage_validation_message, abi_encoding};
     
-    for witness in witnesses {
-        let address = circuit::extract_address_value(witness)?;
-        addresses.push(address);
-    }
+    // Verify all proofs and get results
+    let results = circuit::verify_storage_proofs_internal(witnesses)?;
     
-    Ok(addresses)
+    // Create validation summary
+    let summary_result = traverse_valence::messages::StorageProofValidationResult {
+        is_valid: results.iter().all(|r| r.is_valid),
+        storage_value: "batch_verification".into(),
+        storage_key: "multiple_keys".into(),
+        layout_commitment: "verified".into(),
+        metadata: Some(format!("verified_{}_proofs", results.len())),
+    };
+    
+    // Generate Valence message
+    let zk_message = create_storage_validation_message(summary_result, execution_id);
+    abi_encoding::encode_zk_message(&zk_message)
 }
 ```
 
@@ -107,14 +127,14 @@ pub fn extract_addresses(
 Update your `domain/src/lib.rs`:
 
 ```rust
-use traverse_valence::{domain, StorageProof, TraverseValenceError};
+use traverse_valence::domain;
 
 /// Validate Ethereum state proofs for your application
 pub fn validate_storage_proofs(
     storage_proofs: &[serde_json::Value],
     block_number: u64,
     expected_state_root: &[u8; 32],
-) -> Result<Vec<domain::ValidatedStateProof>, TraverseValenceError> {
+) -> Result<Vec<domain::ValidatedStateProof>, traverse_valence::TraverseValenceError> {
     let mut validated_proofs = Vec::new();
     
     for proof in storage_proofs {
@@ -201,14 +221,14 @@ await submitToCoprocessor(payload);
 ### ERC20 Balance Verification
 
 ```rust
-// Verify user balances against storage proofs
+// Verify user balances against storage proofs  
 let balance_queries = [
     "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]",
     "_balances[0x8ba1f109551bD432803012645Aac136c5C1Aa000]",
 ];
 
 let witnesses = get_witnesses(coprocessor_json)?;
-let balances = verify_storage_proofs(&witnesses)?;
+let balances = circuit::extract_multiple_u64_values(&witnesses)?;
 
 println!("User balances: {:?}", balances);
 ```
@@ -221,9 +241,12 @@ let contracts = ["token_a", "token_b", "pool"];
 let mut all_witnesses = Vec::new();
 
 for contract_data in coprocessor_batch_json["contracts"].as_array() {
-    let contract_witnesses = controller::create_storage_witness(contract_data)?;
-    all_witnesses.push(contract_witnesses);
+    let contract_witnesses = controller::create_storage_witnesses(contract_data)?;
+    all_witnesses.extend(contract_witnesses);
 }
+
+// Process all witnesses together
+let validation_result = circuit::verify_storage_proofs_and_extract(all_witnesses);
 ```
 
 ## Best Practices
@@ -239,8 +262,8 @@ for contract_data in coprocessor_batch_json["contracts"].as_array() {
 ```rust
 use traverse_valence::TraverseValenceError;
 
-match controller::create_storage_witness(&json_args) {
-    Ok(witness) => { /* Process witness */ },
+match controller::create_storage_witnesses(&json_args) {
+    Ok(witnesses) => { /* Process witnesses */ },
     Err(TraverseValenceError::Json(msg)) => {
         // Handle JSON parsing errors
         return Err(anyhow::anyhow!("JSON error: {}", msg));
@@ -265,6 +288,14 @@ match controller::create_storage_witness(&json_args) {
 1. **Storage Key Validation**: Validate storage keys are correctly derived
 2. **Proof Verification**: Use traverse-valence circuit helpers for secure proof verification  
 3. **Block Validation**: Ensure block headers and state roots are validated in domain layer
+4. **Valence Message Validation**: When using ABI encoding, ensure message structures are validated
+
+### Valence Integration Patterns
+
+1. **Standard Entry Points**: Always use `get_witnesses()` and `circuit()` function signatures
+2. **Message Compatibility**: Use traverse-valence message types for Valence Authorization integration
+3. **ABI Encoding**: Enable `alloy` feature for production Valence deployments
+4. **Batch Processing**: Leverage batch operations for efficient multi-proof verification
 
 ## Debugging and Testing
 

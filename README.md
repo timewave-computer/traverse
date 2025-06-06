@@ -61,13 +61,13 @@ echo "_balances[0x742d35cc6ab8b23c0532c65c6b555f09f9d40894]" > queries.txt
 echo "_totalSupply" >> queries.txt
 cargo run -p traverse-cli -- batch-resolve queries.txt --layout crates/traverse-ethereum/tests/data/erc20_layout.json
 
-# Generate storage proofs (mock implementation by default)
+# Generate storage proofs (uses alloy-based fallback by default)
 cargo run -p traverse-cli -- generate-proof \
   --slot 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef \
   --rpc https://mainnet.infura.io/v3/YOUR_API_KEY \
   --contract 0xA0b86a33E6417c7eDFeb7c14eDe3e5C8b7db1234
 
-# Generate real storage proof with traverse-cli
+# Generate real storage proof with valence-domain-clients
 cargo run -p traverse-cli --features client -- generate-proof \
   --slot 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef \
   --rpc https://mainnet.infura.io/v3/YOUR_API_KEY \
@@ -80,7 +80,7 @@ export ETHERSCAN_API_KEY=your_etherscan_api_key
 export ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/your_infura_key
 cargo run --example valence_vault_storage
 
-# Example with client feature for live RPC calls
+# Example with client feature for live RPC calls via valence-domain-clients
 cargo run --example valence_vault_storage --features client
 ```
 
@@ -110,10 +110,26 @@ The examples showcase:
 The **Valence Vault Storage** example showcases:
 - Real-time ABI fetching from Etherscan API
 - Automatic storage layout generation from contract ABIs  
-- Live storage queries via Ethereum RPC calls
+- Live storage queries via Ethereum RPC calls using valence-domain-clients
 - Coprocessor-compatible JSON output generation
 - Environment variable configuration for API keys
 
 #### Live Proof Generation
 
-By default, the `
+Traverse uses a hybrid approach for proof generation:
+
+- **Default mode**: Uses Alloy-based proof fetcher for basic functionality
+- **Client mode** (--features client): Uses valence-domain-clients for enhanced integration
+
+The client feature provides deeper integration with the valence coprocessor ecosystem and supports advanced signing workflows, while the default mode offers a lightweight option for basic proof generation.
+
+#### Architecture
+
+Traverse converts from chain-specific contract ABIs to deterministic storage keys:
+
+1. **ABI Fetching**: Retrieve contract ABIs from Etherscan or other sources
+2. **Layout Compilation**: Generate canonical storage layouts from ABIs
+3. **Key Resolution**: Convert queries like `_balances[0x...]` to storage slots
+4. **Proof Generation**: Fetch storage proofs via RPC using Alloy or valence-domain-clients
+
+All core operations are deterministic and `no_std` compatible for use in ZK circuits.

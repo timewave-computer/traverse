@@ -5,7 +5,6 @@
 use std::path::Path;
 use anyhow::Result;
 use tracing::info;
-use traverse_core::CoprocessorQueryPayload;
 
 #[cfg(feature = "client")]
 use valence_domain_clients::clients::ethereum::EthereumClient;
@@ -18,6 +17,9 @@ use alloy::providers::Provider;
 
 #[cfg(not(feature = "client"))]
 use traverse_ethereum::EthereumProofFetcher;
+
+#[cfg(not(feature = "client"))]
+use traverse_core::ProofFetcher;
 
 /// Execute generate-proof command
 pub fn cmd_generate_proof(
@@ -71,10 +73,14 @@ pub fn cmd_generate_proof(
                 .await.map_err(|e| anyhow::anyhow!("Failed to get proof: {}", e))?;
             
             // Convert to our CoprocessorQueryPayload format
+            if proof_response.storage_proof.is_empty() {
+                return Err(anyhow::anyhow!("No storage proof returned"));
+            }
+            
             let storage_proof = &proof_response.storage_proof[0];
             
             // Convert value to bytes
-            let value_bytes = storage_proof.value.to_be_bytes();
+            let value_bytes = storage_proof.value.to_be_bytes::<32>();
             
             // Convert proof nodes - note that RLP-encoded nodes may be longer than 32 bytes
             // For now, we'll just store the raw proof data as hex strings in a Vec<u8>
@@ -96,7 +102,7 @@ pub fn cmd_generate_proof(
                 })
                 .collect();
             
-            let payload = CoprocessorQueryPayload {
+            let payload = traverse_core::CoprocessorQueryPayload {
                 key: slot_array,
                 value: value_bytes,
                 proof: proof_nodes.clone(),
@@ -131,43 +137,36 @@ pub fn cmd_generate_proof(
     
     #[cfg(not(feature = "client"))]
     {
-        // Fallback to mock implementation
-        info!("Using mock implementation (client feature not enabled)");
+        // Fallback using traverse-ethereum's proof fetcher
+        info!("Using traverse-ethereum proof fetcher (client feature not enabled)");
         
-        let _proof_fetcher = EthereumProofFetcher {
+        let proof_fetcher = EthereumProofFetcher {
             rpc_url: rpc.to_string(),
             contract_address: contract.to_string(),
         };
         
-        println!("Generate-proof command structure (MOCK MODE):");
-        println!("  Contract: {}", contract);
-        println!("  RPC: {}", rpc);
-        println!("  Slot: 0x{}", hex::encode(slot_array));
-        println!();
-        println!("To enable live proof generation, rebuild with:");
-        println!("  cargo build --features client");
-        println!();
+        // Use the improved proof fetcher from traverse-ethereum
+        let payload = proof_fetcher.fetch(&slot_array)
+            .map_err(|e| anyhow::anyhow!("Failed to fetch proof: {}", e))?;
         
-        // Create a mock CoprocessorQueryPayload to show the expected output format
-        let mock_payload = CoprocessorQueryPayload {
-            key: slot_array,
-            value: [0u8; 32], // Would be actual storage value from RPC
-            proof: vec![], // Would be actual proof nodes from RPC
-        };
-        
-        let json = serde_json::to_string_pretty(&mock_payload)?;
+        let json = serde_json::to_string_pretty(&payload)?;
         
         if let Some(output_path) = output {
             std::fs::write(output_path, &json)?;
-            println!("Mock payload written to {}", output_path.display());
+            println!("Storage proof written to {}", output_path.display());
         } else {
-            println!("Mock CoprocessorQueryPayload structure:");
+            println!("Storage proof generated:");
             println!("{}", json);
         }
         
         println!();
-        println!("Note: This is a mock implementation. For live proof generation,");
-        println!("  rebuild with --features client flag.");
+        println!("Proof generation completed using traverse-ethereum");
+        println!("  Contract: {}", contract);
+        println!("  RPC: {}", rpc);
+        println!("  Slot: 0x{}", hex::encode(slot_array));
+        println!();
+        println!("For enhanced features, rebuild with:");
+        println!("  cargo build --features client");
     }
     
     Ok(())

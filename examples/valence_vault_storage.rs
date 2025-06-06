@@ -143,7 +143,7 @@ fn valence_vault_controller_get_witnesses(args: Value) -> Result<usize, Box<dyn 
     });
     
     // Use traverse-valence controller helpers to create witnesses
-    let witnesses = controller::create_batch_storage_witnesses(&batch_format)
+    let witnesses = controller::create_storage_witnesses(&batch_format)
         .map_err(|e| format!("Failed to create witnesses: {}", e))?;
     
     Ok(witnesses.len())
@@ -154,7 +154,7 @@ fn valence_vault_controller_get_witnesses(args: Value) -> Result<usize, Box<dyn 
 /// This function follows the valence circuit pattern: takes witness data and returns Vec<u8>
 fn valence_vault_circuit_verify_proofs(args: &Value) -> Result<Vec<u8>, TraverseValenceError> {
     // Create witnesses internally and extract values
-    let witnesses = controller::create_batch_storage_witnesses(args)?;
+    let witnesses = controller::create_storage_witnesses(args)?;
     
     if witnesses.is_empty() {
         return Err(TraverseValenceError::InvalidWitness("No witnesses provided".to_string()));

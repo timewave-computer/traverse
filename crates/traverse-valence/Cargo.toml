@@ -15,6 +15,7 @@ categories.workspace = true
 default = ["alloc"]
 alloc = []
 std = ["alloc"]
+alloy = ["dep:alloy"]
 
 # Valence coprocessor integration (no_std)
 [dependencies]
@@ -26,9 +27,8 @@ serde_json = { workspace = true }
 hex = { workspace = true }
 anyhow = { workspace = true }
 
-[dev-dependencies]
-hex = { workspace = true, features = ["std"] }
+# Optional alloy dependencies for ABI encoding
+alloy = { workspace = true, optional = true }
 
-[[example]]
-name = "valence_integration"
-path = "../../examples/valence_integration.rs" 
+[dev-dependencies]
+hex = { workspace = true, features = ["std"] } 
