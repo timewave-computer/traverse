@@ -39,6 +39,8 @@ dotenv = { workspace = true, optional = true }
 # Client feature dependencies
 valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", branch = "main", optional = true }
 alloy = { version = "0.9", features = ["providers", "network"], optional = true }
+base64 = { version = "0.22", optional = true }
+reqwest = { version = "0.12", features = ["json"], optional = true }
 
 # Examples
 [[example]]
@@ -91,4 +93,4 @@ dotenv = "0.15"
 [features]
 default = []
 examples = ["dep:valence-coprocessor", "dep:anyhow", "dep:dotenv"]
-client = ["traverse-ethereum/client", "dep:valence-domain-clients", "dep:alloy"] 
+client = ["traverse-ethereum/client", "dep:valence-domain-clients", "dep:alloy", "dep:base64", "dep:reqwest"] 
