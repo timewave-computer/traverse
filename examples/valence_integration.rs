@@ -17,18 +17,10 @@
 
 #[cfg(feature = "examples")]
 use serde_json::{json, Value};
-
 #[cfg(feature = "examples")]
-use traverse_valence::{
-    controller, circuit, domain,
-    TraverseValenceError
-};
-
+use traverse_valence::{controller, circuit, domain};
 #[cfg(feature = "examples")]
 use valence_coprocessor::Witness;
-
-#[cfg(feature = "examples")]
-use anyhow;
 
 #[cfg(not(feature = "examples"))]
 fn main() {
@@ -48,7 +40,8 @@ fn example_controller_get_witnesses(args: Value) -> anyhow::Result<Vec<Witness>>
     println!("JSON args: {}", serde_json::to_string_pretty(&args)?);
     
     // Use traverse-valence controller helpers to create witnesses
-    let witnesses = controller::create_batch_storage_witnesses(&args)?;
+    let witnesses = controller::create_storage_witnesses(&args)
+        .map_err(|e| anyhow::anyhow!("Failed to create witnesses: {}", e))?;
     
     println!("Controller: Created {} witnesses", witnesses.len());
     Ok(witnesses)
@@ -58,11 +51,12 @@ fn example_controller_get_witnesses(args: Value) -> anyhow::Result<Vec<Witness>>
 /// Example circuit function that would process witnesses
 /// 
 /// This function follows the valence circuit pattern: takes Vec<Witness> and returns Vec<u8>
-fn example_circuit_verify_proofs(witnesses: Vec<Witness>) -> Result<Vec<u8>, TraverseValenceError> {
+fn example_circuit_verify_proofs(witnesses: Vec<Witness>) -> anyhow::Result<Vec<u8>> {
     println!("Circuit: Verifying {} storage proofs", witnesses.len());
     
     // Extract values from all witnesses
-    let values = circuit::extract_multiple_u64_values(&witnesses)?;
+    let values = circuit::extract_multiple_u64_values(&witnesses)
+        .map_err(|e| anyhow::anyhow!("Failed to extract values: {}", e))?;
     
     println!("Circuit: Extracted values: {:?}", values);
     
@@ -73,7 +67,7 @@ fn example_circuit_verify_proofs(witnesses: Vec<Witness>) -> Result<Vec<u8>, Tra
 
 #[cfg(feature = "examples")]
 /// Example domain function for state validation
-fn example_domain_validate_state(args: &Value) -> Result<bool, TraverseValenceError> {
+fn example_domain_validate_state(args: &Value) -> anyhow::Result<bool> {
     println!("Domain: Validating blockchain state");
     
     // Example validation logic using traverse-valence domain helpers
@@ -85,7 +79,8 @@ fn example_domain_validate_state(args: &Value) -> Result<bool, TraverseValenceEr
     
     // Validate storage proof if present
     if let Some(storage_proof) = args.get("storage_proof") {
-        let validated = domain::validate_ethereum_state_proof(storage_proof, &block_header)?;
+        let validated = domain::validate_ethereum_state_proof(storage_proof, &block_header)
+            .map_err(|e| anyhow::anyhow!("Failed to validate proof: {}", e))?;
         println!("Domain: Proof validation result: {}", validated.is_valid);
         return Ok(validated.is_valid);
     }

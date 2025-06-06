@@ -82,7 +82,7 @@ fn create_single_storage_witness(json_args: &Value) -> Result<Witness, TraverseV
         .and_then(|v| v.as_str())
         .ok_or_else(|| TraverseValenceError::Json("Missing or invalid storage_key".into()))?;
 
-    let storage_key = hex::decode(storage_key_str)
+    let storage_key = hex::decode(storage_key_str.strip_prefix("0x").unwrap_or(storage_key_str))
         .map_err(|e| TraverseValenceError::InvalidStorageKey(format!("Invalid hex: {:?}", e)))?;
 
     // Extract layout commitment for verification
@@ -90,7 +90,7 @@ fn create_single_storage_witness(json_args: &Value) -> Result<Witness, TraverseV
         .and_then(|v| v.as_str())
         .ok_or_else(|| TraverseValenceError::Json("Missing or invalid layout_commitment".into()))?;
 
-    let layout_commitment = hex::decode(layout_commitment_str)
+    let layout_commitment = hex::decode(layout_commitment_str.strip_prefix("0x").unwrap_or(layout_commitment_str))
         .map_err(|e| TraverseValenceError::LayoutMismatch(format!("Invalid commitment hex: {:?}", e)))?;
 
     // Extract proof value from eth_getProof response

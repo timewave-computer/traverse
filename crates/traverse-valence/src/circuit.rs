@@ -24,7 +24,7 @@
 //! - 4 bytes: proof data length (little-endian u32)
 //! - N bytes: proof data
 
-use alloc::{vec::Vec, vec, format};
+use alloc::{vec::Vec, format};
 use valence_coprocessor::Witness;
 use crate::{TraverseValenceError, messages::StorageProofValidationResult};
 
@@ -270,6 +270,7 @@ pub fn extract_layout_commitment(witness: &Witness) -> Result<[u8; 32], Traverse
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     fn create_test_witness() -> Witness {
         let mut witness_data = Vec::new();

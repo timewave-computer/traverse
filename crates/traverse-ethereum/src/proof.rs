@@ -75,62 +75,87 @@ impl ProofFetcher for EthereumProofFetcher {
     /// - `TraverseError::ProofGeneration` - RPC call failed
     /// - `TraverseError::Serialization` - Invalid response format
     fn fetch(&self, key: &[u8; 32]) -> Result<CoprocessorQueryPayload, TraverseError> {
-        // Use tokio runtime for async operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| TraverseError::ProofGeneration(format!("Failed to create runtime: {}", e)))?;
-            
-        rt.block_on(async {
-            // Parse URL first to validate it
-            let url = self.rpc_url.parse()
-                .map_err(|e| TraverseError::ProofGeneration(format!("Invalid RPC URL: {}", e)))?;
-            
-            // Create provider using Alloy
-            let provider = ProviderBuilder::new().on_http(url);
-            
-            // Parse contract address
-            let contract_addr: Address = self.contract_address.parse()
-                .map_err(|e| TraverseError::ProofGeneration(format!("Invalid contract address: {}", e)))?;
-            
-            // Convert storage key to B256
-            let storage_key = B256::from_slice(key);
-            
-            // Get storage proof using eth_getProof
-            let proof_response: EIP1186AccountProofResponse = provider
-                .get_proof(contract_addr, vec![storage_key])
-                .await
-                .map_err(|e| TraverseError::ProofGeneration(format!("Failed to get proof: {}", e)))?;
-            
-            // Extract storage proof (should have exactly one since we requested one key)
-            if proof_response.storage_proof.is_empty() {
-                return Err(TraverseError::ProofGeneration("No storage proof returned".to_string()));
+        // Use handle to current runtime if available, otherwise create new one
+        match tokio::runtime::Handle::try_current() {
+            Ok(_handle) => {
+                // We're already in a tokio runtime, spawn the async work in a separate thread
+                let key_copy = *key;
+                let rpc_url = self.rpc_url.clone();
+                let contract_address = self.contract_address.clone();
+                
+                let result = std::thread::spawn(move || {
+                    let fetcher = EthereumProofFetcher {
+                        rpc_url,
+                        contract_address,
+                    };
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(fetcher.fetch_async(key_copy))
+                }).join().map_err(|_| TraverseError::ProofGeneration("Thread panicked".to_string()))?;
+                result
             }
-            
-            let storage_proof = &proof_response.storage_proof[0];
-            
-            // Convert value to 32-byte array
-            let value_bytes = storage_proof.value.to_be_bytes::<32>();
-            
-            // Convert proof nodes to Vec<[u8; 32]>
-            // Note: RLP-encoded nodes may be longer than 32 bytes, so we need to handle this carefully
-            let proof_nodes: Vec<[u8; 32]> = storage_proof.proof.iter()
-                .filter_map(|node| {
-                    if node.len() == 32 {
-                        let mut array = [0u8; 32];
-                        array.copy_from_slice(node);
-                        Some(array)
-                    } else {
-                        // For now, skip non-32-byte nodes
-                        // In a real implementation, you might want a more flexible proof format
-                        None
-                    }
-                })
-                .collect();
-            
-            Ok(CoprocessorQueryPayload {
-                key: *key,
-                value: value_bytes,
-                proof: proof_nodes,
+            Err(_) => {
+                // No current runtime, create one
+                let rt = tokio::runtime::Runtime::new()
+                    .map_err(|e| TraverseError::ProofGeneration(format!("Failed to create runtime: {}", e)))?;
+                rt.block_on(self.fetch_async(*key))
+            }
+        }
+    }
+}
+
+impl EthereumProofFetcher {
+    /// Async implementation of storage proof fetching
+    async fn fetch_async(&self, key: [u8; 32]) -> Result<CoprocessorQueryPayload, TraverseError> {
+        // Parse URL first to validate it
+        let url = self.rpc_url.parse()
+            .map_err(|e| TraverseError::ProofGeneration(format!("Invalid RPC URL: {}", e)))?;
+        
+        // Create provider using Alloy
+        let provider = ProviderBuilder::new().on_http(url);
+        
+        // Parse contract address
+        let contract_addr: Address = self.contract_address.parse()
+            .map_err(|e| TraverseError::ProofGeneration(format!("Invalid contract address: {}", e)))?;
+        
+        // Convert storage key to B256
+        let storage_key = B256::from_slice(&key);
+        
+        // Get storage proof using eth_getProof
+        let proof_response: EIP1186AccountProofResponse = provider
+            .get_proof(contract_addr, vec![storage_key])
+            .await
+            .map_err(|e| TraverseError::ProofGeneration(format!("Failed to get proof: {}", e)))?;
+        
+        // Extract storage proof (should have exactly one since we requested one key)
+        if proof_response.storage_proof.is_empty() {
+            return Err(TraverseError::ProofGeneration("No storage proof returned".to_string()));
+        }
+        
+        let storage_proof = &proof_response.storage_proof[0];
+        
+        // Convert value to 32-byte array
+        let value_bytes = storage_proof.value.to_be_bytes::<32>();
+        
+        // Convert proof nodes to Vec<[u8; 32]>
+        // Note: RLP-encoded nodes may be longer than 32 bytes, so we need to handle this carefully
+        let proof_nodes: Vec<[u8; 32]> = storage_proof.proof.iter()
+            .filter_map(|node| {
+                if node.len() == 32 {
+                    let mut array = [0u8; 32];
+                    array.copy_from_slice(node);
+                    Some(array)
+                } else {
+                    // For now, skip non-32-byte nodes
+                    // In a real implementation, you might want a more flexible proof format
+                    None
+                }
             })
+            .collect();
+        
+        Ok(CoprocessorQueryPayload {
+            key,
+            value: value_bytes,
+            proof: proof_nodes,
         })
     }
 } 

@@ -102,13 +102,6 @@ impl core::fmt::Display for TraverseValenceError {
 #[cfg(feature = "std")]
 impl std::error::Error for TraverseValenceError {}
 
-#[cfg(feature = "std")]
-impl From<TraverseValenceError> for anyhow::Error {
-    fn from(err: TraverseValenceError) -> Self {
-        anyhow::anyhow!("{}", err)
-    }
-}
-
 /// Coprocessor-compatible storage query format (matches traverse-cli output)
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CoprocessorStorageQuery {

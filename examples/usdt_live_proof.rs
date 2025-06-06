@@ -5,7 +5,7 @@
 
 use serde_json::json;
 use traverse_core::{LayoutInfo, StorageEntry, TypeInfo};
-use traverse_valence::{controller, circuit, TraverseValenceError};
+use traverse_valence::{controller, circuit};
 use traverse_valence::{CoprocessorStorageQuery, StorageProof};
 
 /// Your actual eth_getProof response from USDT contract
@@ -156,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     
     let witnesses = controller::create_storage_witnesses(&json_payload)
-        .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to create witness: {}", e))) as Box<dyn std::error::Error>)?;
+        .map_err(|e| Box::new(std::io::Error::other(format!("Failed to create witness: {}", e))) as Box<dyn std::error::Error>)?;
     let _witness = &witnesses[0]; // Get first witness for single query
     
     // 5. Verify the storage proof in a circuit-like environment
