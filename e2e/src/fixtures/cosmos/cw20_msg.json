@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecuteMsg",
+  "description": "CW20 Execute Messages",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["transfer"],
+      "properties": {
+        "transfer": {
+          "type": "object",
+          "required": ["recipient", "amount"],
+          "properties": {
+            "recipient": {"type": "string"},
+            "amount": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "type": "object", 
+      "required": ["burn"],
+      "properties": {
+        "burn": {
+          "type": "object",
+          "required": ["amount"],
+          "properties": {
+            "amount": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["send"],
+      "properties": {
+        "send": {
+          "type": "object",
+          "required": ["contract", "amount", "msg"],
+          "properties": {
+            "contract": {"type": "string"},
+            "amount": {"type": "string"},
+            "msg": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["increase_allowance"],
+      "properties": {
+        "increase_allowance": {
+          "type": "object",
+          "required": ["spender", "amount"],
+          "properties": {
+            "spender": {"type": "string"},
+            "amount": {"type": "string"}
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": {
+    "balances": {
+      "type": "mapping",
+      "key_type": "address",
+      "value_type": "uint256"
+    },
+    "allowances": {
+      "type": "mapping", 
+      "key_type": "address",
+      "value_type": "mapping"
+    },
+    "total_supply": {
+      "type": "uint256"
+    },
+    "token_info": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "symbol": {"type": "string"},
+        "decimals": {"type": "uint8"}
+      }
+    }
+  }
+} 

@@ -1,0 +1,91 @@
+{
+  "contract_name": "ERC20",
+  "storage": [
+    {
+      "label": "totalSupply",
+      "slot": "0",
+      "offset": 0,
+      "type_name": "t_uint256"
+    },
+    {
+      "label": "name",
+      "slot": "1",
+      "offset": 0,
+      "type_name": "t_string"
+    },
+    {
+      "label": "symbol",
+      "slot": "2",
+      "offset": 0,
+      "type_name": "t_string"
+    },
+    {
+      "label": "decimals",
+      "slot": "3",
+      "offset": 0,
+      "type_name": "t_uint8"
+    },
+    {
+      "label": "_balances",
+      "slot": "4",
+      "offset": 0,
+      "type_name": "t_mapping_address_uint256"
+    },
+    {
+      "label": "_allowances", 
+      "slot": "5",
+      "offset": 0,
+      "type_name": "t_mapping_address_mapping_address_uint256"
+    }
+  ],
+  "types": [
+    {
+      "label": "t_uint256",
+      "number_of_bytes": "32",
+      "encoding": "inplace",
+      "base": null,
+      "key": null,
+      "value": null
+    },
+    {
+      "label": "t_uint8",
+      "number_of_bytes": "1",
+      "encoding": "inplace",
+      "base": null,
+      "key": null,
+      "value": null
+    },
+    {
+      "label": "t_string",
+      "number_of_bytes": "32",
+      "encoding": "bytes",
+      "base": null,
+      "key": null,
+      "value": null
+    },
+    {
+      "label": "t_mapping_address_uint256",
+      "number_of_bytes": "32",
+      "encoding": "mapping",
+      "base": null,
+      "key": "t_address",
+      "value": "t_uint256"
+    },
+    {
+      "label": "t_mapping_address_mapping_address_uint256",
+      "number_of_bytes": "32",
+      "encoding": "mapping",
+      "base": null,
+      "key": "t_address",
+      "value": "t_mapping_address_uint256"
+    },
+    {
+      "label": "t_address",
+      "number_of_bytes": "20",
+      "encoding": "inplace",
+      "base": null,
+      "key": null,
+      "value": null
+    }
+  ]
+} 

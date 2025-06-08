@@ -1,0 +1,4 @@
+token_info
+total_supply
+balances[cosmos1example_address_here]
+config 

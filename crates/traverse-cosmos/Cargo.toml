@@ -1,0 +1,39 @@
+# CosmWasm contract analysis and storage layout generation
+[package]
+name = "traverse-cosmos"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "CosmWasm contract analysis and storage layout generation for traverse"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = []
+cosmos = ["dep:cosmos-sdk-proto"]
+client = ["dep:reqwest", "dep:tokio", "cosmos"]
+
+[dependencies]
+traverse-core = { path = "../traverse-core", features = ["std", "serde_json"] }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+sha2 = "0.10"
+cosmwasm-schema = "2.1"
+cosmwasm-std = { version = "2.1", features = ["stargate"] }
+ics23 = { version = "0.12", default-features = false, features = ["std", "host-functions"] }
+cosmos-sdk-proto = { version = "0.21", optional = true }
+base64 = "0.22"
+
+# Optional HTTP client for live contract queries
+reqwest = { version = "0.12", features = ["json"], optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true

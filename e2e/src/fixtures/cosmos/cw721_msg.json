@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecuteMsg",
+  "description": "CW721 NFT Execute Messages",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["transfer_nft"],
+      "properties": {
+        "transfer_nft": {
+          "type": "object",
+          "required": ["recipient", "token_id"],
+          "properties": {
+            "recipient": {"type": "string"},
+            "token_id": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["send_nft"],
+      "properties": {
+        "send_nft": {
+          "type": "object",
+          "required": ["contract", "token_id", "msg"],
+          "properties": {
+            "contract": {"type": "string"},
+            "token_id": {"type": "string"},
+            "msg": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["approve"],
+      "properties": {
+        "approve": {
+          "type": "object",
+          "required": ["spender", "token_id"],
+          "properties": {
+            "spender": {"type": "string"},
+            "token_id": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["mint"],
+      "properties": {
+        "mint": {
+          "type": "object",
+          "required": ["token_id", "owner"],
+          "properties": {
+            "token_id": {"type": "string"},
+            "owner": {"type": "string"},
+            "token_uri": {"type": "string"}
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": {
+    "tokens": {
+      "type": "mapping",
+      "key_type": "string",
+      "value_type": "object"
+    },
+    "token_approvals": {
+      "type": "mapping",
+      "key_type": "string", 
+      "value_type": "address"
+    },
+    "operators": {
+      "type": "mapping",
+      "key_type": "address",
+      "value_type": "mapping"
+    },
+    "token_info": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "symbol": {"type": "string"}
+      }
+    },
+    "minter": {
+      "type": "address"
+    },
+    "num_tokens": {
+      "type": "uint64"
+    }
+  }
+} 

@@ -4,7 +4,8 @@ members = [
     "crates/traverse-core",
     "crates/traverse-ethereum", 
     "crates/traverse-cli",
-    "crates/traverse-valence",
+    "crates/traverse-valence", "crates/traverse-cosmos",
+    "e2e",
 ]
 resolver = "2"
 
@@ -46,10 +47,6 @@ reqwest = { version = "0.12", features = ["json"], optional = true }
 [[example]]
 name = "usdt_live_proof"
 path = "examples/usdt_live_proof.rs"
-
-[[example]]
-name = "valence_integration"
-path = "examples/valence_integration.rs"
 
 [workspace.package]
 version = "0.1.0"

@@ -55,13 +55,16 @@ const VALENCE_VAULT_ADDRESS: &str = "0xf2b85c389a771035a9bd147d4bf87987a7f9cf98"
 const IMPLEMENTATION_ADDRESS: &str = "0x425de7d367027bea8896631e69bf0606d7d7ce6f";
 
 /// Example dummy clearing queue library address (replace with actual contract address)
+#[allow(dead_code)]
 const CLEARING_QUEUE_LIBRARY_ADDRESS: &str = "neutron1qg5ega6dykkxc307y25pecuufrjkxkaggkkxh7nad0vhyhtuhw3sqaa3c5";
 
 /// Default coprocessor endpoint
 const DEFAULT_COPROCESSOR_URL: &str = "http://0.0.0.0:37281";
 
 /// Default Neutron network configuration (can be overridden by environment variables)
+#[allow(dead_code)]
 const DEFAULT_NEUTRON_RPC_URL: &str = "https://rpc.neutron.quokkastake.io";
+#[allow(dead_code)]
 const DEFAULT_NEUTRON_CHAIN_ID: &str = "neutron-1";
 #[cfg(feature = "client")]
 const DEFAULT_NEUTRON_FEE_DENOM: &str = "untrn";
@@ -511,8 +514,8 @@ async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
     let cosmwasm_message: Value = serde_json::from_slice(&cosmwasm_message_bytes)
         .map_err(|e| format!("Failed to parse CosmWasm message: {}", e))?;
     
-    let withdraw_requests_count = cosmwasm_message["withdraw_requests_count"].as_u64().unwrap_or(0);
-    let has_pending_requests = cosmwasm_message["has_pending_requests"].as_bool().unwrap_or(false);
+    let _withdraw_requests_count = cosmwasm_message["withdraw_requests_count"].as_u64().unwrap_or(0);
+    let _has_pending_requests = cosmwasm_message["has_pending_requests"].as_bool().unwrap_or(false);
     let verified_proofs = cosmwasm_message["authorization"]["verified_proofs"].as_bool().unwrap_or(false);
     
     println!("Circuit: Completed cryptographic verification (minimal circuit)");
@@ -530,7 +533,7 @@ async fn run_example() -> Result<(), Box<dyn std::error::Error>> {
     // Update the authorization message with domain validation result
     let mut final_message = cosmwasm_message.clone();
     final_message["authorization"]["block_verified"] = json!(state_valid);
-    let final_message_bytes = serde_json::to_vec(&final_message)?;
+    let _final_message_bytes = serde_json::to_vec(&final_message)?;
     
     println!("Domain: State validation: {}", if state_valid { "VALID" } else { "INVALID" });
     

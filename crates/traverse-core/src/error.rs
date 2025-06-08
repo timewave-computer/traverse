@@ -21,6 +21,8 @@ pub enum TraverseError {
     ProofGeneration(String),
     /// Invalid query format with details about what went wrong
     InvalidQuery(String),
+    /// Invalid storage layout (conflicts, overlaps, etc.)
+    InvalidLayout(String),
     /// Network error for HTTP requests (e.g., API calls)
     Network(String),
     /// IO error (only available with std feature)
@@ -37,6 +39,7 @@ impl core::fmt::Display for TraverseError {
             TraverseError::PathResolution(msg) => write!(f, "Path resolution failed: {}", msg),
             TraverseError::ProofGeneration(msg) => write!(f, "Proof generation failed: {}", msg),
             TraverseError::InvalidQuery(msg) => write!(f, "Invalid query format: {}", msg),
+            TraverseError::InvalidLayout(msg) => write!(f, "Invalid storage layout: {}", msg),
             TraverseError::Network(msg) => write!(f, "Network error: {}", msg),
             #[cfg(feature = "std")]
             TraverseError::Io(err) => write!(f, "IO error: {}", err),

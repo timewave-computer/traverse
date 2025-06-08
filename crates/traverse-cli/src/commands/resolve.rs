@@ -8,6 +8,7 @@ use anyhow::Result;
 use tracing::{info, error};
 use traverse_core::KeyResolver;
 use traverse_ethereum::EthereumKeyResolver;
+use traverse_cosmos::CosmosKeyResolver;
 use crate::cli::OutputFormat;
 use crate::formatters::{
     write_output, load_layout, format_storage_path, format_storage_paths, path_to_coprocessor_query
@@ -25,18 +26,31 @@ pub fn cmd_resolve(
     
     let layout = load_layout(layout_path)?;
     
-    match chain {
+    let path = match chain {
         "ethereum" => {
             let resolver = EthereumKeyResolver;
-            let path = resolver.resolve(&layout, query)?;
-            let output_content = format_storage_path(&path, query, format)?;
-            write_output(&output_content, output)?;
+            resolver.resolve(&layout, query)?
+        }
+        "cosmos" => {
+            let resolver = CosmosKeyResolver;
+            resolver.resolve(&layout, query)?
         }
         _ => {
             error!("Unsupported chain: {}", chain);
-            std::process::exit(1);
+            return Err(anyhow::anyhow!("Unsupported chain: {}", chain));
         }
-    }
+    };
+    
+    let output_content = format_storage_path(&path, query, format)?;
+    write_output(&output_content, output)?;
+    
+    println!("Storage query resolved successfully:");
+    println!("  • Query: {}", query);
+    println!("  • Storage key: {}", match &path.key {
+        traverse_core::Key::Fixed(key) => hex::encode(key),
+        _ => "dynamic".to_string(),
+    });
+    
     Ok(())
 }
 
@@ -51,18 +65,27 @@ pub fn cmd_resolve_all(
     
     let layout = load_layout(layout_path)?;
     
-    match chain {
+    let paths = match chain {
         "ethereum" => {
             let resolver = EthereumKeyResolver;
-            let paths = resolver.resolve_all(&layout)?;
-            let output_content = format_storage_paths(&paths, format)?;
-            write_output(&output_content, output)?;
+            resolver.resolve_all(&layout)?
+        }
+        "cosmos" => {
+            let resolver = CosmosKeyResolver;
+            resolver.resolve_all(&layout)?
         }
         _ => {
             error!("Unsupported chain: {}", chain);
-            std::process::exit(1);
+            return Err(anyhow::anyhow!("Unsupported chain: {}", chain));
         }
-    }
+    };
+    
+    let output_content = format_storage_paths(&paths, format)?;
+    write_output(&output_content, output)?;
+    
+    println!("Resolved all storage paths successfully:");
+    println!("  • Total paths: {}", paths.len());
+    
     Ok(())
 }
 
@@ -82,47 +105,61 @@ pub fn cmd_batch_resolve(
     
     let layout = load_layout(layout_path)?;
     
-    match chain {
-        "ethereum" => {
-            let resolver = EthereumKeyResolver;
-            let mut results = Vec::new();
-            let mut errors = Vec::new();
-            
-            for query in query_lines {
-                match resolver.resolve(&layout, query) {
-                    Ok(path) => {
-                        let result = match format {
-                            OutputFormat::Traverse => {
-                                serde_json::to_value(&path)?
-                            }
-                            OutputFormat::CoprocessorJson => {
-                                let coprocessor_payload = path_to_coprocessor_query(&path, query);
-                                serde_json::to_value(&coprocessor_payload)?
-                            }
-                        };
-                        results.push(result);
-                    }
-                    Err(e) => {
-                        error!("Failed to resolve query '{}': {}", query, e);
-                        errors.push(format!("Query '{}': {}", query, e));
-                    }
-                }
-            }
-            
-            let output_content = serde_json::to_string_pretty(&results)?;
-            write_output(&output_content, output)?;
-            
-            if !errors.is_empty() {
-                eprintln!("\nErrors encountered:");
-                for error in errors {
-                    eprintln!("  {}", error);
-                }
-            }
-        }
+    let resolver: Box<dyn KeyResolver> = match chain {
+        "ethereum" => Box::new(EthereumKeyResolver),
+        "cosmos" => Box::new(CosmosKeyResolver),
         _ => {
             error!("Unsupported chain: {}", chain);
-            std::process::exit(1);
+            return Err(anyhow::anyhow!("Unsupported chain: {}", chain));
+        }
+    };
+    
+    let mut results = Vec::new();
+    let mut errors = Vec::new();
+    
+    for query in query_lines {
+        match resolver.resolve(&layout, query) {
+            Ok(path) => {
+                let result = match format {
+                    OutputFormat::Traverse => {
+                        serde_json::to_value(&path)?
+                    }
+                    OutputFormat::CoprocessorJson => {
+                        let coprocessor_payload = path_to_coprocessor_query(&path, query);
+                        serde_json::to_value(&coprocessor_payload)?
+                    }
+                    OutputFormat::Toml => {
+                        let coprocessor_payload = path_to_coprocessor_query(&path, query);
+                        serde_json::to_value(&coprocessor_payload)?
+                    }
+                    OutputFormat::Binary => {
+                        let coprocessor_payload = path_to_coprocessor_query(&path, query);
+                        serde_json::to_value(&coprocessor_payload)?
+                    }
+                    OutputFormat::Base64 => {
+                        let coprocessor_payload = path_to_coprocessor_query(&path, query);
+                        serde_json::to_value(&coprocessor_payload)?
+                    }
+                };
+                results.push(result);
+            }
+            Err(e) => {
+                error!("Failed to resolve query '{}': {}", query, e);
+                errors.push(format!("Query '{}': {}", query, e));
+            }
         }
     }
+    
+    let output_content = serde_json::to_string_pretty(&results)?;
+    write_output(&output_content, output)?;
+    
+    println!("Batch resolved {} queries successfully", results.len());
+    if !errors.is_empty() {
+        println!("Errors encountered:");
+        for error in errors {
+            println!("  {}", error);
+        }
+    }
+    
     Ok(())
 } 
