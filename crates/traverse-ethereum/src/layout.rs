@@ -225,6 +225,8 @@ impl EthereumLayoutCompiler {
                     )));
                 },
                 type_name: member.type_ref.clone(),
+                // Default to NeverWritten for struct members, as they are part of a larger data structure.
+                // Users should verify this semantic based on their contract's logic.
                 zero_semantics: traverse_core::ZeroSemantics::NeverWritten,
             });
 
@@ -350,7 +352,7 @@ impl EthereumLayoutCompiler {
                         match function_name {
                             "totalSupply" => {
                                 storage.push(StorageEntry {
-                                    label: "_totalSupply".to_string(),
+                                    label: "totalSupply".to_string(),
                                     slot: slot_counter.to_string(),
                                     offset: 0,
                                     type_name: "t_uint256".to_string(),
@@ -360,7 +362,7 @@ impl EthereumLayoutCompiler {
                             }
                             "name" => {
                                 storage.push(StorageEntry {
-                                    label: "_name".to_string(),
+                                    label: "name".to_string(),
                                     slot: slot_counter.to_string(),
                                     offset: 0,
                                     type_name: "t_string".to_string(),
@@ -370,7 +372,7 @@ impl EthereumLayoutCompiler {
                             }
                             "symbol" => {
                                 storage.push(StorageEntry {
-                                    label: "_symbol".to_string(),
+                                    label: "symbol".to_string(),
                                     slot: slot_counter.to_string(),
                                     offset: 0,
                                     type_name: "t_string".to_string(),
@@ -380,7 +382,7 @@ impl EthereumLayoutCompiler {
                             }
                             "decimals" => {
                                 storage.push(StorageEntry {
-                                    label: "_decimals".to_string(),
+                                    label: "decimals".to_string(),
                                     slot: slot_counter.to_string(),
                                     offset: 0,
                                     type_name: "t_uint8".to_string(),
@@ -390,9 +392,9 @@ impl EthereumLayoutCompiler {
                             }
                             "balanceOf" => {
                                 // Only add if not already present
-                                if !storage.iter().any(|s| s.label == "_balances") {
+                                if !storage.iter().any(|s| s.label == "balanceOf") {
                                     storage.push(StorageEntry {
-                                        label: "_balances".to_string(),
+                                        label: "balanceOf".to_string(),
                                         slot: slot_counter.to_string(),
                                         offset: 0,
                                         type_name: "t_mapping_address_uint256".to_string(),
@@ -414,9 +416,9 @@ impl EthereumLayoutCompiler {
                             }
                             "allowance" => {
                                 // Only add if not already present
-                                if !storage.iter().any(|s| s.label == "_allowances") {
+                                if !storage.iter().any(|s| s.label == "allowance") {
                                     storage.push(StorageEntry {
-                                        label: "_allowances".to_string(),
+                                        label: "allowance".to_string(),
                                         slot: slot_counter.to_string(),
                                         offset: 0,
                                         type_name: "t_mapping_address_mapping_address_uint256"
@@ -440,7 +442,7 @@ impl EthereumLayoutCompiler {
                             }
                             "owner" => {
                                 storage.push(StorageEntry {
-                                    label: "_owner".to_string(),
+                                    label: "owner".to_string(),
                                     slot: slot_counter.to_string(),
                                     offset: 0,
                                     type_name: "t_address".to_string(),
@@ -722,22 +724,22 @@ mod tests {
         let total_supply_entry = layout
             .storage
             .iter()
-            .find(|e| e.label == "_totalSupply")
+            .find(|e| e.label == "totalSupply")
             .expect("Should have totalSupply entry");
         assert_eq!(total_supply_entry.zero_semantics, ZeroSemantics::ValidZero);
 
         let decimals_entry = layout
             .storage
             .iter()
-            .find(|e| e.label == "_decimals")
+            .find(|e| e.label == "decimals")
             .expect("Should have decimals entry");
         assert_eq!(decimals_entry.zero_semantics, ZeroSemantics::ValidZero);
 
         let balances_entry = layout
             .storage
             .iter()
-            .find(|e| e.label == "_balances")
-            .expect("Should have balances entry");
+            .find(|e| e.label == "balanceOf")
+            .expect("Should have balanceOf entry");
         assert_eq!(balances_entry.zero_semantics, ZeroSemantics::ValidZero);
     }
 
@@ -903,21 +905,21 @@ mod tests {
         let name_entry = layout
             .storage
             .iter()
-            .find(|e| e.label == "_name")
+            .find(|e| e.label == "name")
             .expect("Should have name entry");
         assert_eq!(name_entry.zero_semantics, ZeroSemantics::NeverWritten);
 
         let total_supply_entry = layout
             .storage
             .iter()
-            .find(|e| e.label == "_totalSupply")
+            .find(|e| e.label == "totalSupply")
             .expect("Should have totalSupply entry");
         assert_eq!(total_supply_entry.zero_semantics, ZeroSemantics::ValidZero);
 
         let owner_entry = layout
             .storage
             .iter()
-            .find(|e| e.label == "_owner")
+            .find(|e| e.label == "owner")
             .expect("Should have owner entry");
         assert_eq!(owner_entry.zero_semantics, ZeroSemantics::NeverWritten);
     }

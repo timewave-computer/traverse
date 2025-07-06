@@ -199,31 +199,11 @@ pub enum Commands {
     #[command(subcommand)]
     Cosmos(CosmosCommands),
 
-    /// Auto-generate everything from contract files
+    /// Auto-generate everything from configuration file
     AutoGenerate {
-        /// Contract file (ABI JSON or layout)
-        #[arg(value_name = "CONTRACT_FILE")]
-        contract_file: PathBuf,
-
-        /// RPC endpoint URL for Ethereum
-        #[arg(long)]
-        rpc_ethereum: Option<String>,
-
-        /// RPC endpoint URL for Cosmos
-        #[arg(long)]
-        rpc_cosmos: Option<String>,
-
-        /// Ethereum contract address
-        #[arg(long)]
-        contract_ethereum: Option<String>,
-
-        /// Cosmos contract address
-        #[arg(long)]
-        contract_cosmos: Option<String>,
-
-        /// Queries file (YAML format)
-        #[arg(long)]
-        queries_file: Option<PathBuf>,
+        /// Configuration file (JSON format with contracts array)
+        #[arg(value_name = "CONFIG_FILE", help = "JSON configuration file containing contracts array with chain_type, file, rpc, contract, and queries fields for each contract")]
+        config_file: PathBuf,
 
         /// Output directory
         #[arg(long)]
@@ -232,13 +212,17 @@ pub enum Commands {
         /// Enable dry-run mode (no RPC calls)
         #[arg(long)]
         dry_run: bool,
+
+        /// Enable caching for faster processing
+        #[arg(long)]
+        cache: bool,
     },
 
-    /// Batch processing with configuration file
+    /// Batch processing with glob pattern
     BatchGenerate {
-        /// Configuration file (YAML)
-        #[arg(value_name = "CONFIG_FILE")]
-        config: PathBuf,
+        /// Glob pattern to match contract files (e.g., "contracts/*.json" or "**/*.abi")
+        #[arg(value_name = "PATTERN", help = "Glob pattern to match contract files for batch processing")]
+        pattern: String,
 
         /// Number of parallel workers
         #[arg(long, default_value = "1")]

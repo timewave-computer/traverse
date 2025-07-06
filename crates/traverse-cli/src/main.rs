@@ -239,32 +239,28 @@ async fn main() -> Result<()> {
         },
 
         Commands::AutoGenerate {
-            contract_file,
-            rpc_ethereum: _,
-            rpc_cosmos: _,
-            contract_ethereum: _,
-            contract_cosmos: _,
-            queries_file: _,
+            config_file,
             output_dir,
             dry_run,
+            cache,
         } => {
             cmd_auto_generate(
-                &contract_file,
+                &config_file,
                 &output_dir,
                 dry_run,
-                false, // cache
+                cache,
             )
             .await
         }
 
         Commands::BatchGenerate {
-            config,
+            pattern,
             parallel,
             output_dir,
             dry_run,
         } => {
             cmd_batch_generate(
-                &config.display().to_string(),
+                &pattern,
                 &output_dir,
                 parallel,
                 dry_run,
