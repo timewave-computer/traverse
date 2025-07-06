@@ -1,5 +1,5 @@
 //! Traverse Valence Coprocessor Integration
-//! 
+//!
 //! This crate provides integration between the traverse storage path generator
 //! and the valence coprocessor framework. It includes controller helpers for
 //! witness creation, circuit helpers for proof verification, and domain helpers
@@ -55,14 +55,14 @@ use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 // Module declarations
-pub mod controller;
 pub mod circuit;
+pub mod controller;
 pub mod domain;
 pub mod messages;
 
 // Re-export the module contents at the crate root for convenience
-pub use controller::*;
 pub use circuit::*;
+pub use controller::*;
 pub use domain::*;
 pub use messages::*;
 
@@ -89,12 +89,18 @@ impl core::fmt::Display for TraverseValenceError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             TraverseValenceError::Json(msg) => write!(f, "JSON error: {}", msg),
-            TraverseValenceError::InvalidStorageKey(msg) => write!(f, "Invalid storage key: {}", msg),
-            TraverseValenceError::ProofVerificationFailed(msg) => write!(f, "Proof verification failed: {}", msg),
+            TraverseValenceError::InvalidStorageKey(msg) => {
+                write!(f, "Invalid storage key: {}", msg)
+            }
+            TraverseValenceError::ProofVerificationFailed(msg) => {
+                write!(f, "Proof verification failed: {}", msg)
+            }
             TraverseValenceError::LayoutMismatch(msg) => write!(f, "Layout mismatch: {}", msg),
             TraverseValenceError::InvalidWitness(msg) => write!(f, "Invalid witness: {}", msg),
             TraverseValenceError::AbiError(msg) => write!(f, "ABI error: {}", msg),
-            TraverseValenceError::StorageProofError(msg) => write!(f, "Storage proof error: {}", msg),
+            TraverseValenceError::StorageProofError(msg) => {
+                write!(f, "Storage proof error: {}", msg)
+            }
         }
     }
 }
@@ -150,4 +156,4 @@ pub struct BatchStorageVerificationRequest {
     pub contract_address: Option<String>,
     /// Common block number (if all proofs are from same block)
     pub block_number: Option<u64>,
-} 
+}

@@ -24,6 +24,69 @@ Traverse provides a clean separation between storage key generation (setup phase
 - **Standard Entry Points**: Matches valence-coprocessor-app patterns exactly
 - **SP1 Proving**: Full integration with coprocessor service for cryptographic proof generation
 
+## Semantic Storage Proof Integration
+
+### Understanding Semantic Requirements
+
+Before integrating with the coprocessor, you must understand that Traverse now requires **semantic specification** for all storage proofs. This eliminates false positives by explicitly declaring what zero values mean.
+
+#### Semantic Types Overview
+
+```rust
+pub enum ZeroSemantics {
+    /// Storage slot has never been written to (default state)
+    NeverWritten,
+    /// Storage slot was intentionally set to zero  
+    ExplicitlyZero,
+    /// Storage slot was previously non-zero but cleared
+    Cleared,
+    /// Zero is a valid operational state
+    ValidZero,
+}
+```
+
+#### Example Semantic Mapping for Common Contracts
+
+**ERC20 Token Contract:**
+```json
+{
+  "storage": [
+    {
+      "label": "balanceOf", 
+      "zero_semantics": "never_written"
+    },
+    {
+      "label": "totalSupply",
+      "zero_semantics": "explicitly_zero" 
+    },
+    {
+      "label": "decimals",
+      "zero_semantics": "valid_zero"
+    }
+  ]
+}
+```
+
+**Vault Contract:**
+```json
+{
+  "storage": [
+    {
+      "label": "_withdrawRequests",
+      "zero_semantics": "explicitly_zero"
+    },
+    {
+      "label": "_balances",
+      "zero_semantics": "never_written"
+    },
+    {
+      "label": "_paused", 
+      "zero_semantics": "explicitly_zero"
+    }
+  ]
+}
+```
+
 ## Step-by-Step Integration
 
 ### 1. Fork Valence Coprocessor Template
@@ -60,16 +123,17 @@ optional = true
 client = ["dep:reqwest"]
 ```
 
-### 3. Implement Controller with Business Logic
+### 3. Implement Controller with Semantic Business Logic
 
-The controller should handle ALL business logic, authorization decisions, and witness creation:
+The controller should handle ALL business logic, authorization decisions, and semantic-aware witness creation:
 
 ```rust
 use traverse_valence::controller;
+use traverse_core::{ZeroSemantics, StorageSemantics};
 use serde_json::{json, Value};
 use valence_coprocessor::Witness;
 
-/// Controller handles ALL business logic and authorization decisions
+/// Controller handles ALL business logic and authorization decisions with semantic awareness
 pub async fn vault_controller_get_witnesses(
     layout: &LayoutInfo, 
     rpc_url: &str
@@ -77,9 +141,28 @@ pub async fn vault_controller_get_witnesses(
     // Fetch storage data from Ethereum
     let (storage_value, proof_nodes) = fetch_storage_data(rpc_url, contract_addr, storage_key).await?;
     
-    // BUSINESS LOGIC: Extract and validate values
+    // SEMANTIC VALIDATION: Check if zero value matches expected semantics
+    let expected_semantics = ZeroSemantics::ExplicitlyZero; // _withdrawRequests is initialized to 0
+    let storage_semantics = if is_zero_value(&storage_value) {
+        // For zero values, validate against our semantic expectations
+        StorageSemantics::new(expected_semantics)
+    } else {
+        // Non-zero values don't need semantic validation
+        StorageSemantics::new(expected_semantics)
+    };
+    
+    // BUSINESS LOGIC: Extract and validate values with semantic context
     let withdraw_requests_count = decode_uint64_from_storage(&storage_value)?;
     let has_pending_requests = withdraw_requests_count > 0;
+    
+    // SEMANTIC BUSINESS LOGIC: Handle zero value meaning
+    let withdrawal_status = match (withdraw_requests_count, storage_semantics.zero_meaning) {
+        (0, ZeroSemantics::ExplicitlyZero) => "No pending requests (explicitly zero)",
+        (0, ZeroSemantics::NeverWritten) => "Uninitialized vault (never written)", 
+        (0, ZeroSemantics::Cleared) => "Requests were processed and cleared",
+        (0, ZeroSemantics::ValidZero) => "Zero is valid operational state",
+        (n, _) => &format!("{} pending requests", n),
+    };
     
     // BUSINESS LOGIC: Make authorization decisions
     let authorized = if has_pending_requests {
@@ -139,27 +222,40 @@ pub async fn vault_controller_get_witnesses(
 }
 ```
 
-### 4. Implement Minimal Circuit (Cryptographic Verification Only)
+### 4. Implement Minimal Semantic-Aware Circuit
 
-The circuit should be MINIMAL and only handle cryptographic verification:
+The circuit should be MINIMAL and only handle cryptographic verification with semantic validation:
 
 ```rust
 use traverse_valence::circuit;
+use traverse_core::{ZeroSemantics, SemanticStorageProof};
 use valence_coprocessor::Witness;
 
-/// MINIMAL circuit - only cryptographic verification, NO business logic
-pub fn vault_circuit_verify_proofs(coprocessor_data: &Value) -> Result<Vec<u8>, TraverseValenceError> {
-    println!("Circuit: Starting minimal cryptographic verification");
+/// MINIMAL circuit - only cryptographic verification with semantic validation, NO business logic
+pub fn vault_circuit_verify_semantic_proofs(coprocessor_data: &Value) -> Result<Vec<u8>, TraverseValenceError> {
+    println!("Circuit: Starting minimal cryptographic verification with semantic validation");
     
-    // ONLY verify storage proofs cryptographically
-    let witnesses = controller::create_storage_witnesses(&storage_batch)?;
+    // ONLY verify semantic storage proofs cryptographically
+    let semantic_witnesses = controller::create_semantic_storage_witnesses(&storage_batch)?;
     
-    if witnesses.is_empty() {
-        return Err(TraverseValenceError::InvalidWitness("No witnesses for verification".to_string()));
+    if semantic_witnesses.is_empty() {
+        return Err(TraverseValenceError::InvalidWitness("No semantic witnesses for verification".to_string()));
     }
     
-    // ONLY cryptographic verification - extract values to prove they're valid
-    let _verified_values = circuit::extract_multiple_u64_values(&witnesses)?;
+    // ONLY cryptographic verification - verify semantic storage proofs are valid
+    let verification_results = circuit::verify_semantic_storage_proofs_and_extract(&semantic_witnesses)?;
+    
+    // Validate semantic consistency (circuit validates semantics match expectations)
+    for (i, result) in verification_results.iter().enumerate() {
+        if *result != 0x01 { // 0x01 = valid proof
+            return Err(TraverseValenceError::ProofVerificationFailed(
+                format!("Semantic storage proof {} failed validation", i)
+            ));
+        }
+    }
+    
+    // Extract values to prove they're valid (semantic-aware extraction)
+    let _verified_values = circuit::extract_semantic_values(&semantic_witnesses)?;
     
     println!("Circuit: Cryptographic verification successful");
     
@@ -282,7 +378,7 @@ async fn submit_to_coprocessor_for_proving(
                         if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(data_str) {
                             if let Ok(decoded_str) = String::from_utf8(decoded) {
                                 if decoded_str.contains("validation_passed") || decoded_str.contains("SP1_PROOF") {
-                                    println!("   ✅ Found SP1 proof results in storage");
+                                    println!("   Found SP1 proof results in storage");
                                     
                                     let sp1_proof = b"SP1_PROOF_GENERATED_SUCCESSFULLY".to_vec();
                                     let zk_message_bytes = generate_vault_zk_message(&vault_data)?;
@@ -305,36 +401,75 @@ async fn submit_to_coprocessor_for_proving(
 
 ## External Setup Workflow
 
-### 1. Generate Storage Keys
+### 1. Generate Storage Keys with Semantic Specifications
 
-First, obtain your contract's storage layout and use traverse CLI to generate storage keys:
+First, obtain your contract's storage layout and use traverse CLI to generate storage keys with semantic specifications:
 
 ```bash
-# Fetch ABI and generate layout
+# Fetch ABI and generate layout with semantic metadata
 cargo run -p traverse-cli -- compile-layout VaultContract.abi.json > vault_layout.json
 
-# Generate storage key for specific query
+# The compile-layout command automatically includes semantic specifications
+# Check the generated layout to ensure semantic specifications are correct
+jq '.storage_layout.storage[] | {label, zero_semantics}' vault_layout.json
+
+# Generate storage key with semantic specification
 cargo run -p traverse-cli -- resolve "_withdrawRequests" \
   --layout vault_layout.json \
   --format coprocessor-json > withdraw_requests_query.json
 
-# For indexed mappings
+# For indexed mappings with semantics
 cargo run -p traverse-cli -- resolve "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" \
-  --layout token_layout.json \
+  --layout vault_layout.json \
   --format coprocessor-json > balance_query.json
 ```
 
-### 2. Generate Storage Proofs with Traverse CLI
+### 2. Generate Semantic Storage Proofs with Traverse CLI
 
-Use traverse CLI to generate complete storage proofs:
+Use traverse CLI to generate complete storage proofs with semantic specifications:
 
 ```bash
-# Generate proof with real Ethereum data
-cargo run -p traverse-cli --features client -- generate-proof \
-  --slot 0x0000000000000000000000000000000000000000000000000000000000000007 \
+# Step 1: Resolve query to get storage slot
+cargo run -p traverse-cli -- resolve "_withdrawRequests" \
+  --layout vault_layout.json \
+  --format coprocessor-json > withdraw_query.json
+
+# Step 2: Extract slot and generate proof with semantic specification
+SLOT=$(jq -r '.storage_key' withdraw_query.json)
+cargo run -p traverse-cli -- generate-proof \
+  --slot "0x$SLOT" \
   --contract 0xf2b85c389a771035a9bd147d4bf87987a7f9cf98 \
   --rpc https://mainnet.infura.io/v3/your_project_id \
+  --zero-means explicitly_zero \
   --output vault_proof.json
+
+# Generate proof with semantic validation for balance mapping
+cargo run -p traverse-cli -- resolve "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" \
+  --layout vault_layout.json \
+  --format coprocessor-json > balance_query.json
+
+SLOT=$(jq -r '.storage_key' balance_query.json)
+cargo run -p traverse-cli -- generate-proof \
+  --slot "0x$SLOT" \
+  --contract 0xf2b85c389a771035a9bd147d4bf87987a7f9cf98 \
+  --rpc https://mainnet.infura.io/v3/your_project_id \
+  --zero-means never_written \
+  --validate-semantics \
+  --output balance_proof.json
+
+# For complex scenarios with cleared semantics
+cargo run -p traverse-cli -- resolve "tempVariable" \
+  --layout vault_layout.json \
+  --format coprocessor-json > temp_query.json
+
+SLOT=$(jq -r '.storage_key' temp_query.json)
+cargo run -p traverse-cli -- generate-proof \
+  --slot "0x$SLOT" \
+  --contract 0xf2b85c389a771035a9bd147d4bf87987a7f9cf98 \
+  --rpc https://mainnet.infura.io/v3/your_project_id \
+  --zero-means cleared \
+  --validate-semantics \
+  --output cleared_value_proof.json
 ```
 
 ### 3. External Client Integration
@@ -377,9 +512,129 @@ const zkMessage = await pollForProofCompletion(coprocessorUrl, controllerId);
 await submitToNeutron(zkMessage);
 ```
 
+## Semantic Conflict Handling
+
+### Understanding Semantic Conflicts
+
+Semantic conflicts occur when your declared semantics don't match the actual blockchain state. The system can automatically detect and resolve these conflicts:
+
+```rust
+use traverse_ethereum::SemanticValidator;
+use traverse_core::{ZeroSemantics, StorageSemantics};
+
+pub async fn handle_semantic_conflicts(
+    contract_address: &str,
+    storage_slot: &str,
+    declared_semantics: ZeroSemantics,
+    rpc_url: &str
+) -> Result<StorageSemantics, Box<dyn std::error::Error>> {
+    
+    // Create semantic validator with indexer service
+    let validator = SemanticValidator::new("etherscan", Some("your_api_key"));
+    
+    // Validate declared semantics against blockchain events
+    let validation_result = validator.validate_semantics(
+        contract_address,
+        storage_slot, 
+        declared_semantics
+    ).await?;
+    
+    match validation_result.conflicts.is_empty() {
+        true => {
+            println!("No semantic conflicts detected");
+            Ok(StorageSemantics::new(declared_semantics))
+        },
+        false => {
+            println!("Semantic conflicts detected:");
+            for conflict in &validation_result.conflicts {
+                println!("   - Declared: {:?}", conflict.declared);
+                println!("   - Validated: {:?}", conflict.validated);
+                println!("   - Events: {} found", conflict.supporting_events.len());
+            }
+            
+            // Use validated semantics instead of declared
+            let resolved_semantics = StorageSemantics::with_validation(
+                declared_semantics,
+                validation_result.conflicts[0].validated
+            );
+            
+            println!("Using validated semantics: {:?}", resolved_semantics.zero_meaning);
+            Ok(resolved_semantics)
+        }
+    }
+}
+```
+
+### Semantic Validation in Production
+
+```rust
+// Production controller with semantic conflict handling
+pub async fn production_controller_with_semantics(
+    contract_addr: &str,
+    storage_slot: &str,
+    declared_semantics: ZeroSemantics,
+    rpc_url: &str
+) -> Result<Value, Box<dyn std::error::Error>> {
+    
+    // Step 1: Handle semantic conflicts first
+    let resolved_semantics = handle_semantic_conflicts(
+        contract_addr,
+        storage_slot,
+        declared_semantics,
+        rpc_url
+    ).await?;
+    
+    // Step 2: Fetch storage with semantic context
+    let (storage_value, proof_nodes) = fetch_storage_with_semantics(
+        rpc_url,
+        contract_addr,
+        storage_slot,
+        &resolved_semantics
+    ).await?;
+    
+    // Step 3: Business logic with semantic awareness
+    let business_result = match (is_zero_value(&storage_value), resolved_semantics.zero_meaning) {
+        (true, ZeroSemantics::NeverWritten) => {
+            "Uninitialized storage - first time access"
+        },
+        (true, ZeroSemantics::ExplicitlyZero) => {
+            "Explicitly set to zero - intentional state"
+        },
+        (true, ZeroSemantics::Cleared) => {
+            "Previously had value but was cleared - reset state"
+        },
+        (true, ZeroSemantics::ValidZero) => {
+            "Zero is valid operational value - normal state"
+        },
+        (false, _) => {
+            "Non-zero value - extract and process normally"
+        }
+    };
+    
+    // Step 4: Create semantic-aware authorization
+    let authorization = json!({
+        "business_result": business_result,
+        "semantic_info": {
+            "declared_semantics": resolved_semantics.declared_semantics,
+            "validated_semantics": resolved_semantics.validated_semantics,
+            "final_semantics": resolved_semantics.zero_meaning,
+            "has_conflict": resolved_semantics.has_conflict(),
+        },
+        "storage_proof": {
+            "key": storage_slot,
+            "value": hex::encode(&storage_value),
+            "proof": proof_nodes,
+            "semantics": resolved_semantics
+        }
+    });
+    
+    Ok(authorization)
+}
+```
+
 ## Example Use Cases
 
-### Vault Authorization with Business Logic
+### Vault Authorization with Semantic Business Logic
 
 ```rust
 // Controller handles ALL business logic

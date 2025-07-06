@@ -1,14 +1,14 @@
 //! Error types for traverse-core
-//! 
+//!
 //! This module defines the error types that can occur during layout compilation,
 //! path resolution, and proof generation operations.
 
-use alloc::string::String;
 #[cfg(feature = "std")]
 use alloc::boxed::Box;
+use alloc::string::String;
 
 /// Errors that can occur during layout compilation and path resolution
-/// 
+///
 /// This enum covers all possible error conditions that can arise when working
 /// with storage layouts and path resolution across different blockchain architectures.
 #[derive(Debug)]
@@ -35,7 +35,9 @@ pub enum TraverseError {
 impl core::fmt::Display for TraverseError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            TraverseError::LayoutCompilation(msg) => write!(f, "Layout compilation failed: {}", msg),
+            TraverseError::LayoutCompilation(msg) => {
+                write!(f, "Layout compilation failed: {}", msg)
+            }
             TraverseError::PathResolution(msg) => write!(f, "Path resolution failed: {}", msg),
             TraverseError::ProofGeneration(msg) => write!(f, "Proof generation failed: {}", msg),
             TraverseError::InvalidQuery(msg) => write!(f, "Invalid query format: {}", msg),
@@ -63,4 +65,4 @@ impl From<serde_json::Error> for TraverseError {
     fn from(err: serde_json::Error) -> Self {
         TraverseError::Serialization(alloc::format!("{}", err))
     }
-} 
+}

@@ -19,10 +19,13 @@
 
 use crate::CosmosError;
 use anyhow::Result;
-use ics23::{verify_membership, verify_non_membership, iavl_spec, CommitmentProof, ProofSpec, HostFunctionsManager};
+use base64::{engine::general_purpose::STANDARD, Engine};
+use ics23::{
+    iavl_spec, verify_membership, verify_non_membership, CommitmentProof, HostFunctionsManager,
+    ProofSpec,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use base64::{engine::general_purpose::STANDARD, Engine};
 
 /// IAVL proof data from Cosmos RPC
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,53 +103,55 @@ impl CosmosProofFetcher {
         height: Option<u64>,
     ) -> Result<IavlProof, CosmosError> {
         let client = reqwest::Client::new();
-        
+
         // Construct the query path
         let query_path = if let Some(h) = height {
-            format!("/store/{}/key?key={}&height={}", 
-                    store_key, 
-                    hex::encode(key), 
-                    h)
+            format!(
+                "/store/{}/key?key={}&height={}",
+                store_key,
+                hex::encode(key),
+                h
+            )
         } else {
-            format!("/store/{}/key?key={}", 
-                    store_key, 
-                    hex::encode(key))
+            format!("/store/{}/key?key={}", store_key, hex::encode(key))
         };
-        
+
         let url = format!("{}/abci_query?path=\"{}\"", self.rpc_url, query_path);
-        
+
         // Fetch the proof from RPC
         let response = client.get(&url).send().await?;
         let rpc_response: serde_json::Value = response.json().await?;
-        
+
         // Parse the response (this is a simplified version - real implementation would
         // need to handle the full Cosmos RPC response format)
-        let result = rpc_response.get("result")
+        let result = rpc_response
+            .get("result")
             .and_then(|r| r.get("response"))
-            .ok_or_else(|| CosmosError::InvalidSchema(
-                "No response data in RPC result".to_string()
-            ))?;
-        
-        let proof_data = result.get("proofOps")
-            .ok_or_else(|| CosmosError::InvalidSchema(
-                "No proof data in response".to_string()
-            ))?;
-        
+            .ok_or_else(|| {
+                CosmosError::InvalidSchema("No response data in RPC result".to_string())
+            })?;
+
+        let proof_data = result
+            .get("proofOps")
+            .ok_or_else(|| CosmosError::InvalidSchema("No proof data in response".to_string()))?;
+
         // Convert to ICS23 proof format
         let proof = self.parse_cosmos_proof(proof_data)?;
-        
-        let value = result.get("value")
+
+        let value = result
+            .get("value")
             .and_then(|v| v.as_str())
             .map(|s| STANDARD.decode(s).unwrap_or_default());
-        
-        let height = result.get("height")
+
+        let height = result
+            .get("height")
             .and_then(|h| h.as_str())
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
-        
+
         // Get the state root (this would come from the block header)
         let root = self.fetch_state_root(height).await?;
-        
+
         Ok(IavlProof {
             key: key.to_vec(),
             value,
@@ -172,10 +177,8 @@ impl CosmosProofFetcher {
         expected_value: Option<&[u8]>,
     ) -> Result<bool, CosmosError> {
         let default_spec = iavl_spec();
-        let spec = self.config.proof_spec
-            .as_ref()
-            .unwrap_or(&default_spec);
-        
+        let spec = self.config.proof_spec.as_ref().unwrap_or(&default_spec);
+
         match expected_value {
             Some(value) => {
                 // Verify existence proof
@@ -217,28 +220,31 @@ impl CosmosProofFetcher {
         height: Option<u64>,
     ) -> Result<HashMap<Vec<u8>, IavlProof>, CosmosError> {
         let mut proofs = HashMap::new();
-        
+
         // For now, fetch proofs sequentially
         // A more efficient implementation could use batch RPC calls
         for key in keys {
             let proof = self.fetch_proof(store_key, key, height).await?;
             proofs.insert(key.clone(), proof);
         }
-        
+
         Ok(proofs)
     }
 
     /// Parse Cosmos RPC proof response into ICS23 format
-    fn parse_cosmos_proof(&self, _proof_data: &serde_json::Value) -> Result<CommitmentProof, CosmosError> {
+    fn parse_cosmos_proof(
+        &self,
+        _proof_data: &serde_json::Value,
+    ) -> Result<CommitmentProof, CosmosError> {
         // This is a simplified parser - real implementation would need to handle
         // the full Cosmos proof operation format and convert to ICS23
-        
+
         // For now, return a placeholder proof structure
         // In a full implementation, this would parse the proof operations
         // and construct a proper ICS23 CommitmentProof
-        
+
         Err(CosmosError::UnsupportedPattern(
-            "Full IAVL proof parsing not yet implemented".to_string()
+            "Full IAVL proof parsing not yet implemented".to_string(),
         ))
     }
 
@@ -246,23 +252,22 @@ impl CosmosProofFetcher {
     async fn fetch_state_root(&self, height: u64) -> Result<Vec<u8>, CosmosError> {
         let client = reqwest::Client::new();
         let url = format!("{}/block?height={}", self.rpc_url, height);
-        
+
         let response = client.get(&url).send().await?;
         let block_response: serde_json::Value = response.json().await?;
-        
+
         let app_hash = block_response
             .get("result")
             .and_then(|r| r.get("block"))
             .and_then(|b| b.get("header"))
             .and_then(|h| h.get("app_hash"))
             .and_then(|ah| ah.as_str())
-            .ok_or_else(|| CosmosError::InvalidSchema(
-                "No app_hash in block response".to_string()
-            ))?;
-        
-        hex::decode(app_hash).map_err(|e| CosmosError::InvalidSchema(
-            format!("Invalid app_hash format: {}", e)
-        ))
+            .ok_or_else(|| {
+                CosmosError::InvalidSchema("No app_hash in block response".to_string())
+            })?;
+
+        hex::decode(app_hash)
+            .map_err(|e| CosmosError::InvalidSchema(format!("Invalid app_hash format: {}", e)))
     }
 }
 
@@ -279,25 +284,21 @@ pub fn verify_iavl_proof(
 ) -> Result<bool, CosmosError> {
     let default_spec = iavl_spec();
     let proof_spec = spec.unwrap_or(&default_spec);
-    
+
     match expected_value {
-        Some(value) => {
-            Ok(verify_membership::<HostFunctionsManager>(
-                &proof.proof,
-                proof_spec,
-                &proof.root,
-                &proof.key,
-                value,
-            ))
-        }
-        None => {
-            Ok(verify_non_membership::<HostFunctionsManager>(
-                &proof.proof,
-                proof_spec,
-                &proof.root,
-                &proof.key,
-            ))
-        }
+        Some(value) => Ok(verify_membership::<HostFunctionsManager>(
+            &proof.proof,
+            proof_spec,
+            &proof.root,
+            &proof.key,
+            value,
+        )),
+        None => Ok(verify_non_membership::<HostFunctionsManager>(
+            &proof.proof,
+            proof_spec,
+            &proof.root,
+            &proof.key,
+        )),
     }
 }
 
@@ -327,4 +328,4 @@ mod tests {
         assert_eq!(fetcher.rpc_url, "http://localhost:26657");
         assert_eq!(fetcher.config.chain_id, "cosmoshub-4");
     }
-} 
+}

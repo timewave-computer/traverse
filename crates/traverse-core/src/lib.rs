@@ -1,5 +1,5 @@
 //! Core types and traits for chain-independent ZK storage path generation
-//! 
+//!
 //! This crate provides the foundational abstractions for generating ZK-compatible
 //! contract storage proofs across different blockchain architectures.
 //!
@@ -33,15 +33,17 @@ extern crate std;
 
 // Module declarations
 pub mod error;
-pub mod layout;
 pub mod key;
+pub mod layout;
+pub mod semantic;
 pub mod traits;
 
 // Re-export all public types and traits for convenience
 pub use error::TraverseError;
+pub use key::{Key, SemanticStorageProof, StaticKeyPath, StorageSemantics, ZeroSemantics};
 pub use layout::{LayoutInfo, StorageEntry, TypeInfo};
-pub use key::{Key, StaticKeyPath, CoprocessorQueryPayload};
+pub use semantic::{ResolvedSemantics, SemanticResolver, SemanticSource, StorageSemanticsExt};
 pub use traits::KeyResolver;
 
 #[cfg(feature = "std")]
-pub use traits::{ProofFetcher, LayoutCompiler}; 
+pub use traits::{LayoutCompiler, ProofFetcher};

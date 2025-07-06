@@ -15,28 +15,28 @@ use std::fs;
 /// Run all Cosmos CLI command tests
 pub async fn run_tests(fixtures: &TestFixtures) -> Result<()> {
     let cli = CliRunner::new(fixtures.cli_path());
-    
-    println!("    🌌 Testing Cosmos analyze-contract command...");
+
+    println!("     analyze-contract command...");
     test_analyze_contract(&cli, fixtures).await?;
-    
-    println!("    🌌 Testing Cosmos compile-layout command...");
+
+    println!("     compile-layout command...");
     test_compile_layout(&cli, fixtures).await?;
-    
-    println!("    🌌 Testing Cosmos generate-queries command...");
+
+    println!("     generate-queries command...");
     test_generate_queries(&cli, fixtures).await?;
-    
-    println!("    🌌 Testing Cosmos resolve-query command...");
+
+    println!("     resolve-query command...");
     test_resolve_query(&cli, fixtures).await?;
-    
-    println!("    🌌 Testing Cosmos auto-generate command...");
+
+    println!("     auto-generate command...");
     test_auto_generate(&cli, fixtures).await?;
-    
-    println!("    🌌 Testing Cosmos output formats...");
+
+    println!("     output formats...");
     test_output_formats(&cli, fixtures).await?;
-    
-    println!("    🌌 Testing Cosmos performance...");
+
+    println!("     performance...");
     test_performance(&cli, fixtures).await?;
-    
+
     Ok(())
 }
 
@@ -44,48 +44,54 @@ pub async fn run_tests(fixtures: &TestFixtures) -> Result<()> {
 async fn test_analyze_contract(cli: &CliRunner, fixtures: &TestFixtures) -> Result<()> {
     let cw20_schema = fixtures.cosmos_schemas.get("cw20").unwrap();
     let output_path = fixtures.path("outputs/cw20_analysis.json");
-    
+
     // Test basic analysis
     let output = cli.run_success(&[
-        "cosmos", "analyze-contract",
+        "cosmos",
+        "analyze-contract",
         cw20_schema.to_str().unwrap(),
-        "--output", output_path.to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
     ])?;
-    
+
     // Verify output contains expected information
     assertions::assert_output_contains(&output, "Analyzing CosmWasm contract")?;
-    
+
     // Verify output file was created and has expected structure
-    let _analysis = FileValidator::validate_json_structure(&output_path, &[
-        "contract_type", "messages", "storage_patterns"
-    ])?;
-    
+    let _analysis = FileValidator::validate_json_structure(
+        &output_path,
+        &["contract_type", "messages", "storage_patterns"],
+    )?;
+
     assertions::assert_output_contains(&output, "Contract analysis complete")?;
-    
+
     // Test with validation flag
     let output = cli.run_success(&[
-        "cosmos", "analyze-contract", 
+        "cosmos",
+        "analyze-contract",
         cw20_schema.to_str().unwrap(),
-        "--validate-schema"
+        "--validate-schema",
     ])?;
-    
+
     assertions::assert_output_contains(&output, "Schema validation")?;
-    
+
     // Test with CW721 NFT contract
     let cw721_schema = fixtures.cosmos_schemas.get("cw721").unwrap();
     let cw721_output_path = fixtures.path("outputs/cw721_analysis.json");
-    
+
     let output = cli.run_success(&[
-        "cosmos", "analyze-contract",
+        "cosmos",
+        "analyze-contract",
         cw721_schema.to_str().unwrap(),
-        "--output", cw721_output_path.to_str().unwrap(),
-        "--validate-schema"
+        "--output",
+        cw721_output_path.to_str().unwrap(),
+        "--validate-schema",
     ])?;
-    
+
     assertions::assert_output_contains(&output, "token_info")?;
     FileValidator::validate_json(&cw721_output_path)?;
-    
-    println!("      ✅ analyze-contract tests passed");
+
+    println!("      analyze-contract tests passed");
     Ok(())
 }
 
@@ -93,35 +99,42 @@ async fn test_analyze_contract(cli: &CliRunner, fixtures: &TestFixtures) -> Resu
 async fn test_compile_layout(cli: &CliRunner, fixtures: &TestFixtures) -> Result<()> {
     let cw20_schema = fixtures.cosmos_schemas.get("cw20").unwrap();
     let layout_path = fixtures.path("outputs/cosmos_layout.json");
-    
+
     let output = cli.run_success(&[
-        "cosmos", "compile-layout",
+        "cosmos",
+        "compile-layout",
         cw20_schema.to_str().unwrap(),
-        "--output", layout_path.to_str().unwrap(),
-        "--format", "traverse"
+        "--output",
+        layout_path.to_str().unwrap(),
+        "--format",
+        "traverse",
     ])?;
-    
+
     assertions::assert_output_contains(&output, "Storage layout compiled")?;
     FileValidator::validate_json(&layout_path)?;
-    
+
     // Verify layout file structure
-    let _layout = FileValidator::validate_json_structure(&layout_path, &[
-        "contract_name", "storage_layout", "commitment"
-    ])?;
-    
+    let _layout = FileValidator::validate_json_structure(
+        &layout_path,
+        &["contract_name", "storage_layout", "commitment"],
+    )?;
+
     // Test different output formats
     for format in &["traverse", "coprocessor-json", "toml", "binary"] {
         let format_output_path = fixtures.path(&format!("outputs/cw20_layout.{}", format));
-        
+
         cli.run_success(&[
-            "cosmos", "compile-layout",
+            "cosmos",
+            "compile-layout",
             cw20_schema.to_str().unwrap(),
-            "--output", format_output_path.to_str().unwrap(),
-            "--format", format
+            "--output",
+            format_output_path.to_str().unwrap(),
+            "--format",
+            format,
         ])?;
-        
+
         FileValidator::exists_and_non_empty(&format_output_path)?;
-        
+
         // Validate format-specific content
         match *format {
             "traverse" | "coprocessor-json" => {
@@ -137,20 +150,22 @@ async fn test_compile_layout(cli: &CliRunner, fixtures: &TestFixtures) -> Result
             _ => {}
         }
     }
-    
+
     // Test with CW721 NFT contract
     let cw721_schema = fixtures.cosmos_schemas.get("cw721").unwrap();
     let cw721_layout_path = fixtures.path("outputs/cw721_layout.json");
-    
+
     cli.run_success(&[
-        "cosmos", "compile-layout",
+        "cosmos",
+        "compile-layout",
         cw721_schema.to_str().unwrap(),
-        "--output", cw721_layout_path.to_str().unwrap()
+        "--output",
+        cw721_layout_path.to_str().unwrap(),
     ])?;
-    
+
     FileValidator::validate_json(&cw721_layout_path)?;
-    
-    println!("      ✅ compile-layout tests passed");
+
+    println!("      compile-layout tests passed");
     Ok(())
 }
 
@@ -159,45 +174,52 @@ async fn test_generate_queries(cli: &CliRunner, fixtures: &TestFixtures) -> Resu
     // First compile a layout
     let cw20_schema = fixtures.cosmos_schemas.get("cw20").unwrap();
     let layout_path = fixtures.path("outputs/cw20_layout_for_queries.json");
-    
+
     cli.run_success(&[
-        "cosmos", "compile-layout",
+        "cosmos",
+        "compile-layout",
         cw20_schema.to_str().unwrap(),
-        "--output", layout_path.to_str().unwrap()
+        "--output",
+        layout_path.to_str().unwrap(),
     ])?;
-    
+
     // Test query generation
     let queries_path = fixtures.path("outputs/cw20_queries.json");
-    
+
     let output = cli.run_success(&[
-        "cosmos", "generate-queries",
+        "cosmos",
+        "generate-queries",
         layout_path.to_str().unwrap(),
-        "--state-keys", "token_info,balance,all_accounts",
-        "--output", queries_path.to_str().unwrap()
+        "--state-keys",
+        "token_info,balance,all_accounts",
+        "--output",
+        queries_path.to_str().unwrap(),
     ])?;
-    
+
     assertions::assert_output_contains(&output, "Generated")?;
-    
+
     // Verify queries file structure
-    let _queries = FileValidator::validate_json_structure(&queries_path, &[
-        "queries", "metadata"
-    ])?;
-    
+    let _queries = FileValidator::validate_json_structure(&queries_path, &["queries", "metadata"])?;
+
     // Test with different field types
     let cw721_schema = fixtures.cosmos_schemas.get("cw721").unwrap();
     let nft_queries_path = fixtures.path("outputs/cosmos_nft_queries.json");
-    
+
     cli.run_success(&[
-        "cosmos", "generate-queries",
+        "cosmos",
+        "generate-queries",
         cw721_schema.to_str().unwrap(),
-        "--fields", "token_info,num_tokens,contract_info",
-        "--output", nft_queries_path.to_str().unwrap(),
-        "--format", "coprocessor-json"
+        "--fields",
+        "token_info,num_tokens,contract_info",
+        "--output",
+        nft_queries_path.to_str().unwrap(),
+        "--format",
+        "coprocessor-json",
     ])?;
-    
+
     FileValidator::validate_json(&nft_queries_path)?;
-    
-    println!("      ✅ generate-queries tests passed");
+
+    println!("      generate-queries tests passed");
     Ok(())
 }
 
@@ -206,45 +228,55 @@ async fn test_resolve_query(cli: &CliRunner, fixtures: &TestFixtures) -> Result<
     // First create a layout to work with
     let cw20_schema = fixtures.cosmos_schemas.get("cw20").unwrap();
     let layout_path = fixtures.path("outputs/cosmos_resolve_layout.json");
-    
+
     cli.run_success(&[
-        "cosmos", "compile-layout",
+        "cosmos",
+        "compile-layout",
         cw20_schema.to_str().unwrap(),
-        "--output", layout_path.to_str().unwrap(),
-        "--format", "traverse"
+        "--output",
+        layout_path.to_str().unwrap(),
+        "--format",
+        "traverse",
     ])?;
-    
+
     // Test basic query resolution
     let resolved_path = fixtures.path("outputs/cosmos_resolved.json");
-    
+
     let output = cli.run_success(&[
-        "cosmos", "resolve-query",
+        "cosmos",
+        "resolve-query",
         "balances.cosmos1zxj6y5h3r8k9v7n2m4l1q8w5e3t6y9u0i7o4p2s5d8f6g3h1j4k7l9n2",
-        "--layout", layout_path.to_str().unwrap(),
-        "--output", resolved_path.to_str().unwrap(),
-        "--format", "coprocessor-json"
+        "--layout",
+        layout_path.to_str().unwrap(),
+        "--output",
+        resolved_path.to_str().unwrap(),
+        "--format",
+        "coprocessor-json",
     ])?;
-    
+
     assertions::assert_output_contains(&output, "Resolved")?;
     FileValidator::validate_json(&resolved_path)?;
-    
+
     // Verify resolved query structure
-    let _resolved = FileValidator::validate_json_structure(&resolved_path, &[
-        "storage_key", "namespace"
-    ])?;
-    
+    let _resolved =
+        FileValidator::validate_json_structure(&resolved_path, &["storage_key", "namespace"])?;
+
     // Test different output formats
     for format in &["traverse", "coprocessor-json", "toml", "binary", "base64"] {
         let format_resolved_path = fixtures.path(&format!("outputs/cosmos_resolved.{}", format));
-        
+
         cli.run_success(&[
-            "cosmos", "resolve-query",
+            "cosmos",
+            "resolve-query",
             "balances.cosmos1zxj6y5h3r8k9v7n2m4l1q8w5e3t6y9u0i7o4p2s5d8f6g3h1j4k7l9n2",
-            "--layout", layout_path.to_str().unwrap(),
-            "--format", format,
-            "--output", format_resolved_path.to_str().unwrap()
+            "--layout",
+            layout_path.to_str().unwrap(),
+            "--format",
+            format,
+            "--output",
+            format_resolved_path.to_str().unwrap(),
         ])?;
-        
+
         match *format {
             "base64" => {
                 let content = fs::read_to_string(&format_resolved_path)?;
@@ -255,8 +287,8 @@ async fn test_resolve_query(cli: &CliRunner, fixtures: &TestFixtures) -> Result<
             }
         }
     }
-    
-    println!("      ✅ resolve-query tests passed");
+
+    println!("      resolve-query tests passed");
     Ok(())
 }
 
@@ -264,64 +296,79 @@ async fn test_resolve_query(cli: &CliRunner, fixtures: &TestFixtures) -> Result<
 async fn test_auto_generate(cli: &CliRunner, fixtures: &TestFixtures) -> Result<()> {
     let cw20_schema = fixtures.cosmos_schemas.get("cw20").unwrap();
     let output_dir = fixtures.path("outputs/cw20_auto");
-    
+
     // Test dry-run mode
     let output = cli.run_success(&[
-        "cosmos", "auto-generate",
+        "cosmos",
+        "auto-generate",
         cw20_schema.to_str().unwrap(),
-        "--rpc", "https://rpc.osmosis.zone:443",
-        "--contract", "cosmos1contract123",
-        "--queries", "token_info,balance.cosmos1abc123",
-        "--output-dir", output_dir.to_str().unwrap(),
-        "--dry-run"
+        "--rpc",
+        "https://rpc.osmosis.zone:443",
+        "--contract",
+        "cosmos1contract123",
+        "--queries",
+        "token_info,balance.cosmos1abc123",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+        "--dry-run",
     ])?;
-    
+
     assertions::assert_output_contains(&output, "End-to-end automation")?;
     assertions::assert_output_contains(&output, "Dry run mode")?;
-    
+
     // Verify output directory structure in dry-run
-    FileValidator::validate_directory_structure(&output_dir, &[
-        "layout.json", "queries.json", "resolved_queries.json"
-    ])?;
-    
+    FileValidator::validate_directory_structure(
+        &output_dir,
+        &["layout.json", "queries.json", "resolved_queries.json"],
+    )?;
+
     // Test with CW721 NFT contract
     let cw721_schema = fixtures.cosmos_schemas.get("cw721").unwrap();
     let cw721_output_dir = fixtures.path("outputs/cw721_auto");
-    
+
     let output = cli.run_success(&[
-        "cosmos", "auto-generate",
+        "cosmos",
+        "auto-generate",
         cw721_schema.to_str().unwrap(),
-        "--rpc", "https://rpc.neutron.org",
-        "--contract", "neutron1contract456",
-        "--queries", "config,vault_info,withdraw_requests.neutron1user789",
-        "--output-dir", cw721_output_dir.to_str().unwrap(),
-        "--dry-run"
+        "--rpc",
+        "https://rpc.neutron.org",
+        "--contract",
+        "neutron1contract456",
+        "--queries",
+        "config,vault_info,withdraw_requests.neutron1user789",
+        "--output-dir",
+        cw721_output_dir.to_str().unwrap(),
+        "--dry-run",
     ])?;
-    
+
     assertions::assert_output_contains(&output, "CosmWasm")?;
-    FileValidator::validate_directory_structure(&cw721_output_dir, &[
-        "layout.json", "queries.json", "resolved_queries.json"
-    ])?;
-    
-    println!("      ✅ auto-generate tests passed");
+    FileValidator::validate_directory_structure(
+        &cw721_output_dir,
+        &["layout.json", "queries.json", "resolved_queries.json"],
+    )?;
+
+    println!("      auto-generate tests passed");
     Ok(())
 }
 
 /// Test different output formats work correctly
 async fn test_output_formats(cli: &CliRunner, fixtures: &TestFixtures) -> Result<()> {
     let cw20_schema = fixtures.cosmos_schemas.get("cw20").unwrap();
-    
+
     // Test each format with compile-layout
     for format in &["traverse", "coprocessor-json", "toml", "binary", "base64"] {
         let output_path = fixtures.path(&format!("outputs/cosmos_format_test.{}", format));
-        
+
         cli.run_success(&[
-            "cosmos", "compile-layout",
+            "cosmos",
+            "compile-layout",
             cw20_schema.to_str().unwrap(),
-            "--output", output_path.to_str().unwrap(),
-            "--format", format
+            "--output",
+            output_path.to_str().unwrap(),
+            "--format",
+            format,
         ])?;
-        
+
         // Validate format-specific content
         match *format {
             "coprocessor-json" => {
@@ -341,8 +388,8 @@ async fn test_output_formats(cli: &CliRunner, fixtures: &TestFixtures) -> Result
             }
         }
     }
-    
-    println!("      ✅ output-formats tests passed");
+
+    println!("      output-formats tests passed");
     Ok(())
 }
 
@@ -350,29 +397,28 @@ async fn test_output_formats(cli: &CliRunner, fixtures: &TestFixtures) -> Result
 async fn test_performance(cli: &CliRunner, fixtures: &TestFixtures) -> Result<()> {
     let cw20_schema = fixtures.cosmos_schemas.get("cw20").unwrap();
     let output_path = fixtures.path("outputs/cosmos_perf_test.json");
-    
+
     // Test compile-layout performance (should complete in reasonable time)
     PerformanceTester::test_performance_threshold(
         cli,
         &[
-            "cosmos", "compile-layout",
+            "cosmos",
+            "compile-layout",
             cw20_schema.to_str().unwrap(),
-            "--output", output_path.to_str().unwrap()
+            "--output",
+            output_path.to_str().unwrap(),
         ],
-        std::time::Duration::from_secs(30) // 30 second threshold
+        std::time::Duration::from_secs(30), // 30 second threshold
     )?;
-    
+
     // Test analyze-contract performance
     PerformanceTester::test_performance_threshold(
         cli,
-        &[
-            "cosmos", "analyze-contract",
-            cw20_schema.to_str().unwrap()
-        ],
-        std::time::Duration::from_secs(15) // 15 second threshold
+        &["cosmos", "analyze-contract", cw20_schema.to_str().unwrap()],
+        std::time::Duration::from_secs(15), // 15 second threshold
     )?;
-    
-    println!("      ✅ performance tests passed");
+
+    println!("      performance tests passed");
     Ok(())
 }
 
@@ -380,15 +426,15 @@ async fn test_performance(cli: &CliRunner, fixtures: &TestFixtures) -> Result<()
 mod tests {
     use super::*;
     use crate::fixtures::TestFixtures;
-    
+
     #[tokio::test]
     async fn test_cosmos_commands_structure() {
         // Test that we can create fixtures and runner
         let fixtures = TestFixtures::new().await.unwrap();
         let cli = CliRunner::new(fixtures.cli_path());
-        
+
         // Test help command works
         let output = cli.run(&["cosmos", "--help"]);
         assert!(output.is_ok());
     }
-} 
+}

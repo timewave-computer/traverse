@@ -133,3 +133,291 @@ Traverse converts from chain-specific contract ABIs to deterministic storage key
 4. **Proof Generation**: Fetch storage proofs via RPC using Alloy or valence-domain-clients
 
 All core operations are deterministic and `no_std` compatible for use in ZK circuits.
+
+## Overview
+
+Traverse provides tools to query blockchain storage, generate cryptographic proofs, and create ZK circuits for cross-chain verification. The library now includes **semantic storage proofs** that disambiguate the meaning of zero values in contract storage.
+
+### Semantic Storage Proofs
+
+Traverse addresses a fundamental ambiguity in blockchain storage: when a storage slot contains zero, it could mean:
+- **Never Written**: The slot has never been written to (default state)
+- **Explicitly Zero**: The slot was intentionally set to zero
+- **Cleared**: The slot previously held a non-zero value but was cleared
+- **Valid Zero**: Zero is a valid operational state for this field
+
+This ambiguity can lead to incorrect business logic in ZK applications. Traverse solves this with semantic storage proofs that include explicit semantic metadata.
+
+## Key Features
+
+- **Storage Layout Generation**: Automatically extract storage layouts from contract ABIs
+- **Live Blockchain Queries**: Query storage values from Ethereum and CosmWasm chains
+- **Semantic Specifications**: Declare the intended meaning of zero values in storage
+- **Conflict Detection**: Validate semantic declarations against blockchain events
+- **ZK Circuit Integration**: Generate proofs compatible with SP1 and other ZK frameworks
+- **Cross-Chain Support**: Unified interface for Ethereum and Cosmos ecosystems
+
+## Examples
+
+### Semantic Storage Proof Examples
+
+The `examples/` directory contains comprehensive demonstrations of semantic storage proofs:
+
+#### 1. Semantic Conflict Resolution (`examples/semantic_conflict_resolution.rs`)
+Demonstrates how to detect and resolve conflicts between declared and actual semantic meanings:
+
+```bash
+cargo run --example semantic_conflict_resolution
+```
+
+**Key Features:**
+- Mock contracts with different semantic scenarios
+- Automatic conflict detection using event analysis
+- Resolution strategies preferring validated over declared semantics
+- Business logic integration based on resolved semantics
+
+#### 2. Semantic Business Logic Integration (`examples/semantic_business_logic.rs`)
+Shows how semantic meanings affect DeFi protocol authorization and risk assessment:
+
+```bash
+cargo run --example semantic_business_logic
+```
+
+**Key Features:**
+- Semantic-aware authorization systems
+- Risk multipliers based on zero semantic types
+- Collateral ratio adjustments for different semantic contexts
+- Protocol health monitoring with semantic conflict detection
+
+#### 3. Semantic CLI Integration (`examples/semantic_cli_integration.rs`)
+Complete guide to using the traverse CLI with semantic storage proofs:
+
+```bash
+cargo run --example semantic_cli_integration
+```
+
+**Key Features:**
+- CLI command examples for all semantic types
+- Batch processing with mixed semantic specifications
+- Configuration file templates
+- Integration with multiple indexer services
+
+#### 4. Live USDT Example with Semantics (`examples/usdt_live_proof.rs`)
+Real-world USDT contract storage proof with semantic specifications:
+
+```bash
+cargo run --example usdt_live_proof --features client
+```
+
+**Requirements:**
+- `ETHEREUM_RPC_URL` environment variable
+- `ETHERSCAN_API_KEY` for ABI fetching
+
+#### 5. Valence Vault Semantic Integration (`examples/valence_vault_storage.rs`)
+Complete CosmWasm coprocessor workflow with semantic storage proofs:
+
+```bash
+cargo run --example valence_vault_storage --features client
+```
+
+**Features:**
+- End-to-end semantic storage proof workflow
+- Valence protocol integration
+- Semantic-aware business logic
+- Cross-chain state verification
+
+### Circuit Usage Example
+
+```rust
+use traverse_valence::circuit;
+
+// Verify semantic storage proofs in ZK circuit
+let verification_results = circuit::verify_semantic_storage_proofs_and_extract(&witnesses)?;
+
+// All proofs must pass verification (returns 0x01 for valid)
+let all_valid = verification_results.iter().all(|&result| result == 0x01);
+```
+
+## CLI Usage
+
+### Basic Semantic Storage Proof
+
+```bash
+traverse generate-proof \
+  --contract 0xA0b86a33E6Cc3b3c7bC8F1DCCF0e6a8F71c1c0123 \
+  --slot 0x0000000000000000000000000000000000000000000000000000000000000000 \
+  --zero-means never_written \
+  --rpc-url $ETHEREUM_RPC_URL
+```
+
+### Semantic Validation with Conflict Detection
+
+```bash
+traverse generate-proof \
+  --contract 0xA0b86a33E6Cc3b3c7bC8F1DCCF0e6a8F71c1c0123 \
+  --slot 0x0000000000000000000000000000000000000000000000000000000000000000 \
+  --zero-means never_written \
+  --validate-semantics \
+  --resolve-conflicts \
+  --indexer etherscan \
+  --rpc-url $ETHEREUM_RPC_URL
+```
+
+### Batch Processing with Mixed Semantics
+
+```bash
+traverse batch-generate-proofs \
+  --config semantic_batch_config.json \
+  --validate-semantics \
+  --parallel 4 \
+  --rpc-url $ETHEREUM_RPC_URL
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+# Required
+ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/your_project_id
+ETHERSCAN_API_KEY=your_etherscan_api_key
+
+# Optional for semantic validation
+ALCHEMY_API_KEY=your_alchemy_api_key
+MORALIS_API_KEY=your_moralis_api_key
+
+# Optional for CosmWasm integration
+NEUTRON_RPC_URL=https://rpc.neutron.quokkastake.io
+NEUTRON_MNEMONIC=your_neutron_mnemonic
+```
+
+### Semantic Specification File
+
+```json
+{
+  "contract_address": "0xA0b86a33E6Cc3b3c7bC8F1DCCF0e6a8F71c1c0123",
+  "specifications": [
+    {
+      "storage_slot": "0x0",
+      "field_name": "_balances",
+      "zero_semantics": "never_written",
+      "description": "User token balances - most addresses never hold tokens"
+    },
+    {
+      "storage_slot": "0x2",
+      "field_name": "_totalSupply", 
+      "zero_semantics": "explicitly_zero",
+      "description": "Total supply initialized to zero during deployment"
+    }
+  ]
+}
+```
+
+## Zero Semantic Types
+
+| Type | Meaning | Use Case | Risk Level |
+|------|---------|----------|------------|
+| `never_written` | Storage slot has never been written to | User balances in tokens they never held | Higher (2.0x) |
+| `explicitly_zero` | Intentionally set to zero | Contract initialization values | Normal (1.0x) |
+| `cleared` | Previously non-zero but cleared | Withdrawn balances, processed requests | Elevated (1.5x) |
+| `valid_zero` | Zero is a valid operational state | Counters, flags, operational values | Normal (1.0x) |
+
+## Integration Guide
+
+### 1. Generate Semantic Layout
+
+```bash
+traverse generate-layout \
+  --contract 0xYourContract \
+  --semantic-specs semantic_specs.json \
+  --etherscan-key $ETHERSCAN_API_KEY
+```
+
+### 2. Create Semantic Storage Proofs
+
+```bash
+traverse generate-proof \
+  --contract 0xYourContract \
+  --query "balanceOf[0xUserAddress]" \
+  --zero-means never_written \
+  --validate-semantics \
+  --rpc-url $ETHEREUM_RPC_URL
+```
+
+### 3. Integrate with ZK Circuits
+
+```rust
+use traverse_valence::{controller, circuit};
+
+// Create semantic witnesses
+let witnesses = controller::create_semantic_storage_witnesses(&semantic_batch)?;
+
+// Verify in circuit
+let results = circuit::verify_semantic_storage_proofs_and_extract(&witnesses)?;
+```
+
+### 4. Business Logic Integration
+
+```rust
+match (value, resolved_semantics.zero_meaning) {
+    (0, ZeroSemantics::NeverWritten) => "User never participated",
+    (0, ZeroSemantics::ExplicitlyZero) => "System initialized and ready", 
+    (0, ZeroSemantics::Cleared) => "Previous activity cleared",
+    (0, ZeroSemantics::ValidZero) => "Valid operational state",
+    (n, _) => format!("Active with value {}", n),
+}
+```
+
+## Architecture
+
+### Core Components
+
+- **traverse-core**: Common types and semantic definitions
+- **traverse-ethereum**: Ethereum storage proof generation with semantic validation
+- **traverse-cosmos**: CosmWasm storage proof generation
+- **traverse-valence**: ZK circuit integration for semantic proofs
+- **traverse-cli**: Command-line interface with semantic support
+
+### Semantic Validation Pipeline
+
+1. **Declaration**: Developer specifies semantic meaning in layout
+2. **Generation**: CLI generates storage proof with semantic metadata
+3. **Validation**: Indexer services validate semantics against blockchain events
+4. **Resolution**: Conflicts resolved automatically (validated > declared)
+5. **Integration**: Business logic adapts based on resolved semantics
+
+## Testing
+
+Run all tests including semantic validation:
+
+```bash
+cargo test
+```
+
+Run semantic-specific tests:
+
+```bash
+cargo test semantic
+```
+
+Run integration tests with semantic validation:
+
+```bash
+cargo test --test integration -- semantic
+```
+
+## Documentation
+
+- [Architecture Guide](docs/architecture.md)
+- [Integration Guide](docs/integration_guide.md) 
+- [Semantic Usage Guide](docs/semantic_usage_guide.md)
+- [Event-Based Validation](docs/event_based_validation.md)
+- [Ethereum Storage False Positives](docs/ethereum_storage_false_positives.md)
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

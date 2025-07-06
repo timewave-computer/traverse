@@ -88,3 +88,6 @@ witness.wtns
 
 # Working
 work/
+
+# Benchmark results
+benchmark_results/

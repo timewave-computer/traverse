@@ -1,18 +1,18 @@
 //! Resolve command implementations
-//! 
+//!
 //! Handles storage query resolution including single queries, bulk resolution,
 //! and batch processing from files.
 
-use std::path::Path;
-use anyhow::Result;
-use tracing::{info, error};
-use traverse_core::KeyResolver;
-use traverse_ethereum::EthereumKeyResolver;
-use traverse_cosmos::CosmosKeyResolver;
 use crate::cli::OutputFormat;
 use crate::formatters::{
-    write_output, load_layout, format_storage_path, format_storage_paths, path_to_coprocessor_query
+    format_storage_path, format_storage_paths, load_layout, path_to_coprocessor_query, write_output,
 };
+use anyhow::Result;
+use std::path::Path;
+use tracing::{error, info};
+use traverse_core::KeyResolver;
+use traverse_cosmos::CosmosKeyResolver;
+use traverse_ethereum::EthereumKeyResolver;
 
 /// Execute resolve command
 pub fn cmd_resolve(
@@ -22,10 +22,14 @@ pub fn cmd_resolve(
     format: &OutputFormat,
     chain: &str,
 ) -> Result<()> {
-    info!("Resolving query '{}' with layout {}", query, layout_path.display());
-    
+    info!(
+        "Resolving query '{}' with layout {}",
+        query,
+        layout_path.display()
+    );
+
     let layout = load_layout(layout_path)?;
-    
+
     let path = match chain {
         "ethereum" => {
             let resolver = EthereumKeyResolver;
@@ -40,17 +44,20 @@ pub fn cmd_resolve(
             return Err(anyhow::anyhow!("Unsupported chain: {}", chain));
         }
     };
-    
+
     let output_content = format_storage_path(&path, query, format)?;
     write_output(&output_content, output)?;
-    
+
     println!("Storage query resolved successfully:");
     println!("  • Query: {}", query);
-    println!("  • Storage key: {}", match &path.key {
-        traverse_core::Key::Fixed(key) => hex::encode(key),
-        _ => "dynamic".to_string(),
-    });
-    
+    println!(
+        "  • Storage key: {}",
+        match &path.key {
+            traverse_core::Key::Fixed(key) => hex::encode(key),
+            _ => "dynamic".to_string(),
+        }
+    );
+
     Ok(())
 }
 
@@ -62,9 +69,9 @@ pub fn cmd_resolve_all(
     chain: &str,
 ) -> Result<()> {
     info!("Resolving all paths from layout {}", layout_path.display());
-    
+
     let layout = load_layout(layout_path)?;
-    
+
     let paths = match chain {
         "ethereum" => {
             let resolver = EthereumKeyResolver;
@@ -79,13 +86,13 @@ pub fn cmd_resolve_all(
             return Err(anyhow::anyhow!("Unsupported chain: {}", chain));
         }
     };
-    
+
     let output_content = format_storage_paths(&paths, format)?;
     write_output(&output_content, output)?;
-    
+
     println!("Resolved all storage paths successfully:");
     println!("  • Total paths: {}", paths.len());
-    
+
     Ok(())
 }
 
@@ -97,14 +104,20 @@ pub fn cmd_batch_resolve(
     format: &OutputFormat,
     chain: &str,
 ) -> Result<()> {
-    info!("Resolving multiple queries from file {} with layout {}", 
-          queries_file.display(), layout_path.display());
-    
+    info!(
+        "Resolving multiple queries from file {} with layout {}",
+        queries_file.display(),
+        layout_path.display()
+    );
+
     let queries = std::fs::read_to_string(queries_file)?;
-    let query_lines: Vec<&str> = queries.lines().filter(|line| !line.trim().is_empty()).collect();
-    
+    let query_lines: Vec<&str> = queries
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+
     let layout = load_layout(layout_path)?;
-    
+
     let resolver: Box<dyn KeyResolver> = match chain {
         "ethereum" => Box::new(EthereumKeyResolver),
         "cosmos" => Box::new(CosmosKeyResolver),
@@ -113,17 +126,15 @@ pub fn cmd_batch_resolve(
             return Err(anyhow::anyhow!("Unsupported chain: {}", chain));
         }
     };
-    
+
     let mut results = Vec::new();
     let mut errors = Vec::new();
-    
+
     for query in query_lines {
         match resolver.resolve(&layout, query) {
             Ok(path) => {
                 let result = match format {
-                    OutputFormat::Traverse => {
-                        serde_json::to_value(&path)?
-                    }
+                    OutputFormat::Traverse => serde_json::to_value(&path)?,
                     OutputFormat::CoprocessorJson => {
                         let coprocessor_payload = path_to_coprocessor_query(&path, query);
                         serde_json::to_value(&coprocessor_payload)?
@@ -149,10 +160,10 @@ pub fn cmd_batch_resolve(
             }
         }
     }
-    
+
     let output_content = serde_json::to_string_pretty(&results)?;
     write_output(&output_content, output)?;
-    
+
     println!("Batch resolved {} queries successfully", results.len());
     if !errors.is_empty() {
         println!("Errors encountered:");
@@ -160,6 +171,6 @@ pub fn cmd_batch_resolve(
             println!("  {}", error);
         }
     }
-    
+
     Ok(())
-} 
+}
