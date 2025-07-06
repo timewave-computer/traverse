@@ -21,7 +21,7 @@
 //!
 //! // Controller: Standard Valence entry point
 //! pub fn get_witnesses(args: Value) -> anyhow::Result<Vec<Witness>> {
-//!     controller::create_storage_witnesses(&args)
+//!     controller::create_semantic_storage_witnesses(&args)
 //! }
 //!
 //! // Circuit: Standard Valence entry point  

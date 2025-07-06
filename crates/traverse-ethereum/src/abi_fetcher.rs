@@ -190,7 +190,7 @@ impl AbiFetcher {
                 slot: "0".to_string(),
                 offset: 0,
                 type_name: "t_mapping_address_uint256".to_string(),
-                zero_semantics: ZeroSemantics::NeverWritten,
+                zero_semantics: ZeroSemantics::ValidZero,
             });
 
             if has_allowance {
@@ -199,7 +199,7 @@ impl AbiFetcher {
                     slot: "1".to_string(),
                     offset: 0,
                     type_name: "t_mapping_address_mapping_address_uint256".to_string(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: ZeroSemantics::ValidZero,
                 });
             }
 
@@ -208,7 +208,7 @@ impl AbiFetcher {
                 slot: "2".to_string(),
                 offset: 0,
                 type_name: "t_uint256".to_string(),
-                zero_semantics: ZeroSemantics::NeverWritten,
+                zero_semantics: ZeroSemantics::ExplicitlyZero,
             });
 
             if has_name {
@@ -217,7 +217,7 @@ impl AbiFetcher {
                     slot: "3".to_string(),
                     offset: 0,
                     type_name: "t_string_storage".to_string(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: ZeroSemantics::ExplicitlyZero,
                 });
             }
 
@@ -227,7 +227,7 @@ impl AbiFetcher {
                     slot: "4".to_string(),
                     offset: 0,
                     type_name: "t_string_storage".to_string(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: ZeroSemantics::ExplicitlyZero,
                 });
             }
 
@@ -237,7 +237,7 @@ impl AbiFetcher {
                     slot: "5".to_string(),
                     offset: 0,
                     type_name: "t_uint8".to_string(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: ZeroSemantics::ExplicitlyZero,
                 });
             }
         }
@@ -249,7 +249,7 @@ impl AbiFetcher {
                 slot: "6".to_string(),
                 offset: 0,
                 type_name: "t_address".to_string(),
-                zero_semantics: ZeroSemantics::NeverWritten,
+                zero_semantics: ZeroSemantics::ExplicitlyZero,
             });
         }
 
@@ -267,7 +267,7 @@ impl AbiFetcher {
                 slot: "100".to_string(), // Common pattern: admin vars at higher slots
                 offset: 0,
                 type_name: "t_bool".to_string(),
-                zero_semantics: ZeroSemantics::NeverWritten,
+                zero_semantics: ZeroSemantics::ExplicitlyZero,
             });
         }
 

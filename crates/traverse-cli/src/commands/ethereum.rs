@@ -758,12 +758,13 @@ pub async fn cmd_ethereum_auto_generate(
                     "proof_{}.json",
                     query.replace(['[', ']', '.'], "_")
                 ));
-                // Use NeverWritten as default for auto-generation - developers should specify semantics manually for precision
+                // Use ValidZero as safer default for auto-generation - covers most initialized storage slots
+                // For precise semantics, developers should specify semantics manually per slot
                 match crate::commands::cmd_generate_proof(
                     &slot_hex,
                     rpc,
                     contract,
-                    crate::cli::ZeroSemanticsArg::NeverWritten,
+                    crate::cli::ZeroSemanticsArg::ValidZero,
                     Some(proof_file.as_path()),
                 )
                 .await

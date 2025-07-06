@@ -277,11 +277,7 @@ pub fn prepare_semantic_witnesses_from_batch_request(
     Ok(witnesses)
 }
 
-/// Legacy function - use create_semantic_storage_witnesses instead
-#[deprecated(note = "Use create_semantic_storage_witnesses for semantic validation")]
-pub fn create_storage_witnesses(json_args: &Value) -> Result<Vec<Witness>, TraverseValenceError> {
-    create_semantic_storage_witnesses(json_args)
-}
+
 
 #[cfg(test)]
 mod tests {
