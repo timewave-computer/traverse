@@ -305,7 +305,7 @@ NEUTRON_MNEMONIC=your_neutron_mnemonic
     },
     {
       "storage_slot": "0x2",
-      "field_name": "_totalSupply", 
+      "field_name": "_totalSupply",
       "zero_semantics": "explicitly_zero",
       "description": "Total supply initialized to zero during deployment"
     }
@@ -413,11 +413,3 @@ cargo test --test integration -- semantic
 - [Semantic Usage Guide](docs/semantic_usage_guide.md)
 - [Event-Based Validation](docs/event_based_validation.md)
 - [Ethereum Storage False Positives](docs/ethereum_storage_false_positives.md)
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

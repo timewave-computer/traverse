@@ -5,7 +5,7 @@
 //! storage keys using Solidity's storage layout rules.
 
 use tiny_keccak::{Hasher, Keccak};
-use traverse_core::{Key, KeyResolver, LayoutInfo, StaticKeyPath, TraverseError, ZeroSemantics};
+use traverse_core::{Key, KeyResolver, LayoutInfo, StaticKeyPath, TraverseError};
 
 /// Ethereum key resolver that implements Solidity storage key derivation
 ///
@@ -454,7 +454,7 @@ impl KeyResolver for EthereumKeyResolver {
                     },
                     field_size,
                     layout_commitment: layout.commitment(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
             QueryParts::Mapping { field_name, key } => {
@@ -502,7 +502,7 @@ impl KeyResolver for EthereumKeyResolver {
                     offset: None, // Mappings typically don't have offsets
                     field_size,
                     layout_commitment: layout.commitment(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
             QueryParts::NestedMapping { field_name, keys } => {
@@ -558,7 +558,7 @@ impl KeyResolver for EthereumKeyResolver {
                     offset: None, // Mappings typically don't have offsets
                     field_size,
                     layout_commitment: layout.commitment(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
             QueryParts::Array { field_name, index } => {
@@ -598,7 +598,7 @@ impl KeyResolver for EthereumKeyResolver {
                     offset: None, // Arrays typically don't have offsets
                     field_size,
                     layout_commitment: layout.commitment(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
             QueryParts::StructField {
@@ -639,7 +639,7 @@ impl KeyResolver for EthereumKeyResolver {
                     offset: None,
                     field_size,
                     layout_commitment: layout.commitment(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
             QueryParts::DynamicLength { field_name } => {
@@ -669,7 +669,7 @@ impl KeyResolver for EthereumKeyResolver {
                     offset: None,
                     field_size: Some(32), // Length is stored as uint256
                     layout_commitment: layout.commitment(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
             QueryParts::DynamicData { field_name } => {
@@ -701,7 +701,7 @@ impl KeyResolver for EthereumKeyResolver {
                     offset: None,
                     field_size: Some(32), // Data is stored in 32-byte chunks
                     layout_commitment: layout.commitment(),
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
         }

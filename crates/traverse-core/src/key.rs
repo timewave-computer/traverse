@@ -84,14 +84,6 @@ impl StorageSemantics {
     /// Performs basic validation to ensure semantic combinations make sense.
     /// Returns an error if the semantic configuration is invalid.
     pub fn validate(&self) -> Result<(), &'static str> {
-        // Basic validation: if we have validated semantics, ensure it's not the same as declared
-        // when there's a conflict (which would be redundant)
-        if let Some(validated) = self.validated_semantics {
-            if validated == self.declared_semantics && self.zero_meaning == validated {
-                return Err("Validated semantics should not match declared when they're the same");
-            }
-        }
-
         // Ensure zero_meaning is consistent with the resolution logic
         let expected_meaning = self.validated_semantics.unwrap_or(self.declared_semantics);
         if self.zero_meaning != expected_meaning {
@@ -225,6 +217,14 @@ mod tests {
             ZeroSemantics::ExplicitlyZero,
         );
         assert!(valid_with_validation.validate().is_ok());
+
+        // Matching declared and validated semantics should be valid (not an error)
+        let matching_semantics = StorageSemantics::with_validation(
+            ZeroSemantics::ExplicitlyZero,
+            ZeroSemantics::ExplicitlyZero,
+        );
+        assert!(matching_semantics.validate().is_ok());
+        assert!(!matching_semantics.has_conflict()); // No conflict when they match
 
         // Invalid semantics should fail validation
         let mut invalid_semantics = StorageSemantics::with_validation(

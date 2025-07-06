@@ -4,7 +4,7 @@
 //! into concrete storage keys for ZK proof generation.
 
 use sha2::{Digest, Sha256};
-use traverse_core::{Key, KeyResolver, LayoutInfo, StaticKeyPath, TraverseError, ZeroSemantics};
+use traverse_core::{Key, KeyResolver, LayoutInfo, StaticKeyPath, TraverseError};
 
 /// CosmWasm key resolver that handles Cosmos-specific storage patterns
 ///
@@ -193,7 +193,7 @@ impl KeyResolver for CosmosKeyResolver {
                         })?,
                     ),
                     offset: None, // CosmWasm doesn't use offsets
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
 
@@ -218,7 +218,7 @@ impl KeyResolver for CosmosKeyResolver {
                         })?,
                     ),
                     offset: None,
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
 
@@ -245,7 +245,7 @@ impl KeyResolver for CosmosKeyResolver {
                     layout_commitment: layout.commitment(),
                     field_size,
                     offset: None,
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
 
@@ -273,7 +273,7 @@ impl KeyResolver for CosmosKeyResolver {
                     layout_commitment: layout.commitment(),
                     field_size,
                     offset: None,
-                    zero_semantics: ZeroSemantics::NeverWritten,
+                    zero_semantics: entry.zero_semantics,
                 })
             }
         }
@@ -307,7 +307,7 @@ impl KeyResolver for CosmosKeyResolver {
                         .map_err(|_| TraverseError::InvalidQuery("Invalid field size".into()))?,
                 ),
                 offset: None,
-                zero_semantics: ZeroSemantics::NeverWritten,
+                zero_semantics: entry.zero_semantics,
             };
             paths.push(path);
 
