@@ -13,35 +13,35 @@
       "slot": "1",
       "offset": 0,
       "type_name": "t_string",
-      "zero_semantics": "NeverWritten"
+      "zero_semantics": "ExplicitlyZero"
     },
     {
       "label": "symbol",
       "slot": "2",
       "offset": 0,
       "type_name": "t_string",
-      "zero_semantics": "NeverWritten"
+      "zero_semantics": "ExplicitlyZero"
     },
     {
       "label": "decimals",
       "slot": "3",
       "offset": 0,
       "type_name": "t_uint8",
-      "zero_semantics": "ValidZero"
+      "zero_semantics": "ExplicitlyZero"
     },
     {
       "label": "_balances",
       "slot": "4",
       "offset": 0,
       "type_name": "t_mapping_address_uint256",
-      "zero_semantics": "NeverWritten"
+      "zero_semantics": "ValidZero"
     },
     {
       "label": "_allowances", 
       "slot": "5",
       "offset": 0,
       "type_name": "t_mapping_address_mapping_address_uint256",
-      "zero_semantics": "NeverWritten"
+      "zero_semantics": "ValidZero"
     }
   ],
   "types": [
