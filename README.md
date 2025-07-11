@@ -397,13 +397,13 @@ cargo test
 Run semantic-specific tests:
 
 ```bash
-cargo test semantic
+cargo test -- semantic
 ```
 
 Run integration tests with semantic validation:
 
 ```bash
-cargo test --test integration -- semantic
+cargo test -p traverse-ethereum --test integration -- semantic
 ```
 
 ## Documentation
