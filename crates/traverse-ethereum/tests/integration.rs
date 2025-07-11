@@ -166,12 +166,26 @@ fn test_resolve_all_paths() {
 
     let paths = result.unwrap();
 
-    // Should resolve all simple fields (non-mapping fields can be resolved without keys)
-    // Mappings require specific keys, so they won't be included in resolve_all for now
+    // Should resolve all simple fields and generate example mapping paths
+    // For each mapping storage entry, multiple example keys are generated
     assert!(!paths.is_empty(), "Should resolve at least some paths");
+    
+    // Count mapping entries to understand expected path multiplication
+    let mapping_count = layout.storage.iter()
+        .filter(|entry| {
+            layout.types.iter()
+                .find(|t| t.label == entry.type_name)
+                .map(|t| t.encoding == "mapping")
+                .unwrap_or(false)
+        })
+        .count();
+    
+    // Each mapping generates 2-3 example paths, simple fields generate 1 path each
+    let max_expected_paths = layout.storage.len() + (mapping_count * 2); // Conservative estimate
     assert!(
-        paths.len() <= layout.storage.len(),
-        "Should not exceed total storage entries"
+        paths.len() <= max_expected_paths,
+        "Should not exceed reasonable number of paths (got {}, expected <= {})", 
+        paths.len(), max_expected_paths
     );
 
     // All paths should have the same layout commitment

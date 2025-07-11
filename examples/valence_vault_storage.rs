@@ -53,27 +53,21 @@ struct VaultConfig {
     min_deposit: u64,
     max_utilization: f64,
     emergency_pause: bool,
-    semantic_policies: HashMap<ZeroSemantics, f64>, // Risk multipliers
+    semantic_validation_enabled: bool,
 }
 
 impl SemanticVaultLogic {
     fn new() -> Self {
         let mut vault_configs = HashMap::new();
 
-        // Default vault configuration with semantic policies
-        let mut semantic_policies = HashMap::new();
-        semantic_policies.insert(ZeroSemantics::NeverWritten, 2.0); // Higher risk for uninitialized
-        semantic_policies.insert(ZeroSemantics::ExplicitlyZero, 1.0); // Normal risk for initialized
-        semantic_policies.insert(ZeroSemantics::Cleared, 1.5); // Elevated risk for cleared
-        semantic_policies.insert(ZeroSemantics::ValidZero, 1.0); // Normal risk for valid zero
-
+        // Default vault configuration with semantic validation
         vault_configs.insert(
             "default".to_string(),
             VaultConfig {
                 min_deposit: 100,
                 max_utilization: 0.85,
                 emergency_pause: false,
-                semantic_policies,
+                semantic_validation_enabled: true,
             },
         );
 
@@ -147,16 +141,19 @@ impl SemanticVaultLogic {
             };
         }
 
-        // Calculate semantic risk multiplier
-        let risk_multiplier = self.calculate_semantic_risk_multiplier(vault_state, config);
-        let _adjusted_amount = (amount as f64 * risk_multiplier) as u64;
+        // Validate semantic state
+        if !self.validate_semantic_state(vault_state, config) {
+            return VaultAuthorizationResult {
+                authorized: false,
+                reason: "Semantic validation failed - invalid vault state".to_string(),
+                semantic_basis: vec!["Semantic conflicts detected".to_string()],
+                required_actions: vec!["Resolve semantic conflicts before proceeding".to_string()],
+            };
+        }
 
         VaultAuthorizationResult {
             authorized: true,
-            reason: format!(
-                "Deposit authorized with semantic risk multiplier {:.2}x",
-                risk_multiplier
-            ),
+            reason: "Deposit authorized - semantic validation passed".to_string(),
             semantic_basis,
             required_actions,
         }
@@ -272,22 +269,26 @@ impl SemanticVaultLogic {
         }
     }
 
-    /// Calculate semantic risk multiplier
-    fn calculate_semantic_risk_multiplier(
+    /// Validate semantic state for vault operations
+    fn validate_semantic_state(
         &self,
         vault_state: &ValenceVaultState,
         config: &VaultConfig,
-    ) -> f64 {
-        let mut multiplier = 1.0;
+    ) -> bool {
+        if !config.semantic_validation_enabled {
+            return true;
+        }
 
-        // Analyze semantic contexts
+        // Check for semantic conflicts
         for semantics in vault_state.semantic_context.values() {
-            if let Some(field_multiplier) = config.semantic_policies.get(&semantics.zero_meaning) {
-                multiplier *= field_multiplier;
+            if semantics.has_conflict() {
+                // Invalid - semantic conflict detected
+                return false;
             }
         }
 
-        multiplier
+        // All semantic states are valid
+        true
     }
 }
 
@@ -471,32 +472,27 @@ fn demonstrate_semantic_vault_workflow() -> Result<(), Box<dyn std::error::Error
         println!("   • Declared: {:?}", assets_semantics.declared_semantics);
         println!("   • Validated: {:?}", assets_semantics.validated_semantics);
         println!("   • Final: {:?}", assets_semantics.zero_meaning);
-        println!("   • Business Logic: Use validated semantics for risk assessment");
+        println!("   • Business Logic: Use validated semantics for validation");
     }
     println!();
 
     // Demonstrate semantic storage proof creation
     println!("5. Creating semantic storage witnesses...");
     let semantic_data = json!({
-        "vault_proof": {
-            "config": {
-                "key": "config",
-                "value": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "semantics": {
-                    "declared_semantics": "NeverWritten",
-                    "validated_semantics": null,
-                    "zero_meaning": "NeverWritten"
-                }
-            },
-            "total_assets": {
-                "key": "total_assets",
-                "value": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "semantics": {
-                    "declared_semantics": "ExplicitlyZero",
-                    "validated_semantics": null,
-                    "zero_meaning": "ExplicitlyZero"
-                }
-            }
+        "storage_query": {
+            "query": "total_assets",
+            "storage_key": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "layout_commitment": "0x8de5c0642675d25caa3a9f51ebb9b07748561638d0a364bb32fd56870ebc283b",
+            "zero_semantics": 0,  // 0 = NeverWritten
+            "semantic_source": 0  // 0 = Declared
+        },
+        "storage_proof": {
+            "key": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "value": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "proof": [
+                "0xdeadbeef",
+                "0xcafebabe"
+            ]
         }
     });
 
@@ -521,10 +517,10 @@ fn demonstrate_semantic_vault_workflow() -> Result<(), Box<dyn std::error::Error
     // Summary
     println!("Valence Vault Semantic Integration Summary");
     println!("==========================================");
-    println!("Semantic-aware vault authorization with context-dependent risk assessment");
-    println!("Never Written: 2.0x risk multiplier for uninitialized vaults");
-    println!("Explicitly Zero: 1.0x risk multiplier for properly initialized vaults");
-    println!("Cleared: 1.5x risk multiplier for vaults that were active but cleared");
+    println!("Semantic-aware vault authorization with context-dependent validation");
+    println!("Never Written: Uninitialized vaults require setup");
+    println!("Explicitly Zero: Properly initialized vaults ready for operations");
+    println!("Cleared: Vaults with confirmed activity history");
     println!("Conflict detection enables automatic semantic validation");
     println!("CosmWasm integration with semantic storage proof verification");
     println!();

@@ -2,17 +2,16 @@
 //!
 //! This example demonstrates how semantic storage proofs integrate with business logic
 //! in real-world DeFi applications, showing how different zero meanings affect
-//! authorization, risk assessment, and operational decisions.
+//! authorization and operational decisions.
 //!
 //! It covers:
 //! - Semantic-aware authorization systems
-//! - Risk assessment based on zero semantics
+//! - Binary semantic validation (valid/invalid)
 //! - Operational state management with semantic context
 //! - Multi-contract semantic orchestration
 
 use std::collections::HashMap;
 use traverse_core::{LayoutInfo, StorageEntry, StorageSemantics, TypeInfo, ZeroSemantics};
-// Removed unused import: serde_json::json
 
 /// DeFi protocol state with semantic awareness
 #[derive(Debug, Clone)]
@@ -40,18 +39,16 @@ struct UserPosition {
 struct SemanticAuthorizationResult {
     authorized: bool,
     reason: String,
-    risk_level: RiskLevel,
+    validation_level: ValidationLevel,
     semantic_basis: Vec<String>,
     required_actions: Vec<String>,
 }
 
-/// Risk assessment levels
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-enum RiskLevel {
-    Low,
-    Medium,
-    High,
-    Critical,
+/// Semantic validation levels
+#[derive(Debug, Clone, PartialEq)]
+enum ValidationLevel {
+    Valid,
+    Invalid,
 }
 
 /// Business logic engine with semantic awareness
@@ -59,14 +56,14 @@ struct SemanticBusinessLogic {
     protocol_configs: HashMap<String, ProtocolConfig>,
 }
 
-/// Protocol configuration with semantic parameters
+/// Protocol configuration with semantic validation
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct ProtocolConfig {
     min_collateral_ratio: f64,
     max_utilization_rate: f64,
     emergency_pause_threshold: f64,
-    semantic_overrides: HashMap<ZeroSemantics, f64>, // Risk multipliers
+    semantic_validation_enabled: bool,
 }
 
 impl SemanticBusinessLogic {
@@ -80,14 +77,7 @@ impl SemanticBusinessLogic {
                 min_collateral_ratio: 1.5,
                 max_utilization_rate: 0.8,
                 emergency_pause_threshold: 0.95,
-                semantic_overrides: {
-                    let mut overrides = HashMap::new();
-                    overrides.insert(ZeroSemantics::NeverWritten, 2.0); // Double risk - uninitialized
-                    overrides.insert(ZeroSemantics::ExplicitlyZero, 1.0); // Normal risk
-                    overrides.insert(ZeroSemantics::Cleared, 1.5); // Higher risk - was active
-                    overrides.insert(ZeroSemantics::ValidZero, 1.0); // Normal risk
-                    overrides
-                },
+                semantic_validation_enabled: true,
             },
         );
 
@@ -117,7 +107,7 @@ impl SemanticBusinessLogic {
             _ => SemanticAuthorizationResult {
                 authorized: false,
                 reason: format!("Unknown action: {}", action),
-                risk_level: RiskLevel::Critical,
+                validation_level: ValidationLevel::Invalid,
                 semantic_basis: vec![],
                 required_actions: vec![],
             },
@@ -134,7 +124,6 @@ impl SemanticBusinessLogic {
     ) -> SemanticAuthorizationResult {
         let mut semantic_basis = vec![];
         let mut required_actions = vec![];
-        let mut risk_level = RiskLevel::Low;
 
         // Check if user has never deposited before
         if user_position.is_none() {
@@ -146,7 +135,6 @@ impl SemanticBusinessLogic {
                     ZeroSemantics::NeverWritten => {
                         semantic_basis
                             .push("Protocol never initialized - first deposit".to_string());
-                        risk_level = RiskLevel::Medium;
                         required_actions.push("Initialize protocol state".to_string());
                     }
                     ZeroSemantics::ExplicitlyZero => {
@@ -157,7 +145,6 @@ impl SemanticBusinessLogic {
                             "Protocol was active but cleared - may need reinitialization"
                                 .to_string(),
                         );
-                        risk_level = RiskLevel::High;
                         required_actions.push("Verify protocol state integrity".to_string());
                     }
                     ZeroSemantics::ValidZero => {
@@ -167,12 +154,19 @@ impl SemanticBusinessLogic {
             }
         }
 
-        // Calculate semantic risk multiplier
-        let semantic_multiplier = self.calculate_semantic_risk_multiplier(protocol_state, config);
-        let adjusted_amount = (amount as f64 * semantic_multiplier) as u64;
+        // Validate semantic state
+        if !self.validate_semantic_state(protocol_state, config) {
+            return SemanticAuthorizationResult {
+                authorized: false,
+                reason: "Semantic validation failed - invalid protocol state".to_string(),
+                validation_level: ValidationLevel::Invalid,
+                semantic_basis: vec!["Semantic conflicts detected".to_string()],
+                required_actions: vec!["Resolve semantic conflicts before proceeding".to_string()],
+            };
+        }
 
         // Check utilization after deposit
-        let new_total_deposits = protocol_state.total_deposits + adjusted_amount;
+        let new_total_deposits = protocol_state.total_deposits + amount;
         let utilization_rate = if new_total_deposits > 0 {
             protocol_state.total_borrows as f64 / new_total_deposits as f64
         } else {
@@ -186,7 +180,7 @@ impl SemanticBusinessLogic {
                     "Deposit would exceed max utilization rate ({:.2}%)",
                     config.max_utilization_rate * 100.0
                 ),
-                risk_level: RiskLevel::High,
+                validation_level: ValidationLevel::Invalid,
                 semantic_basis,
                 required_actions,
             };
@@ -194,11 +188,8 @@ impl SemanticBusinessLogic {
 
         SemanticAuthorizationResult {
             authorized: true,
-            reason: format!(
-                "Deposit authorized with semantic risk multiplier {:.2}x",
-                semantic_multiplier
-            ),
-            risk_level,
+            reason: "Deposit authorized - semantic validation passed".to_string(),
+            validation_level: ValidationLevel::Valid,
             semantic_basis,
             required_actions,
         }
@@ -248,7 +239,7 @@ impl SemanticBusinessLogic {
                 return SemanticAuthorizationResult {
                     authorized: false,
                     reason: "No user position found".to_string(),
-                    risk_level: RiskLevel::Medium,
+                    validation_level: ValidationLevel::Invalid,
                     semantic_basis,
                     required_actions,
                 };
@@ -260,7 +251,7 @@ impl SemanticBusinessLogic {
             return SemanticAuthorizationResult {
                 authorized: false,
                 reason: format!("Insufficient balance: {} < {}", user_pos.deposited, amount),
-                risk_level: RiskLevel::Medium,
+                validation_level: ValidationLevel::Invalid,
                 semantic_basis,
                 required_actions,
             };
@@ -281,7 +272,7 @@ impl SemanticBusinessLogic {
                     "Withdrawal would violate collateral ratio: {:.2} < {:.2}",
                     new_collateral_ratio, config.min_collateral_ratio
                 ),
-                risk_level: RiskLevel::High,
+                validation_level: ValidationLevel::Invalid,
                 semantic_basis,
                 required_actions: vec!["Repay loans or deposit more collateral".to_string()],
             };
@@ -293,7 +284,7 @@ impl SemanticBusinessLogic {
                 "Withdrawal authorized - collateral ratio remains {:.2}",
                 new_collateral_ratio
             ),
-            risk_level: RiskLevel::Low,
+            validation_level: ValidationLevel::Valid,
             semantic_basis,
             required_actions,
         }
@@ -317,7 +308,7 @@ impl SemanticBusinessLogic {
                 return SemanticAuthorizationResult {
                     authorized: false,
                     reason: "No collateral deposited".to_string(),
-                    risk_level: RiskLevel::High,
+                    validation_level: ValidationLevel::Invalid,
                     semantic_basis: vec![
                         "User has no position - cannot borrow without collateral".to_string()
                     ],
@@ -326,9 +317,16 @@ impl SemanticBusinessLogic {
             }
         };
 
-        // Calculate semantic-adjusted collateral requirements
-        let semantic_multiplier = self.calculate_semantic_risk_multiplier(protocol_state, config);
-        let adjusted_min_collateral = config.min_collateral_ratio * semantic_multiplier;
+        // Validate semantic state
+        if !self.validate_semantic_state(protocol_state, config) {
+            return SemanticAuthorizationResult {
+                authorized: false,
+                reason: "Semantic validation failed - invalid protocol state".to_string(),
+                validation_level: ValidationLevel::Invalid,
+                semantic_basis: vec!["Semantic conflicts detected".to_string()],
+                required_actions: vec!["Resolve semantic conflicts before proceeding".to_string()],
+            };
+        }
 
         // Check collateral ratio after borrow
         let new_borrowed = user_pos.borrowed + amount;
@@ -338,18 +336,15 @@ impl SemanticBusinessLogic {
             f64::INFINITY
         };
 
-        if collateral_ratio < adjusted_min_collateral {
+        if collateral_ratio < config.min_collateral_ratio {
             return SemanticAuthorizationResult {
                 authorized: false,
                 reason: format!(
-                    "Insufficient collateral ratio: {:.2} < {:.2} (semantic-adjusted)",
-                    collateral_ratio, adjusted_min_collateral
+                    "Insufficient collateral ratio: {:.2} < {:.2}",
+                    collateral_ratio, config.min_collateral_ratio
                 ),
-                risk_level: RiskLevel::High,
-                semantic_basis: vec![format!(
-                    "Semantic risk multiplier: {:.2}x",
-                    semantic_multiplier
-                )],
+                validation_level: ValidationLevel::Invalid,
+                semantic_basis: vec!["Collateral requirement not met".to_string()],
                 required_actions: vec!["Deposit more collateral".to_string()],
             };
         }
@@ -365,14 +360,14 @@ impl SemanticBusinessLogic {
                     "Insufficient protocol liquidity: {} > {}",
                     amount, available_liquidity
                 ),
-                risk_level: RiskLevel::High,
+                validation_level: ValidationLevel::Invalid,
                 semantic_basis,
                 required_actions: vec!["Wait for more deposits or borrow less".to_string()],
             };
         }
 
         semantic_basis.push(format!(
-            "Semantic-adjusted collateral ratio: {:.2}",
+            "Collateral ratio: {:.2}",
             collateral_ratio
         ));
 
@@ -382,7 +377,7 @@ impl SemanticBusinessLogic {
                 "Borrow authorized with collateral ratio {:.2}",
                 collateral_ratio
             ),
-            risk_level: RiskLevel::Low,
+            validation_level: ValidationLevel::Valid,
             semantic_basis,
             required_actions,
         }
@@ -402,7 +397,7 @@ impl SemanticBusinessLogic {
                 return SemanticAuthorizationResult {
                     authorized: false,
                     reason: "No outstanding loans".to_string(),
-                    risk_level: RiskLevel::Low,
+                    validation_level: ValidationLevel::Valid,
                     semantic_basis: vec!["User has no position".to_string()],
                     required_actions: vec![],
                 };
@@ -418,66 +413,58 @@ impl SemanticBusinessLogic {
                 "Repay authorized: {} (capped at outstanding balance)",
                 repay_amount
             ),
-            risk_level: RiskLevel::Low,
-            semantic_basis: vec!["Repayment reduces risk".to_string()],
+            validation_level: ValidationLevel::Valid,
+            semantic_basis: vec!["Repayment improves protocol state".to_string()],
             required_actions: vec![],
         }
     }
 
-    /// Calculate semantic risk multiplier based on protocol state
-    fn calculate_semantic_risk_multiplier(
+    /// Validate semantic state for protocol operations
+    fn validate_semantic_state(
         &self,
         protocol_state: &DeFiProtocolState,
         config: &ProtocolConfig,
-    ) -> f64 {
-        let mut multiplier = 1.0;
+    ) -> bool {
+        if !config.semantic_validation_enabled {
+            return true;
+        }
 
-        // Analyze each semantic context
-        for (field, semantics) in &protocol_state.semantic_context {
-            if let Some(field_multiplier) = config.semantic_overrides.get(&semantics.zero_meaning) {
-                match field.as_str() {
-                    "total_deposits" => multiplier *= field_multiplier,
-                    "total_borrows" => multiplier *= field_multiplier * 0.5, // Less impact
-                    "user_balances" => multiplier *= field_multiplier * 0.8, // Moderate impact
-                    _ => {}
-                }
+        // Check for semantic conflicts
+        for semantics in protocol_state.semantic_context.values() {
+            if semantics.has_conflict() {
+                // Invalid - semantic conflict detected
+                return false;
             }
         }
 
-        multiplier
+        // All semantic states are valid
+        true
     }
 
-    /// Assess overall protocol risk based on semantic context
-    fn assess_protocol_risk(&self, protocol_state: &DeFiProtocolState) -> (RiskLevel, Vec<String>) {
-        let mut risk_factors = vec![];
-        let mut max_risk = RiskLevel::Low;
+    /// Assess overall protocol state based on semantic context
+    fn assess_protocol_validation(&self, protocol_state: &DeFiProtocolState) -> (ValidationLevel, Vec<String>) {
+        let mut validation_issues = vec![];
+        let mut is_valid = true;
 
         // Analyze semantic contexts
         for (field, semantics) in &protocol_state.semantic_context {
             if semantics.has_conflict() {
-                risk_factors.push(format!(
+                validation_issues.push(format!(
                     "Semantic conflict in {}: declared {:?} vs validated {:?}",
                     field, semantics.declared_semantics, semantics.validated_semantics
                 ));
-                max_risk = RiskLevel::High;
+                is_valid = false;
             }
 
             match (&semantics.zero_meaning, field.as_str()) {
                 (ZeroSemantics::NeverWritten, "total_deposits") => {
-                    risk_factors.push("Protocol never initialized - high risk".to_string());
-                    max_risk = RiskLevel::High;
+                    validation_issues.push("Protocol never initialized - requires setup".to_string());
                 }
                 (ZeroSemantics::Cleared, "total_deposits") => {
-                    risk_factors.push("Protocol deposits were cleared - investigate".to_string());
-                    if max_risk == RiskLevel::Low {
-                        max_risk = RiskLevel::Medium;
-                    }
+                    validation_issues.push("Protocol deposits were cleared - investigate".to_string());
                 }
                 (ZeroSemantics::Cleared, "user_balances") => {
-                    risk_factors.push("User balances were cleared - verify integrity".to_string());
-                    if max_risk == RiskLevel::Low {
-                        max_risk = RiskLevel::Medium;
-                    }
+                    validation_issues.push("User balances were cleared - verify integrity".to_string());
                 }
                 _ => {}
             }
@@ -491,22 +478,25 @@ impl SemanticBusinessLogic {
         };
 
         if utilization > 0.9 {
-            risk_factors.push(format!(
+            validation_issues.push(format!(
                 "High utilization rate: {:.1}%",
                 utilization * 100.0
             ));
-            max_risk = RiskLevel::Critical;
+            is_valid = false;
         } else if utilization > 0.8 {
-            risk_factors.push(format!(
+            validation_issues.push(format!(
                 "Elevated utilization rate: {:.1}%",
                 utilization * 100.0
             ));
-            if max_risk < RiskLevel::Medium {
-                max_risk = RiskLevel::Medium;
-            }
         }
 
-        (max_risk, risk_factors)
+        let validation_level = if is_valid {
+            ValidationLevel::Valid
+        } else {
+            ValidationLevel::Invalid
+        };
+
+        (validation_level, validation_issues)
     }
 }
 
@@ -542,7 +532,7 @@ fn demonstrate_semantic_business_logic() -> Result<(), Box<dyn std::error::Error
     println!("First deposit authorization:");
     println!("   • Authorized: {}", auth_result.authorized);
     println!("   • Reason: {}", auth_result.reason);
-    println!("   • Risk Level: {:?}", auth_result.risk_level);
+    println!("   • Validation Level: {:?}", auth_result.validation_level);
     println!("   • Semantic Basis: {:?}", auth_result.semantic_basis);
     println!("   • Required Actions: {:?}", auth_result.required_actions);
     println!();
@@ -570,7 +560,7 @@ fn demonstrate_semantic_business_logic() -> Result<(), Box<dyn std::error::Error
     println!("Deposit to initialized protocol:");
     println!("   • Authorized: {}", auth_result2.authorized);
     println!("   • Reason: {}", auth_result2.reason);
-    println!("   • Risk Level: {:?}", auth_result2.risk_level);
+    println!("   • Validation Level: {:?}", auth_result2.validation_level);
     println!("   • Semantic Basis: {:?}", auth_result2.semantic_basis);
     println!();
 
@@ -591,16 +581,16 @@ fn demonstrate_semantic_business_logic() -> Result<(), Box<dyn std::error::Error
         StorageSemantics::with_validation(ZeroSemantics::NeverWritten, ZeroSemantics::Cleared),
     );
 
-    let (risk_level, risk_factors) = business_logic.assess_protocol_risk(&protocol_state3);
+    let (validation_level, validation_issues) = business_logic.assess_protocol_validation(&protocol_state3);
 
-    println!("Protocol risk assessment:");
-    println!("   • Risk Level: {:?}", risk_level);
-    println!("   • Risk Factors: {:?}", risk_factors);
+    println!("Protocol validation assessment:");
+    println!("   • Validation Level: {:?}", validation_level);
+    println!("   • Validation Issues: {:?}", validation_issues);
     println!();
 
-    // Scenario 4: User Borrowing with Semantic Context
-    println!("Scenario 4: User Borrowing with Semantic Risk Assessment");
-    println!("--------------------------------------------------------");
+    // Scenario 4: User Borrowing with Semantic Validation
+    println!("Scenario 4: User Borrowing with Semantic Validation");
+    println!("---------------------------------------------------");
 
     let mut protocol_state4 = DeFiProtocolState {
         name: "LendingProtocol".to_string(),
@@ -637,7 +627,7 @@ fn demonstrate_semantic_business_logic() -> Result<(), Box<dyn std::error::Error
     println!("Borrow authorization with semantic conflicts:");
     println!("   • Authorized: {}", borrow_auth.authorized);
     println!("   • Reason: {}", borrow_auth.reason);
-    println!("   • Risk Level: {:?}", borrow_auth.risk_level);
+    println!("   • Validation Level: {:?}", borrow_auth.validation_level);
     println!("   • Semantic Basis: {:?}", borrow_auth.semantic_basis);
     println!("   • Required Actions: {:?}", borrow_auth.required_actions);
     println!();
@@ -665,26 +655,26 @@ fn demonstrate_semantic_business_logic() -> Result<(), Box<dyn std::error::Error
     println!("Withdrawal from cleared account:");
     println!("   • Authorized: {}", withdraw_auth.authorized);
     println!("   • Reason: {}", withdraw_auth.reason);
-    println!("   • Risk Level: {:?}", withdraw_auth.risk_level);
+    println!("   • Validation Level: {:?}", withdraw_auth.validation_level);
     println!("   • Semantic Basis: {:?}", withdraw_auth.semantic_basis);
     println!();
 
     // Semantic Business Logic Summary
     println!("Semantic Business Logic Summary");
     println!("==============================");
-    println!("Never Written: Higher risk multiplier (2.0x) for uninitialized protocols");
-    println!("Explicitly Zero: Normal risk (1.0x) for properly initialized systems");
-    println!("Cleared: Elevated risk (1.5x) for systems that were active but cleared");
-    println!("Valid Zero: Normal risk (1.0x) for operational zero states");
-    println!("Conflicts: Automatic risk escalation when declared ≠ validated");
-    println!("Context-aware: Different risk weights for different protocol components");
+    println!("Never Written: Uninitialized protocols require setup");
+    println!("Explicitly Zero: Properly initialized systems ready for operations");
+    println!("Cleared: Systems with confirmed activity history");
+    println!("Valid Zero: Operational zero states (normal)");
+    println!("Conflicts: Binary validation failure when declared ≠ validated");
+    println!("Context-aware: Different business logic for different protocol components");
     println!();
     println!("Integration Points:");
-    println!("• Authorization systems use semantic context for risk assessment");
-    println!("• Collateral requirements adjusted based on semantic risk multipliers");
+    println!("• Authorization systems use semantic context for validation");
+    println!("• Binary semantic validation (valid/invalid) determines authorization");
     println!("• Protocol health monitoring includes semantic conflict detection");
     println!("• Business logic adapts to semantic meanings of zero values");
-    println!("• User actions guided by semantic-aware risk assessment");
+    println!("• User actions guided by semantic-aware validation");
 
     Ok(())
 }

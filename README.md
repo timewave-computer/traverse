@@ -177,7 +177,7 @@ cargo run --example semantic_conflict_resolution
 - Business logic integration based on resolved semantics
 
 #### 2. Semantic Business Logic Integration (`examples/semantic_business_logic.rs`)
-Shows how semantic meanings affect DeFi protocol authorization and risk assessment:
+Shows how semantic meanings affect DeFi protocol authorization and validation:
 
 ```bash
 cargo run --example semantic_business_logic
@@ -185,9 +185,9 @@ cargo run --example semantic_business_logic
 
 **Key Features:**
 - Semantic-aware authorization systems
-- Risk multipliers based on zero semantic types
-- Collateral ratio adjustments for different semantic contexts
+- Binary semantic validation (valid/invalid)
 - Protocol health monitoring with semantic conflict detection
+- Business logic based on semantic correctness
 
 #### 3. Semantic CLI Integration (`examples/semantic_cli_integration.rs`)
 Complete guide to using the traverse CLI with semantic storage proofs:
@@ -315,12 +315,12 @@ NEUTRON_MNEMONIC=your_neutron_mnemonic
 
 ## Zero Semantic Types
 
-| Type | Meaning | Use Case | Risk Level |
-|------|---------|----------|------------|
-| `never_written` | Storage slot has never been written to | User balances in tokens they never held | Higher (2.0x) |
-| `explicitly_zero` | Intentionally set to zero | Contract initialization values | Normal (1.0x) |
-| `cleared` | Previously non-zero but cleared | Withdrawn balances, processed requests | Elevated (1.5x) |
-| `valid_zero` | Zero is a valid operational state | Counters, flags, operational values | Normal (1.0x) |
+| Type | Meaning | Use Case | Business Logic |
+|------|---------|----------|----------------|
+| `never_written` | Storage slot has never been written to | User balances in tokens they never held | Treat as uninitialized state |
+| `explicitly_zero` | Intentionally set to zero | Contract initialization values | Valid operational state |
+| `cleared` | Previously non-zero but cleared | Withdrawn balances, processed requests | Previous activity confirmed |
+| `valid_zero` | Zero is a valid operational state | Counters, flags, operational values | Valid operational state |
 
 ## Integration Guide
 
@@ -360,10 +360,10 @@ let results = circuit::verify_semantic_storage_proofs_and_extract(&witnesses)?;
 
 ```rust
 match (value, resolved_semantics.zero_meaning) {
-    (0, ZeroSemantics::NeverWritten) => "User never participated",
-    (0, ZeroSemantics::ExplicitlyZero) => "System initialized and ready", 
-    (0, ZeroSemantics::Cleared) => "Previous activity cleared",
-    (0, ZeroSemantics::ValidZero) => "Valid operational state",
+    (0, ZeroSemantics::NeverWritten) => "User never participated - no initialization required",
+    (0, ZeroSemantics::ExplicitlyZero) => "System initialized and ready for operations", 
+    (0, ZeroSemantics::Cleared) => "Previous activity cleared - history confirmed",
+    (0, ZeroSemantics::ValidZero) => "Valid operational state - proceed normally",
     (n, _) => format!("Active with value {}", n),
 }
 ```
