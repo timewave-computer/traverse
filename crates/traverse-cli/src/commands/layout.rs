@@ -1,20 +1,20 @@
 //! Layout command implementation
-//! 
+//!
 //! Handles compilation of contract ABIs to canonical layout format.
 
-use std::path::Path;
-use anyhow::Result;
-use tracing::{info, error};
-use traverse_core::LayoutCompiler;
-use traverse_ethereum::EthereumLayoutCompiler;
-use traverse_cosmos::CosmosLayoutCompiler;
 use crate::formatters::write_output;
+use anyhow::Result;
 use serde_json::json;
+use std::path::Path;
+use tracing::{error, info};
+use traverse_core::LayoutCompiler;
+use traverse_cosmos::CosmosLayoutCompiler;
+use traverse_ethereum::EthereumLayoutCompiler;
 
 /// Execute compile-layout command
 pub fn cmd_compile_layout(abi_file: &Path, output: Option<&Path>, chain: &str) -> Result<()> {
     info!("Compiling layout from {}", abi_file.display());
-    
+
     let layout = match chain {
         "ethereum" => {
             let compiler = EthereumLayoutCompiler;
@@ -29,7 +29,7 @@ pub fn cmd_compile_layout(abi_file: &Path, output: Option<&Path>, chain: &str) -
             return Err(anyhow::anyhow!("Unsupported chain: {}", chain));
         }
     };
-    
+
     // Create output structure with metadata
     let output_structure = json!({
         "contract_name": layout.contract_name,
@@ -49,16 +49,19 @@ pub fn cmd_compile_layout(abi_file: &Path, output: Option<&Path>, chain: &str) -
             "chain": chain
         }
     });
-    
+
     let json = serde_json::to_string_pretty(&output_structure)?;
     write_output(&json, output)?;
-    
+
     println!("Compiling storage layout: {}_layout detected", chain);
     println!("Storage layout compiled successfully:");
     println!("  • Contract: {}", layout.contract_name);
     println!("  • Storage entries: {}", layout.storage.len());
     println!("  • Type definitions: {}", layout.types.len());
-    println!("  • Layout commitment: {}", hex::encode(layout.commitment()));
-    
+    println!(
+        "  • Layout commitment: {}",
+        hex::encode(layout.commitment())
+    );
+
     Ok(())
-} 
+}

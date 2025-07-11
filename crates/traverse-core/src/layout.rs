@@ -1,27 +1,28 @@
 //! Layout types and data structures
-//! 
+//!
 //! This module contains the core data structures for representing contract storage
 //! layouts in a chain-independent format. These types are used throughout the
 //! system for layout compilation, path resolution, and commitment generation.
 
+use crate::ZeroSemantics;
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// Represents the storage layout information for a contract
-/// 
+///
 /// This is the canonical representation of a contract's storage layout that
 /// can be shared across different blockchain architectures. It includes
 /// all necessary information to resolve storage queries deterministically.
-/// 
+///
 /// # Fields
-/// 
+///
 /// - `contract_name`: Human-readable name of the contract
 /// - `storage`: List of storage variables and their locations
 /// - `types`: Type definitions used by the storage variables
-/// 
+///
 /// # Layout Commitment
-/// 
+///
 /// The layout commitment is a SHA256 hash that ensures the circuit was compiled
 /// with the correct ABI. This prevents mismatches between the expected layout
 /// and the actual contract layout at proof generation time.
@@ -37,20 +38,20 @@ pub struct LayoutInfo {
 
 impl LayoutInfo {
     /// Compute the layout commitment hash
-    /// 
+    ///
     /// This generates a deterministic SHA256 hash of the layout that can be used
     /// to verify circuit-layout alignment. The commitment includes all storage
     /// entries and type information to ensure completeness.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A 32-byte SHA256 hash that uniquely identifies this layout
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// use traverse_core::LayoutInfo;
-    /// 
+    ///
     /// let layout = LayoutInfo {
     ///     contract_name: "MyContract".into(),
     ///     storage: vec![],
@@ -76,7 +77,7 @@ impl LayoutInfo {
             for entry in &self.storage {
                 hasher.update(entry.label.as_bytes());
                 hasher.update(entry.slot.as_bytes());
-                hasher.update(&[entry.offset]);
+                hasher.update([entry.offset]);
                 hasher.update(entry.type_name.as_bytes());
             }
             hasher.finalize().into()
@@ -85,10 +86,11 @@ impl LayoutInfo {
 }
 
 /// A single entry in the storage layout
-/// 
+///
 /// Represents one storage variable in a contract, including its name,
-/// location in storage, and type information. This information is used
-/// to generate the correct storage keys for queries.
+/// location in storage, type information, and semantic meaning of zero values.
+/// This information is used to generate the correct storage keys for queries
+/// and eliminate false positive ambiguity.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StorageEntry {
     /// Variable name as it appears in the contract source
@@ -99,10 +101,12 @@ pub struct StorageEntry {
     pub offset: u8,
     /// Type identifier referencing an entry in the types array
     pub type_name: String,
+    /// Semantic meaning of zero values for this storage location (required)
+    pub zero_semantics: ZeroSemantics,
 }
 
 /// Type information for ABI types
-/// 
+///
 /// Provides detailed information about the types used in storage variables,
 /// including size information and encoding details needed for proper
 /// storage key generation and value extraction.
@@ -135,6 +139,7 @@ mod tests {
                 slot: "0".into(),
                 offset: 0,
                 type_name: "t_uint256".into(),
+                zero_semantics: ZeroSemantics::ValidZero,
             }],
             types: alloc::vec![TypeInfo {
                 label: "t_uint256".into(),
@@ -148,9 +153,9 @@ mod tests {
 
         let commitment = layout.commitment();
         assert_eq!(commitment.len(), 32);
-        
+
         // Same layout should produce same commitment
         let commitment2 = layout.commitment();
         assert_eq!(commitment, commitment2);
     }
-} 
+}

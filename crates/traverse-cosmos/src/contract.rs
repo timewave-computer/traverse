@@ -1,12 +1,12 @@
 //! CosmWasm contract analysis and schema parsing
-//! 
+//!
 //! This module provides functionality to analyze CosmWasm contracts from their
 //! message schemas and identify storage patterns for ZK coprocessor integration.
 
+use crate::CosmosError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::CosmosError;
 
 /// Represents a CosmWasm contract with its message schema and storage patterns
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,24 +130,27 @@ impl CosmWasmContract {
         query_path: Option<&str>,
     ) -> Result<Self, CosmosError> {
         let instantiate_msg = if let Some(path) = instantiate_path {
-            let content = std::fs::read_to_string(path)
-                .map_err(|e| CosmosError::InvalidSchema(format!("Failed to read instantiate schema: {}", e)))?;
+            let content = std::fs::read_to_string(path).map_err(|e| {
+                CosmosError::InvalidSchema(format!("Failed to read instantiate schema: {}", e))
+            })?;
             Some(serde_json::from_str(&content)?)
         } else {
             None
         };
 
         let execute_msg = if let Some(path) = execute_path {
-            let content = std::fs::read_to_string(path)
-                .map_err(|e| CosmosError::InvalidSchema(format!("Failed to read execute schema: {}", e)))?;
+            let content = std::fs::read_to_string(path).map_err(|e| {
+                CosmosError::InvalidSchema(format!("Failed to read execute schema: {}", e))
+            })?;
             Some(serde_json::from_str(&content)?)
         } else {
             None
         };
 
         let query_msg = if let Some(path) = query_path {
-            let content = std::fs::read_to_string(path)
-                .map_err(|e| CosmosError::InvalidSchema(format!("Failed to read query schema: {}", e)))?;
+            let content = std::fs::read_to_string(path).map_err(|e| {
+                CosmosError::InvalidSchema(format!("Failed to read query schema: {}", e))
+            })?;
             Some(serde_json::from_str(&content)?)
         } else {
             None
@@ -192,7 +195,8 @@ impl CosmWasmContract {
         }
 
         // Infer storage patterns from messages
-        let storage_variables = Self::infer_storage_from_messages(&self.execute_msg, &self.query_msg)?;
+        let storage_variables =
+            Self::infer_storage_from_messages(&self.execute_msg, &self.query_msg)?;
         complexity.storage_var_count = storage_variables.len();
         complexity.complexity_score = self.calculate_complexity_score(&complexity);
 
@@ -308,13 +312,13 @@ impl CosmWasmContract {
 
     /// Calculate complexity score based on metrics
     fn calculate_complexity_score(&self, metrics: &ComplexityMetrics) -> u32 {
-        let base_score = metrics.execute_msg_count as u32 * 10 
-                       + metrics.query_msg_count as u32 * 5 
-                       + metrics.storage_var_count as u32 * 15;
-        
+        let base_score = metrics.execute_msg_count as u32 * 10
+            + metrics.query_msg_count as u32 * 5
+            + metrics.storage_var_count as u32 * 15;
+
         // Add bonus for complex patterns
         let pattern_bonus = self.storage_patterns.len() as u32 * 20;
-        
+
         base_score + pattern_bonus
     }
 
@@ -326,21 +330,27 @@ impl CosmWasmContract {
         let mut recommendations = Vec::new();
 
         if complexity.complexity_score > 200 {
-            recommendations.push("Consider splitting into multiple contracts for better modularity".to_string());
+            recommendations.push(
+                "Consider splitting into multiple contracts for better modularity".to_string(),
+            );
         }
 
         if complexity.storage_var_count > 10 {
-            recommendations.push("Review storage layout for optimization opportunities".to_string());
+            recommendations
+                .push("Review storage layout for optimization opportunities".to_string());
         }
 
         if patterns.iter().any(|p| p.pattern_type == "CW20Token") {
-            recommendations.push("Consider using standard CW20 implementation for better compatibility".to_string());
+            recommendations.push(
+                "Consider using standard CW20 implementation for better compatibility".to_string(),
+            );
         }
 
         if recommendations.is_empty() {
-            recommendations.push("Contract structure looks good for ZK coprocessor integration".to_string());
+            recommendations
+                .push("Contract structure looks good for ZK coprocessor integration".to_string());
         }
 
         recommendations
     }
-} 
+}

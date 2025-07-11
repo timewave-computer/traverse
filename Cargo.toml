@@ -39,7 +39,7 @@ dotenv = { workspace = true, optional = true }
 
 # Client feature dependencies
 valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", branch = "main", optional = true }
-alloy = { version = "0.9", features = ["providers", "network"], optional = true }
+alloy = { version = "0.9", features = ["providers", "network", "sol-types"], optional = true }
 base64 = { version = "0.22", optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }
 
@@ -47,6 +47,26 @@ reqwest = { version = "0.12", features = ["json"], optional = true }
 [[example]]
 name = "usdt_live_proof"
 path = "examples/usdt_live_proof.rs"
+
+[[example]]
+name = "semantic_conflict_resolution"
+path = "examples/semantic_conflict_resolution.rs"
+
+[[example]]
+name = "circuit_usage"
+path = "examples/circuit_usage.rs"
+
+[[example]]
+name = "semantic_business_logic"
+path = "examples/semantic_business_logic.rs"
+
+[[example]]
+name = "semantic_cli_integration"
+path = "examples/semantic_cli_integration.rs"
+
+[[example]]
+name = "valence_vault_storage"
+path = "examples/valence_vault_storage.rs"
 
 [workspace.package]
 version = "0.1.0"

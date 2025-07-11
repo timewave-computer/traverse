@@ -28,7 +28,7 @@ hex = { workspace = true }
 anyhow = { workspace = true }
 
 # Optional alloy dependencies for ABI encoding
-alloy = { workspace = true, optional = true }
+alloy = { workspace = true, optional = true, features = ["sol-types"] }
 
 [dev-dependencies]
 hex = { workspace = true, features = ["std"] } 

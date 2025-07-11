@@ -1,14 +1,14 @@
 //! Output formatting and data conversion utilities
-//! 
+//!
 //! This module provides functions for converting between different data formats
 //! and handling output to files or stdout.
 
-use std::path::Path;
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use traverse_core::{LayoutInfo, StaticKeyPath, Key};
 use crate::cli::OutputFormat;
+use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD, Engine};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use traverse_core::{Key, LayoutInfo, StaticKeyPath};
 
 /// Coprocessor-compatible storage query format
 #[derive(Serialize, Deserialize)]
@@ -50,7 +50,7 @@ fn storage_key_to_hex(key: &Key) -> String {
         Key::Variable(key) => {
             let mut padded = [0u8; 32];
             let len = std::cmp::min(key.len(), 32);
-            padded[32-len..].copy_from_slice(&key[key.len()-len..]);
+            padded[32 - len..].copy_from_slice(&key[key.len() - len..]);
             hex::encode(padded)
         }
     }
@@ -68,11 +68,13 @@ pub fn path_to_coprocessor_query(path: &StaticKeyPath, query: &str) -> Coprocess
 }
 
 /// Format storage path based on output format
-pub fn format_storage_path(path: &StaticKeyPath, query: &str, format: &OutputFormat) -> Result<String> {
+pub fn format_storage_path(
+    path: &StaticKeyPath,
+    query: &str,
+    format: &OutputFormat,
+) -> Result<String> {
     match format {
-        OutputFormat::Traverse => {
-            serde_json::to_string_pretty(path).map_err(Into::into)
-        }
+        OutputFormat::Traverse => serde_json::to_string_pretty(path).map_err(Into::into),
         OutputFormat::CoprocessorJson => {
             let coprocessor_payload = path_to_coprocessor_query(path, query);
             serde_json::to_string_pretty(&coprocessor_payload).map_err(Into::into)
@@ -81,71 +83,57 @@ pub fn format_storage_path(path: &StaticKeyPath, query: &str, format: &OutputFor
             let coprocessor_payload = path_to_coprocessor_query(path, query);
             toml::to_string_pretty(&coprocessor_payload).map_err(Into::into)
         }
-        OutputFormat::Binary => {
-            match &path.key {
-                Key::Fixed(bytes) => {
-                    let binary_data = if let Some(offset) = path.offset {
-                        let mut result = bytes.to_vec();
-                        result.push(offset);
-                        result
-                    } else {
-                        bytes.to_vec()
-                    };
-                    Ok(format!("{}: {}", 
-                               path.name, 
-                               STANDARD.encode(&binary_data)))
-                }
-                Key::Variable(bytes) => {
-                    let binary_data = if let Some(offset) = path.offset {
-                        let mut result = bytes.clone();
-                        result.push(offset);
-                        result
-                    } else {
-                        bytes.clone()
-                    };
-                    Ok(format!("{}: {}", 
-                               path.name, 
-                               STANDARD.encode(&binary_data)))
-                }
+        OutputFormat::Binary => match &path.key {
+            Key::Fixed(bytes) => {
+                let binary_data = if let Some(offset) = path.offset {
+                    let mut result = bytes.to_vec();
+                    result.push(offset);
+                    result
+                } else {
+                    bytes.to_vec()
+                };
+                Ok(format!("{}: {}", path.name, STANDARD.encode(&binary_data)))
             }
-        }
-        OutputFormat::Base64 => {
-            match &path.key {
-                Key::Fixed(bytes) => {
-                    let binary_data = if let Some(offset) = path.offset {
-                        let mut result = bytes.to_vec();
-                        result.push(offset);
-                        result
-                    } else {
-                        bytes.to_vec()
-                    };
-                    Ok(format!("{}: {}", 
-                               path.name, 
-                               STANDARD.encode(&binary_data)))
-                }
-                Key::Variable(bytes) => {
-                    let binary_data = if let Some(offset) = path.offset {
-                        let mut result = bytes.clone();
-                        result.push(offset);
-                        result
-                    } else {
-                        bytes.clone()
-                    };
-                    Ok(format!("{}: {}", 
-                               path.name, 
-                               STANDARD.encode(&binary_data)))
-                }
+            Key::Variable(bytes) => {
+                let binary_data = if let Some(offset) = path.offset {
+                    let mut result = bytes.clone();
+                    result.push(offset);
+                    result
+                } else {
+                    bytes.clone()
+                };
+                Ok(format!("{}: {}", path.name, STANDARD.encode(&binary_data)))
             }
-        }
+        },
+        OutputFormat::Base64 => match &path.key {
+            Key::Fixed(bytes) => {
+                let binary_data = if let Some(offset) = path.offset {
+                    let mut result = bytes.to_vec();
+                    result.push(offset);
+                    result
+                } else {
+                    bytes.to_vec()
+                };
+                Ok(format!("{}: {}", path.name, STANDARD.encode(&binary_data)))
+            }
+            Key::Variable(bytes) => {
+                let binary_data = if let Some(offset) = path.offset {
+                    let mut result = bytes.clone();
+                    result.push(offset);
+                    result
+                } else {
+                    bytes.clone()
+                };
+                Ok(format!("{}: {}", path.name, STANDARD.encode(&binary_data)))
+            }
+        },
     }
 }
 
 /// Format multiple storage paths based on output format
 pub fn format_storage_paths(paths: &[StaticKeyPath], format: &OutputFormat) -> Result<String> {
     match format {
-        OutputFormat::Traverse => {
-            serde_json::to_string_pretty(paths).map_err(Into::into)
-        }
+        OutputFormat::Traverse => serde_json::to_string_pretty(paths).map_err(Into::into),
         OutputFormat::CoprocessorJson => {
             let coprocessor_payloads: Vec<CoprocessorStorageQuery> = paths
                 .iter()
@@ -162,7 +150,9 @@ pub fn format_storage_paths(paths: &[StaticKeyPath], format: &OutputFormat) -> R
                 .iter()
                 .map(|path| path_to_coprocessor_query(path, path.name))
                 .collect();
-            let output = TomlOutput { queries: coprocessor_payloads };
+            let output = TomlOutput {
+                queries: coprocessor_payloads,
+            };
             toml::to_string_pretty(&output).map_err(Into::into)
         }
         OutputFormat::Binary => {
@@ -171,9 +161,11 @@ pub fn format_storage_paths(paths: &[StaticKeyPath], format: &OutputFormat) -> R
                 .map(|path| path_to_coprocessor_query(path, path.name))
                 .collect();
             let binary_data = bincode::serialize(&coprocessor_payloads)?;
-            Ok(format!("Binary data: {} bytes\nBase64: {}", 
-                      binary_data.len(), 
-                      STANDARD.encode(&binary_data)))
+            Ok(format!(
+                "Binary data: {} bytes\nBase64: {}",
+                binary_data.len(),
+                STANDARD.encode(&binary_data)
+            ))
         }
         OutputFormat::Base64 => {
             let coprocessor_payloads: Vec<CoprocessorStorageQuery> = paths
@@ -181,9 +173,11 @@ pub fn format_storage_paths(paths: &[StaticKeyPath], format: &OutputFormat) -> R
                 .map(|path| path_to_coprocessor_query(path, path.name))
                 .collect();
             let binary_data = bincode::serialize(&coprocessor_payloads)?;
-            Ok(format!("Binary data: {} bytes\nBase64: {}", 
-                      binary_data.len(), 
-                      STANDARD.encode(&binary_data)))
+            Ok(format!(
+                "Binary data: {} bytes\nBase64: {}",
+                binary_data.len(),
+                STANDARD.encode(&binary_data)
+            ))
         }
     }
-} 
+}
