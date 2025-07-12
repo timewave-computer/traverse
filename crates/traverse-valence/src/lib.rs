@@ -5,19 +5,81 @@
 //! witness creation, circuit helpers for proof verification, and domain helpers
 //! for state validation.
 //!
-//! ## Architecture
+//! ## Modular Architecture
 //!
-//! The valence coprocessor uses a three-tier architecture:
-//! - **Controller**: Creates witnesses from JSON arguments using `get_witnesses()`
-//! - **Circuit**: Verifies storage proofs and generates ABI-encoded output using `circuit()`
-//! - **Domain**: Validates blockchain state proofs and storage verification
+//! Following the valence-coprocessor-app pattern, this crate is designed to be
+//! modular with separate controller, circuit, and domain components that can
+//! be built independently based on your needs.
+//!
+//! ### For 3rd Party Developers
+//!
+//! You can generate minimal, custom crates containing only the functionality
+//! you need for your specific storage queries:
+//!
+//! ```bash
+//! # Generate a minimal controller crate for your queries
+//! traverse-cli generate-controller --queries queries.json --output my-controller
+//!
+//! # Generate a minimal circuit crate for verification
+//! traverse-cli generate-circuit --layout layout.json --output my-circuit
+//! ```
+//!
+//! ## Controller Usage
+//!
+//! For witness generation in your valence app controller:
+//!
+//! ```toml
+//! [dependencies]
+//! traverse-valence = { version = "0.1", default-features = false, features = ["controller"] }
+//! ```
+//!
+//! ```rust,ignore
+//! use traverse_valence::controller::create_witness_from_request;
+//! use traverse_valence::StorageVerificationRequest;
+//! use valence_coprocessor::Witness;
+//!
+//! pub fn get_witnesses(request: StorageVerificationRequest) -> Result<Vec<Witness>, _> {
+//!     let witness = create_witness_from_request(&request)?;
+//!     Ok(vec![witness])
+//! }
+//! ```
+//!
+//! **Note**: Controllers are always `no_std` for maximum compatibility across environments.
+//!
+//! ## Circuit Usage
+//!
+//! For proof verification in your valence app circuit:
+//!
+//! ```toml
+//! [dependencies]
+//! traverse-valence = { version = "0.1", default-features = false, features = ["circuit"] }
+//! ```
+//!
+//! ```rust,ignore
+//! use traverse_valence::circuit::{CircuitProcessor, CircuitWitness};
+//! use valence_coprocessor::Witness;
+//!
+//! pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
+//!     let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+//!     let circuit_witnesses: Vec<CircuitWitness> = witnesses.into_iter()
+//!         .map(|w| CircuitProcessor::parse_witness_from_bytes(w.as_data().unwrap()))
+//!         .collect::<Result<Vec<_>, _>>()
+//!         .expect("Failed to parse witnesses");
+//!     
+//!     let results = processor.process_batch(&circuit_witnesses);
+//!     // Generate your ABI-encoded output based on results
+//!     generate_abi_output(results)
+//! }
+//! ```
+//!
+//! **Note**: Circuits are always minimal/constrained for optimal ZK environments.
 //!
 //! ## Message Flow Integration
 //!
 //! ```rust,ignore
 //! use traverse_valence::circuit::{CircuitProcessor, CircuitWitness, FieldType};
 //!
-//! // Create minimal processor for ZK circuits
+//! // Create minimal processor for ZK circuits (always constrained)
 //! let processor = CircuitProcessor::new(layout_commitment, field_types);
 //!
 //! // Process witnesses with maximum efficiency
@@ -68,32 +130,53 @@ extern crate std;
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
-// Module declarations
+// Conditional module compilation based on features
+#[cfg(feature = "circuit")]
 pub mod circuit;
+
+#[cfg(feature = "controller")]
 pub mod controller;
+
+#[cfg(feature = "domain")]
 pub mod domain;
+
+// Always include messages as they're shared types
 pub mod messages;
 
 // Lightweight ABI support
 #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
 pub mod abi;
 
-// Constrained environment support
+// Code generation support
+#[cfg(feature = "codegen")]
+pub mod codegen;
 
+// Minimal code generation support
+#[cfg(feature = "codegen")]
+pub mod minimal_codegen;
 
-// Re-export the module contents at the crate root for convenience
+// Conditional re-exports based on enabled features
+#[cfg(feature = "circuit")]
 pub use circuit::{
     CircuitProcessor, CircuitResult, CircuitWitness,
     ExtractedValue, FieldType, ZeroSemantics
 };
+
+#[cfg(feature = "controller")]
 pub use controller::*;
+
+#[cfg(feature = "domain")]
 pub use domain::*;
+
 pub use messages::*;
 
 // Re-export lightweight ABI when available
 #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
 pub use abi::{AlloyAbiTypes, AbiValue, AbiType};
 
+// Re-export codegen when available
+#[cfg(feature = "codegen")]
+pub use codegen::{generate_controller_crate, generate_circuit_crate, CodegenOptions};
 
 /// Error type for valence coprocessor integration
 #[derive(Debug)]
@@ -112,7 +195,9 @@ pub enum TraverseValenceError {
     AbiError(String),
     /// Storage proof validation error
     StorageProofError(String),
-
+    /// Code generation error
+    #[cfg(feature = "codegen")]
+    CodegenError(String),
 }
 
 impl core::fmt::Display for TraverseValenceError {
@@ -131,14 +216,14 @@ impl core::fmt::Display for TraverseValenceError {
             TraverseValenceError::StorageProofError(msg) => {
                 write!(f, "Storage proof error: {}", msg)
             }
+            #[cfg(feature = "codegen")]
+            TraverseValenceError::CodegenError(msg) => write!(f, "Code generation error: {}", msg),
         }
     }
 }
 
 #[cfg(feature = "std")]
 impl std::error::Error for TraverseValenceError {}
-
-
 
 /// Coprocessor-compatible storage query format (matches traverse-cli output)
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -190,11 +275,13 @@ pub struct BatchStorageVerificationRequest {
     pub block_number: Option<u64>,
 }
 
+// Constrained environment prelude
 #[cfg(any(feature = "no-std", feature = "constrained", feature = "embedded"))]
 pub mod constrained_prelude {
     //! Prelude for constrained environments
     //! Common imports for constrained environments
     
+    #[cfg(feature = "circuit")]
     pub use crate::{
         CircuitProcessor, CircuitWitness, CircuitResult,
         ExtractedValue, FieldType,
