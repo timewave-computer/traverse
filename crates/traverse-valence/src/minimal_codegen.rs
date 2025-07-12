@@ -3,8 +3,8 @@
 //! This module generates minimal, purpose-built code that is tailored specifically
 //! to the provided schema without any unnecessary abstractions or dependencies.
 
-use alloc::{format, string::String, vec::Vec};
-use traverse_core::{LayoutInfo, StorageEntry, TypeInfo, ZeroSemantics};
+use alloc::{format, string::String};
+use traverse_core::{LayoutInfo, StorageEntry, ZeroSemantics};
 
 /// Generate minimal query code for a specific storage layout
 pub fn generate_minimal_query_code(layout: &LayoutInfo) -> String {
@@ -346,7 +346,7 @@ pub const FIELDS: Fields = Fields {
         ));
         code.push_str(&format!(
             "        slot: {:?},\n",
-            hex::decode(entry.slot.trim_start_matches("0x")).unwrap_or_else(|_| vec![0; 32])
+            hex::decode(entry.slot.trim_start_matches("0x")).unwrap_or_else(|_| alloc::vec![0; 32])
         ));
         code.push_str(&format!(
             "        offset: {},\n",
@@ -372,7 +372,7 @@ mod tests {
     fn test_minimal_query_generation() {
         let layout = LayoutInfo {
             contract_name: "TestContract".into(),
-            storage: vec![
+            storage: alloc::vec![
                 StorageEntry {
                     label: "balance".into(),
                     slot: "0x0".into(),
@@ -381,7 +381,7 @@ mod tests {
                     zero_semantics: ZeroSemantics::ValidZero,
                 },
             ],
-            types: vec![],
+            types: alloc::vec![],
         };
         
         let code = generate_minimal_query_code(&layout);

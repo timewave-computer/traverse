@@ -23,28 +23,28 @@ use alloc::{vec, vec::Vec};
 
 /// Zero semantics for circuit operations (must match storage layout semantics)
 /// 
-/// SECURITY: These semantics prevent semantic confusion attacks where an attacker
+/// These semantics prevent semantic confusion attacks where an attacker
 /// claims a storage value has different meaning than its actual state. Each semantic
 /// type has specific validation rules to prevent manipulation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ZeroSemantics {
     /// Storage slot was never written to (initial state)
-    /// SECURITY: Can only be claimed for genuinely uninitialized storage
+    /// Can only be claimed for genuinely uninitialized storage
     NeverWritten,
     /// Storage slot was explicitly set to zero by contract logic
-    /// SECURITY: Must be validated against field type - not all fields can be legitimately zero
+    /// Must be validated against field type - not all fields can be legitimately zero
     ExplicitlyZero,
     /// Storage slot was cleared (set to zero after having a value)
-    /// SECURITY: Must match expected clearing behavior for the field
+    /// Must match expected clearing behavior for the field
     Cleared,
     /// Zero is a valid value for this field type (e.g., counters, flags)
-    /// SECURITY: Only allowed for field types where zero is semantically meaningful
+    /// Only allowed for field types where zero is semantically meaningful
     ValidZero,
 }
 
 /// Field types for semantic value extraction and validation
 /// 
-/// SECURITY: Each field type has specific validation rules to prevent type confusion
+/// Each field type has specific validation rules to prevent type confusion
 /// attacks and ensure extracted values are semantically correct for their intended use.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FieldType {
@@ -54,7 +54,7 @@ pub enum FieldType {
     Uint32,
     Uint64,
     Uint256,
-    Address,    // SECURITY: Zero addresses are flagged as suspicious
+    Address,    // Zero addresses are flagged as suspicious
     Bytes32,
     String,
     Bytes,
@@ -63,7 +63,7 @@ pub enum FieldType {
 impl FieldType {
     /// Check if a field type can legitimately be zero
     /// 
-    /// SECURITY: This prevents zero-value attacks where adversaries claim
+    /// This prevents zero-value attacks where adversaries claim
     /// zero values for field types where zero is semantically invalid or suspicious.
     /// For example, zero addresses are often indicators of uninitialized state
     /// or potential attack vectors.
@@ -76,7 +76,7 @@ impl FieldType {
             FieldType::Uint32 => true,     // 0 is valid numeric value
             FieldType::Uint64 => true,     // 0 is valid numeric value
             FieldType::Uint256 => true,    // 0 is valid numeric value
-            FieldType::Address => false,   // SECURITY: 0x0 address is suspicious/invalid
+            FieldType::Address => false,   // 0x0 address is suspicious/invalid
             FieldType::Bytes32 => true,    // empty hash can be semantically valid
             FieldType::String => true,     // empty string = 0 (valid)
             FieldType::Bytes => true,      // empty bytes = 0 (valid)
@@ -85,7 +85,7 @@ impl FieldType {
 
     /// Check if extracted value is semantically valid for this field type
     /// 
-    /// SECURITY: This prevents type confusion attacks where extracted values
+    /// This prevents type confusion attacks where extracted values
     /// don't match their claimed field type. It also applies field-specific
     /// security rules (e.g., flagging zero addresses as suspicious).
     #[inline]
@@ -98,84 +98,87 @@ impl FieldType {
             (FieldType::Uint64, ExtractedValue::Uint64(_)) => true,
             (FieldType::Uint256, ExtractedValue::Uint256(_)) => true,
             (FieldType::Address, ExtractedValue::Address(addr)) => {
-                // SECURITY: Zero address validation prevents common attack patterns
+                // Zero address validation prevents common attack patterns
                 // where uninitialized or malicious addresses are used. Zero addresses
                 // are often indicators of bugs or intentional exploits.
                 *addr != [0u8; 20]
             }
             (FieldType::Bytes32, ExtractedValue::Bytes32(_)) => true,
-            _ => false, // SECURITY: Type mismatch indicates potential attack or corruption
+            // String and Bytes field types extract to Raw but are semantically valid
+            (FieldType::String, ExtractedValue::Raw(_)) => true,
+            (FieldType::Bytes, ExtractedValue::Raw(_)) => true,
+            _ => false, // Type mismatch indicates potential attack or corruption
         }
     }
 }
 
 /// Minimal witness structure for ZK circuits with semantic validation
 /// 
-/// SECURITY: This structure contains all data needed for secure proof verification.
+/// This structure contains all data needed for secure proof verification.
 /// Each field serves a specific security purpose and is validated independently.
 #[derive(Debug, Clone)]
 pub struct CircuitWitness {
     /// Storage key (32 bytes)
-    /// SECURITY: Must match expected_slot to prevent storage slot spoofing attacks
+    /// Must match expected_slot to prevent storage slot spoofing attacks
     pub key: [u8; 32],
     /// Storage value (32 bytes)
-    /// SECURITY: Extracted and validated according to field type semantics
+    /// Extracted and validated according to field type semantics
     pub value: [u8; 32],
     /// Proof data (minimal size)
-    /// SECURITY: Contains cryptographic proof of storage state
+    /// Contains cryptographic proof of storage state
     pub proof: Vec<u8>,
     /// Layout commitment (32 bytes) - must match expected layout
-    /// SECURITY: Prevents layout spoofing attacks where adversaries claim
+    /// Prevents layout spoofing attacks where adversaries claim
     /// different field layouts to manipulate value interpretation
     pub layout_commitment: [u8; 32],
     /// Field index in layout
-    /// SECURITY: Must be within bounds to prevent out-of-bounds access
+    /// Must be within bounds to prevent out-of-bounds access
     pub field_index: u16,
     /// Zero semantics (must match storage semantics)
-    /// SECURITY: Prevents semantic confusion attacks about value meaning
+    /// Prevents semantic confusion attacks about value meaning
     pub semantics: ZeroSemantics,
     /// Expected storage slot for this field (for validation)
-    /// SECURITY: Critical for preventing storage slot spoofing where
+    /// Critical for preventing storage slot spoofing where
     /// adversaries claim values from different storage locations
     pub expected_slot: [u8; 32],
     /// Block height for proof timing validation
-    /// SECURITY: Ensures proof is from the expected block height
+    /// Ensures proof is from the expected block height
     pub block_height: u64,
     /// Block hash for light client verification
-    /// SECURITY: Must match the proven block hash from light client
+    /// Must match the proven block hash from light client
     pub block_hash: [u8; 32],
 }
 
 /// Minimal circuit processor with semantic validation (no_std compatible)
 /// 
-/// SECURITY: This processor enforces all security validations required for
+/// This processor enforces all security validations required for
 /// safe ZK circuit operation. It validates layout consistency, storage location
 /// correctness, and semantic value interpretation.
 pub struct CircuitProcessor {
     /// Current layout commitment
-    /// SECURITY: Immutable after creation to prevent layout tampering
+    /// Immutable after creation to prevent layout tampering
     layout_commitment: [u8; 32],
     /// Field types for extraction and validation
-    /// SECURITY: Defines expected types to prevent type confusion attacks
+    /// Defines expected types to prevent type confusion attacks
     field_types: Vec<FieldType>,
     /// Expected semantic behavior for each field
-    /// SECURITY: Defines valid zero semantics to prevent semantic manipulation
+    /// Defines valid zero semantics to prevent semantic manipulation
     field_semantics: Vec<ZeroSemantics>,
     /// Expected block height for proof validation
-    /// SECURITY: Ensures all proofs are from the same block
+    /// Ensures all proofs are from the same block
     expected_block_height: u64,
     /// Expected block hash from light client
-    /// SECURITY: Validates proofs against light client consensus
+    /// Validates proofs against light client consensus
     expected_block_hash: [u8; 32],
     /// Maximum allowed age for proofs in blocks
-    /// SECURITY: Prevents replay attacks with old proofs
+    /// Prevents replay attacks with old proofs
     max_proof_age_blocks: u64,
 }
 
 impl CircuitProcessor {
     /// Create new processor with semantic validation
     /// 
-    /// SECURITY: All validation parameters are set at creation time and cannot
+    /// All validation parameters are set at creation time and cannot
     /// be modified, preventing runtime tampering with security rules.
     pub fn new(
         layout_commitment: [u8; 32], 
@@ -194,7 +197,7 @@ impl CircuitProcessor {
     
     /// Create new processor with light client validation
     /// 
-    /// SECURITY: Includes block height and hash validation from light client
+    /// Includes block height and hash validation from light client
     pub fn new_with_light_client(
         layout_commitment: [u8; 32], 
         field_types: Vec<FieldType>,
@@ -214,7 +217,7 @@ impl CircuitProcessor {
     
     /// Create new processor with custom proof expiration
     /// 
-    /// SECURITY: Allows setting custom proof age limits for different security requirements
+    /// Allows setting custom proof age limits for different security requirements
     pub fn new_with_expiration(
         layout_commitment: [u8; 32], 
         field_types: Vec<FieldType>,
@@ -235,7 +238,7 @@ impl CircuitProcessor {
 
     /// Parse witness data from raw bytes (extended format only)
     /// 
-    /// SECURITY: This function parses the extended witness format created by the controller.
+    /// This function parses the extended witness format created by the controller.
     /// The extended format includes field_index and expected_slot for enhanced validation.
     /// 
     /// Extended witness format (176+ bytes):
@@ -345,11 +348,11 @@ impl CircuitProcessor {
     
     /// Process witness with comprehensive semantic validation
     /// 
-    /// SECURITY: This is the main entry point for witness validation. It performs
+    /// This is the main entry point for witness validation. It performs
     /// multiple security checks in sequence, failing fast if any validation fails.
     /// The order of checks is designed to catch the most common attack patterns first.
     pub fn process_witness(&self, witness: &CircuitWitness) -> CircuitResult {
-        // SECURITY CRITICAL: Layout commitment validation must be first
+        // CRITICAL: Layout commitment validation must be first
         // This prevents layout spoofing attacks where adversaries claim different
         // field layouts to manipulate how values are interpreted. Without this check,
         // an attacker could claim a uint256 field is actually an address field.
@@ -357,7 +360,7 @@ impl CircuitProcessor {
             return CircuitResult::Invalid;
         }
         
-        // SECURITY CRITICAL: Light client validation for block consistency
+        // CRITICAL: Light client validation for block consistency
         // This ensures the proof is from the expected block height and matches
         // the light client's proven block hash. Without this check, an attacker
         // could provide proofs from different blocks or fabricated block data.
@@ -370,7 +373,7 @@ impl CircuitProcessor {
                 }
             } else {
                 // For historical proofs, we can't verify the exact hash but we can check age
-                // SECURITY CRITICAL: Proof age validation prevents replay attacks
+                // CRITICAL: Proof age validation prevents replay attacks
                 // This ensures that old proofs cannot be reused after expiration.
                 // The age check prevents attackers from using outdated state proofs
                 // that might no longer reflect the current blockchain state.
@@ -386,7 +389,7 @@ impl CircuitProcessor {
             }
         }
 
-        // SECURITY CRITICAL: Bounds checking prevents out-of-bounds access
+        // CRITICAL: Bounds checking prevents out-of-bounds access
         // This prevents buffer overflow attacks and ensures field_index is valid
         // for both field_types and field_semantics arrays. Without this check,
         // an attacker could cause undefined behavior or access wrong field metadata.
@@ -397,7 +400,7 @@ impl CircuitProcessor {
         let field_type = self.field_types[witness.field_index as usize];
         let expected_semantics = self.field_semantics[witness.field_index as usize];
 
-        // SECURITY CRITICAL: Semantic consistency validation prevents semantic confusion
+        // CRITICAL: Semantic consistency validation prevents semantic confusion
         // This ensures that claimed zero semantics match the actual field type and value.
         // Without this check, an attacker could claim a non-zero value has "never written"
         // semantics, or claim a zero address has "valid zero" semantics.
@@ -405,7 +408,7 @@ impl CircuitProcessor {
             return CircuitResult::Invalid;
         }
 
-        // SECURITY CRITICAL: Storage location validation prevents storage slot spoofing
+        // CRITICAL: Storage location validation prevents storage slot spoofing
         // This ensures the storage key matches the expected slot for this field.
         // Without this check, an attacker could provide values from different storage
         // locations while claiming they belong to the expected field.
@@ -413,11 +416,11 @@ impl CircuitProcessor {
             return CircuitResult::Invalid;
         }
 
-        // SECURITY: Value extraction with type validation prevents type confusion
+        // Value extraction with type validation prevents type confusion
         // This ensures extracted values match their claimed field type semantics.
         let extracted_value = self.extract_value(witness, field_type);
 
-        // SECURITY CRITICAL: Final value validation catches field-specific attacks
+        // CRITICAL: Final value validation catches field-specific attacks
         // This applies field-specific security rules (e.g., zero address detection)
         // and ensures the extracted value is semantically valid for its field type.
         if !field_type.validate_extracted_value(&extracted_value) {
@@ -432,7 +435,7 @@ impl CircuitProcessor {
 
     /// Process batch of witnesses with semantic validation
     /// 
-    /// SECURITY: Each witness is validated independently to prevent cross-contamination
+    /// Each witness is validated independently to prevent cross-contamination
     /// attacks where one malicious witness could affect validation of others.
     pub fn process_batch(&self, witnesses: &[CircuitWitness]) -> Vec<CircuitResult> {
         witnesses.iter().map(|w| self.process_witness(w)).collect()
@@ -440,7 +443,7 @@ impl CircuitProcessor {
 
     /// Validate semantic consistency between witness and expected field semantics
     /// 
-    /// SECURITY: This function prevents semantic confusion attacks by ensuring
+    /// This function prevents semantic confusion attacks by ensuring
     /// that claimed zero semantics are consistent with actual values and field types.
     /// It catches several attack patterns:
     /// - Claiming non-zero values were "never written"
@@ -455,36 +458,42 @@ impl CircuitProcessor {
     ) -> bool {
         let is_zero = witness.value == [0u8; 32];
 
-        // SECURITY: Zero value semantic validation prevents zero-value attacks
+        // Zero value semantic validation prevents zero-value attacks
         if is_zero {
             match (witness.semantics, expected_semantics) {
-                // SECURITY: Never written semantics must match expectations exactly
+                // Never written semantics must match expectations exactly
                 // This prevents attacks where adversaries claim initialized storage
                 // was never written to access default values or bypass checks.
                 (ZeroSemantics::NeverWritten, ZeroSemantics::NeverWritten) => true,
-                // SECURITY: Explicitly zero values must be valid for field type
+                // Explicitly zero values must be valid for field type
                 // This prevents zero-value attacks on fields that shouldn't be zero
                 // (e.g., claiming a zero address was explicitly set to zero).
                 (ZeroSemantics::ExplicitlyZero, _) => field_type.can_be_zero(),
-                // SECURITY: Cleared semantics must match expectations exactly
+                // Cleared semantics must match expectations exactly
                 // This prevents attacks where adversaries claim different clearing behavior
                 // to manipulate how zero values are interpreted.
                 (ZeroSemantics::Cleared, ZeroSemantics::Cleared) => true,
-                // SECURITY: Valid zero values must be allowed by field type
+                // Valid zero values must be allowed by field type
                 // This prevents zero-value attacks on fields where zero is invalid.
                 (ZeroSemantics::ValidZero, _) => field_type.can_be_zero(),
-                _ => false, // SECURITY: Any other combination indicates potential attack
+                _ => false, // Any other combination indicates potential attack
             }
         } else {
-            // SECURITY: Non-zero values cannot have zero semantics
-            // Any non-zero value with zero-related semantics is invalid
-            false // Non-zero values should never have any zero semantics
+            // Non-zero value semantic validation
+            match witness.semantics {
+                // ValidZero semantics allow both zero and non-zero values
+                // This covers fields like counters, flags, and balances where any value is meaningful
+                ZeroSemantics::ValidZero => true,
+                // All other zero semantics are invalid for non-zero values
+                // Non-zero values cannot claim to be never written, explicitly zero, or cleared
+                ZeroSemantics::NeverWritten | ZeroSemantics::ExplicitlyZero | ZeroSemantics::Cleared => false,
+            }
         }
     }
 
     /// Validate storage location matches expected slot for field
     /// 
-    /// SECURITY: This function prevents storage slot spoofing attacks where
+    /// This function prevents storage slot spoofing attacks where
     /// adversaries provide values from different storage locations while claiming
     /// they belong to the expected field. This is critical for preventing:
     /// - Cross-field value injection attacks
@@ -492,7 +501,7 @@ impl CircuitProcessor {
     /// - Field boundary violation attacks
     #[inline]
     fn validate_storage_location(&self, witness: &CircuitWitness) -> bool {
-        // SECURITY CRITICAL: Storage key must exactly match expected slot
+        // CRITICAL: Storage key must exactly match expected slot
         // Any mismatch indicates potential storage slot spoofing attack where
         // an adversary is trying to use values from wrong storage locations.
         // This prevents attacks where wrong storage slots are claimed to
@@ -502,7 +511,7 @@ impl CircuitProcessor {
 
     /// Extract value from witness with field type validation
     /// 
-    /// SECURITY: This function performs type-safe value extraction from raw storage.
+    /// This function performs type-safe value extraction from raw storage.
     /// It uses bounds-checked array access and prevents buffer overflows by
     /// carefully extracting only the required bytes for each field type.
     /// The extraction follows Ethereum's storage encoding rules to prevent
@@ -510,26 +519,26 @@ impl CircuitProcessor {
     #[inline]
     fn extract_value(&self, witness: &CircuitWitness, field_type: FieldType) -> ExtractedValue {
         match field_type {
-            // SECURITY: Bool extraction checks only the least significant bit
+            // Bool extraction checks only the least significant bit
             // This prevents bool value manipulation attacks where non-zero/one values
             // are used to represent boolean state.
             FieldType::Bool => ExtractedValue::Bool(witness.value[31] != 0),
-            // SECURITY: Uint8 extraction uses only the least significant byte
+            // Uint8 extraction uses only the least significant byte
             // This prevents integer overflow attacks and ensures proper value bounds.
             FieldType::Uint8 => ExtractedValue::Uint8(witness.value[31]),
-            // SECURITY: Uint16 extraction uses big-endian byte order (Ethereum standard)
+            // Uint16 extraction uses big-endian byte order (Ethereum standard)
             // This prevents byte order attacks and ensures consistent value interpretation.
             FieldType::Uint16 => {
                 ExtractedValue::Uint16(u16::from_be_bytes([witness.value[30], witness.value[31]]))
             }
-            // SECURITY: Uint32 extraction uses big-endian byte order
+            // Uint32 extraction uses big-endian byte order
             // Bounds-checked array access prevents buffer overflow attacks.
             FieldType::Uint32 => {
                 ExtractedValue::Uint32(u32::from_be_bytes([
                     witness.value[28], witness.value[29], witness.value[30], witness.value[31]
                 ]))
             }
-            // SECURITY: Uint64 extraction uses big-endian byte order
+            // Uint64 extraction uses big-endian byte order
             // Bounds-checked array access prevents buffer overflow attacks.
             FieldType::Uint64 => {
                 ExtractedValue::Uint64(u64::from_be_bytes([
@@ -537,21 +546,21 @@ impl CircuitProcessor {
                     witness.value[28], witness.value[29], witness.value[30], witness.value[31]
                 ]))
             }
-            // SECURITY: Uint256 uses the full 32-byte value
+            // Uint256 uses the full 32-byte value
             // Direct copy prevents any value manipulation during extraction.
             FieldType::Uint256 => ExtractedValue::Uint256(witness.value),
-            // SECURITY: Address extraction uses bytes 12-31 (20 bytes)
+            // Address extraction uses bytes 12-31 (20 bytes)
             // This follows Ethereum's address encoding and prevents address manipulation.
             // The extracted address will be validated separately for zero-address attacks.
             FieldType::Address => {
                 let mut addr = [0u8; 20];
-                addr.copy_from_slice(&witness.value[12..32]); // SECURITY: Bounds-checked slice
+                addr.copy_from_slice(&witness.value[12..32]); // Bounds-checked slice
                 ExtractedValue::Address(addr)
             }
-            // SECURITY: Bytes32 uses the full 32-byte value
+            // Bytes32 uses the full 32-byte value
             // Direct copy prevents any value manipulation during extraction.
             FieldType::Bytes32 => ExtractedValue::Bytes32(witness.value),
-            // SECURITY: Fallback to raw bytes for unknown types
+            // Fallback to raw bytes for unknown types
             // This prevents crashes while maintaining security through type validation.
             _ => ExtractedValue::Raw(witness.value),
         }
@@ -560,7 +569,7 @@ impl CircuitProcessor {
 
 /// Circuit processing result with semantic validation
 /// 
-/// SECURITY: This result type provides clear success/failure indication without
+/// This result type provides clear success/failure indication without
 /// leaking sensitive information about why validation failed. This prevents
 /// information leakage attacks where adversaries could probe for specific
 /// validation failures to understand system internals.
@@ -570,12 +579,12 @@ pub enum CircuitResult {
         field_index: u16,
         extracted_value: ExtractedValue,
     },
-    Invalid, // SECURITY: No detailed error info to prevent information leakage
+    Invalid, // No detailed error info to prevent information leakage
 }
 
 /// Semantically validated extracted value types (no_std compatible)
 /// 
-/// SECURITY: These types represent values that have passed all security validations
+/// These types represent values that have passed all security validations
 /// and can be safely used in circuit operations. Each type maintains its semantic
 /// meaning and prevents type confusion attacks.
 #[derive(Debug, Clone)]
@@ -586,15 +595,15 @@ pub enum ExtractedValue {
     Uint32(u32),
     Uint64(u64),
     Uint256([u8; 32]),
-    Address([u8; 20]),    // SECURITY: Guaranteed to be non-zero if validation passed
+    Address([u8; 20]),    // Guaranteed to be non-zero if validation passed
     Bytes32([u8; 32]),
-    Raw([u8; 32]),        // SECURITY: Fallback for unknown types
+    Raw([u8; 32]),        // Fallback for unknown types
 }
 
 impl ExtractedValue {
     /// Convert to bytes (minimal allocation)
     /// 
-    /// SECURITY: This function performs safe conversions without buffer overflows.
+    /// This function performs safe conversions without buffer overflows.
     /// It uses minimal allocations and maintains value integrity during conversion.
     #[inline]
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -617,7 +626,7 @@ impl ExtractedValue {
 
     /// Get size (no allocation)
     /// 
-    /// SECURITY: This function provides size information without allocation,
+    /// This function provides size information without allocation,
     /// preventing potential memory-based attacks and maintaining constant-time operation.
     #[inline]
     pub const fn size(&self) -> usize {
@@ -636,19 +645,19 @@ impl ExtractedValue {
 
     /// Check if value represents semantic zero
     /// 
-    /// SECURITY: This function determines if a value is semantically zero,
+    /// This function determines if a value is semantically zero,
     /// which is critical for zero-value attack detection. It uses type-specific
     /// zero checks to prevent semantic confusion about what constitutes "zero".
     #[inline]
     pub fn is_semantic_zero(&self) -> bool {
         match self {
-            ExtractedValue::Bool(b) => !*b,  // SECURITY: false is semantic zero for bool
+            ExtractedValue::Bool(b) => !*b,  // false is semantic zero for bool
             ExtractedValue::Uint8(n) => *n == 0,
             ExtractedValue::Uint16(n) => *n == 0,
             ExtractedValue::Uint32(n) => *n == 0,
             ExtractedValue::Uint64(n) => *n == 0,
             ExtractedValue::Uint256(bytes) => *bytes == [0u8; 32],
-            ExtractedValue::Address(addr) => *addr == [0u8; 20], // SECURITY: Zero address detection
+            ExtractedValue::Address(addr) => *addr == [0u8; 20], // Zero address detection
             ExtractedValue::Bytes32(bytes) => *bytes == [0u8; 32],
             ExtractedValue::Raw(bytes) => *bytes == [0u8; 32],
         }
@@ -709,8 +718,8 @@ mod tests {
         };
         
         let result = processor.process_witness(&witness);
-        // Non-zero values should not have zero semantics - this should be invalid
-        assert!(matches!(result, CircuitResult::Invalid));
+        // Non-zero values with ValidZero semantics should be valid (counters, flags, balances)
+        assert!(matches!(result, CircuitResult::Valid { .. }));
     }
 
     #[test]
@@ -951,16 +960,16 @@ mod tests {
             block_hash: [0u8; 32],
         };
         
-        // Should be invalid - non-zero values cannot have ValidZero semantics
+        // Should be valid - non-zero values with ValidZero semantics are allowed
         let result = processor.process_witness(&witness);
-        assert!(matches!(result, CircuitResult::Invalid));
+        assert!(matches!(result, CircuitResult::Valid { .. }));
         
-        // Test all zero semantics with non-zero values - all should fail
+        // Test invalid zero semantics with non-zero values - should fail
+        // (ValidZero is excluded since it should be valid with non-zero values)
         for semantics in [
             ZeroSemantics::NeverWritten,
             ZeroSemantics::ExplicitlyZero,
             ZeroSemantics::Cleared,
-            ZeroSemantics::ValidZero,
         ] {
             let witness = CircuitWitness {
                 key: [2u8; 32],
@@ -1208,7 +1217,7 @@ mod tests {
         
         // Should still validate other aspects even with empty proof
         let result = processor.process_witness(&witness_empty_proof);
-        assert!(matches!(result, CircuitResult::Invalid)); // Non-zero with ValidZero semantics
+        assert!(matches!(result, CircuitResult::Valid { .. })); // Non-zero with ValidZero semantics is valid
     }
 
     #[test]
@@ -1310,9 +1319,9 @@ mod tests {
             
             let result = processor.process_witness(&witness);
             
-            // All non-zero values with ValidZero semantics should be invalid
-            assert!(matches!(result, CircuitResult::Invalid), 
-                "Field type {:?} should be invalid with non-zero value and ValidZero semantics", field_type);
+            // All non-zero values with ValidZero semantics should be valid
+            assert!(matches!(result, CircuitResult::Valid { .. }), 
+                "Field type {:?} should be valid with non-zero value and ValidZero semantics", field_type);
         }
     }
 
@@ -1391,21 +1400,12 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Incomplete proof data");
         
-        // Test missing field_index
-        let mut missing_field_index = vec![0u8; 176];
-        // Set proof length to 0 so we get to field_index check
-        missing_field_index[138..142].copy_from_slice(&0u32.to_le_bytes());
-        let result = CircuitProcessor::parse_witness_from_bytes(&missing_field_index);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Missing field_index");
+        // Test cases for errors that are actually reachable
         
-        // Test missing expected_slot
-        let mut missing_expected_slot = vec![0u8; 178];
-        // Set proof length to 0 so we get past field_index, include 2 bytes for field_index
-        missing_expected_slot[138..142].copy_from_slice(&0u32.to_le_bytes());
-        let result = CircuitProcessor::parse_witness_from_bytes(&missing_expected_slot);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Missing expected_slot");
+        // Test with minimum valid size (176 bytes) but all zero - should succeed parsing
+        let valid_minimal = vec![0u8; 176];
+        let result = CircuitProcessor::parse_witness_from_bytes(&valid_minimal);
+        assert!(result.is_ok(), "Minimal 176-byte witness should parse successfully");
     }
 
     #[test]
@@ -1463,19 +1463,19 @@ mod tests {
         let mut value_u16 = [0u8; 32];
         value_u16[30] = 0xAB;
         value_u16[31] = 0xCD;
-        
+
         let witness_u16 = CircuitWitness {
             key: [1u8; 32],
             value: value_u16,
             proof: vec![],
             layout_commitment,
             field_index: 0,
-            semantics: ZeroSemantics::ValidZero,
+            semantics: ZeroSemantics::ValidZero, // Non-zero value with ValidZero semantics is valid
             expected_slot: [1u8; 32],
             block_height: 0,
             block_hash: [0u8; 32],
         };
-        
+
         let result = processor.process_witness(&witness_u16);
         if let CircuitResult::Valid { extracted_value, .. } = result {
             if let ExtractedValue::Uint16(val) = extracted_value {
@@ -1484,28 +1484,28 @@ mod tests {
                 panic!("Expected Uint16 extraction");
             }
         } else {
-            panic!("Expected valid result for non-zero Uint16");
+            panic!("Expected valid result for non-zero Uint16 with ValidZero semantics");
         }
         
-        // Test Address extraction with pattern
+                // Test Address extraction with pattern
         let mut value_addr = [0u8; 32];
         // Set address bytes (12-31)
         for i in 12..32 {
             value_addr[i] = (i - 12) as u8;
         }
-        
+
         let witness_addr = CircuitWitness {
             key: [2u8; 32],
             value: value_addr,
             proof: vec![],
             layout_commitment,
             field_index: 3,
-            semantics: ZeroSemantics::ValidZero,
+            semantics: ZeroSemantics::ValidZero, // Non-zero address with ValidZero semantics is valid
             expected_slot: [2u8; 32],
             block_height: 0,
             block_hash: [0u8; 32],
         };
-        
+
         let result = processor.process_witness(&witness_addr);
         if let CircuitResult::Valid { extracted_value, .. } = result {
             if let ExtractedValue::Address(addr) = extracted_value {
@@ -1517,7 +1517,7 @@ mod tests {
                 panic!("Expected Address extraction");
             }
         } else {
-            panic!("Expected valid result for non-zero address");
+            panic!("Expected valid result for non-zero address with ValidZero semantics");
         }
     }
 

@@ -3,9 +3,10 @@
 //! This module contains all the clap-related structures for argument parsing
 //! and command definitions.
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
-use crate::commands::CodegenCommands;
+use crate::commands::minimal::GenerateMinimalArgs;
+use crate::commands::codegen::CodegenCommands;
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum ZeroSemanticsArg {
@@ -33,6 +34,10 @@ impl From<ZeroSemanticsArg> for traverse_core::ZeroSemantics {
         }
     }
 }
+
+
+
+
 
 #[derive(Debug, Clone, ValueEnum, Default)]
 pub enum OutputFormat {
@@ -205,7 +210,7 @@ pub enum Commands {
     Codegen(CodegenCommands),
     
     /// Generate minimal, schema-specific code without abstractions
-    Minimal(commands::minimal::GenerateMinimalArgs),
+    Minimal(GenerateMinimalArgs),
 
     /// Auto-generate everything from configuration file
     AutoGenerate {

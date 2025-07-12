@@ -359,6 +359,44 @@ This application is tied to layout commitment `{}`. Any storage proofs must matc
     Ok(())
 }
 
+/// Parse a storage slot as a 256-bit hex value
+///
+/// Ethereum storage slots are 32-byte (256-bit) values. This function:
+/// - Accepts hex strings with or without "0x" prefix
+/// - Validates hex characters and length (max 64 hex chars = 256 bits)
+/// - Pads to 64 characters with leading zeros
+/// - Returns formatted as "0x{64 hex chars}"
+fn parse_storage_slot(slot_str: &str) -> Result<String, String> {
+    // Remove 0x prefix if present
+    let hex_str = slot_str.strip_prefix("0x").unwrap_or(slot_str);
+    
+    // Validate it's not empty
+    if hex_str.is_empty() {
+        return Err("Storage slot cannot be empty".to_string());
+    }
+    
+    // Validate length (max 64 hex chars for 256 bits)
+    if hex_str.len() > 64 {
+        return Err(format!(
+            "Storage slot too large: {} hex characters (max 64 for 256-bit value)", 
+            hex_str.len()
+        ));
+    }
+    
+    // Validate all characters are hex
+    if !hex_str.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!(
+            "Storage slot contains invalid hex characters: '{}'", 
+            hex_str
+        ));
+    }
+    
+    // Pad to 64 characters (32 bytes) with leading zeros
+    let padded_hex = format!("{:0>64}", hex_str);
+    
+    Ok(format!("0x{}", padded_hex))
+}
+
 /// Parse layout information from JSON
 fn parse_layout_from_json(json: &serde_json::Value) -> Result<LayoutInfo> {
     let commitment = json
@@ -424,11 +462,15 @@ fn parse_layout_from_json(json: &serde_json::Value) -> Result<LayoutInfo> {
         field_types.push(field_type.to_string());
         field_semantics.push(zero_semantics.to_string());
         
+        // Parse storage slot as 256-bit hex value
+        let expected_slot = parse_storage_slot(slot)
+            .map_err(|e| anyhow::anyhow!("Invalid storage slot '{}' for field '{}': {}", slot, label, e))?;
+        
         queries.push(QueryInfo {
             query: label,
             field_type: field_type.to_string(),
             zero_semantics: zero_semantics.to_string(),
-            expected_slot: format!("0x{:064x}", slot.parse::<u64>().unwrap_or(0)),
+            expected_slot,
         });
     }
     
@@ -439,4 +481,79 @@ fn parse_layout_from_json(json: &serde_json::Value) -> Result<LayoutInfo> {
         field_semantics,
         queries,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_storage_slot() {
+        // Test simple slot
+        assert_eq!(
+            parse_storage_slot("0").unwrap(),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        
+        // Test slot with 0x prefix
+        assert_eq!(
+            parse_storage_slot("0x1").unwrap(),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        
+        // Test slot without 0x prefix
+        assert_eq!(
+            parse_storage_slot("ff").unwrap(),
+            "0x00000000000000000000000000000000000000000000000000000000000000ff"
+        );
+        
+        // Test large 256-bit slot (keccak256 hash)
+        let large_slot = "c1f51986c7e9d391993039c3c40e41ad9f26e1db9b80f8535a639eadeb1d1bd9";
+        assert_eq!(
+            parse_storage_slot(large_slot).unwrap(),
+            format!("0x{}", large_slot)
+        );
+        
+        // Test full 64-character slot
+        let full_slot = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        assert_eq!(
+            parse_storage_slot(full_slot).unwrap(),
+            format!("0x{}", full_slot)
+        );
+        
+        // Test error cases
+        assert!(parse_storage_slot("").is_err()); // Empty
+        assert!(parse_storage_slot("xyz").is_err()); // Invalid hex
+        assert!(parse_storage_slot("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1").is_err()); // Too long (65 chars)
+        
+        // Verify error messages are descriptive
+        let err = parse_storage_slot("xyz").unwrap_err();
+        assert!(err.contains("invalid hex characters"));
+        
+        let err = parse_storage_slot("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1").unwrap_err();
+        assert!(err.contains("too large"));
+    }
+    
+    #[test]
+    fn test_parse_storage_slot_edge_cases() {
+        // Test maximum u64 value (should work fine)
+        let max_u64 = "ffffffffffffffff"; // 18446744073709551615
+        assert_eq!(
+            parse_storage_slot(max_u64).unwrap(),
+            "0x000000000000000000000000000000000000000000000000ffffffffffffffff"
+        );
+        
+        // Test value larger than u64::MAX (this is why we needed the fix!)
+        let larger_than_u64 = "1ffffffffffffffff"; // 9 hex chars = 36 bits > 64-bit
+        assert_eq!(
+            parse_storage_slot(larger_than_u64).unwrap(),
+            "0x0000000000000000000000000000000000000000000000001ffffffffffffffff"
+        );
+        
+        // Test mixed case
+        assert_eq!(
+            parse_storage_slot("0xAbCdEf").unwrap(),
+            "0x0000000000000000000000000000000000000000000000000000000000abcdef"
+        );
+    }
 } 

@@ -24,6 +24,7 @@ use commands::{
     cmd_batch_resolve, cmd_compile_layout, cmd_generate_proof, cmd_resolve, cmd_resolve_all,
     cmd_codegen,
 };
+use commands::minimal::cmd_generate_minimal;
 
 #[tokio::main]
 async fn main() -> Result<()> {

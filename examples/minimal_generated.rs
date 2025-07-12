@@ -3,7 +3,8 @@
 //! This shows what the `traverse-cli minimal` command would generate for a
 //! simple ERC20-like contract with balance and allowance mappings.
 
-#![no_std]
+// Note: This example uses std for println! demonstrations
+// Generated minimal code would typically be #![no_std] compatible
 
 /// Layout commitment (32 bytes)
 pub const LAYOUT_COMMITMENT: [u8; 32] = [
@@ -117,28 +118,64 @@ pub const FIELDS: Fields = Fields {
     },
 };
 
-// Usage example (not part of generated code):
+/// Example usage of the generated code
+fn main() {
+    println!("Minimal Generated Code Example");
+    println!("==============================");
+    
+    // Show layout commitment
+    println!("Layout commitment: {:02x?}", LAYOUT_COMMITMENT);
+    
+    // Query total supply (simple storage)
+    let total_supply_key = FIELDS.total_supply.storage_key(None);
+    println!("Total supply storage key: {:02x?}", total_supply_key);
+    
+    // Query balance for a specific address (mapping)
+    let address = [0x42u8; 32]; // Example address padded to 32 bytes
+    let balance_key = FIELDS.balances.storage_key(Some(&address));
+    println!("Balance storage key for address: {:02x?}", balance_key);
+    
+    // Query allowances for owner->spender mapping
+    let allowance_key = FIELDS.allowances.storage_key(Some(&address));
+    println!("Allowance storage key: {:02x?}", allowance_key);
+    
+    // Demonstrate witness verification (would fail with dummy data)
+    let witness_data = [0u8; 180]; // Example witness data
+    println!("Attempting witness verification...");
+    match FIELDS.balances.verify_witness(&witness_data) {
+        Ok(value) => {
+            println!("Witness verification successful! Extracted value: {:02x?}", value);
+        },
+        Err(e) => {
+            println!("Witness verification failed: {}", e);
+        }
+    }
+    
+    println!("Example completed successfully!");
+}
+
 #[cfg(test)]
-mod example {
+mod tests {
     use super::*;
     
-    fn example_usage() {
-        // Query total supply (simple storage)
+    #[test]
+    fn test_field_definitions() {
+        // Test that field definitions are properly configured
+        assert_eq!(FIELDS.total_supply.slot, [0u8; 32]);
+        assert_eq!(FIELDS.balances.slot[31], 1);
+        assert_eq!(FIELDS.allowances.slot[31], 2);
+    }
+    
+    #[test]
+    fn test_storage_key_generation() {
+        // Test storage key generation for simple storage
         let total_supply_key = FIELDS.total_supply.storage_key(None);
+        assert_eq!(total_supply_key, [0u8; 32]);
         
-        // Query balance for a specific address (mapping)
-        let address = [0x42u8; 32]; // Example address padded to 32 bytes
+        // Test storage key generation for mapping
+        let address = [0x42u8; 32];
         let balance_key = FIELDS.balances.storage_key(Some(&address));
-        
-        // Verify a witness
-        let witness_data = [0u8; 180]; // Example witness data
-        match FIELDS.balances.verify_witness(&witness_data) {
-            Ok(value) => {
-                // Use the extracted balance value
-            },
-            Err(e) => {
-                // Handle verification error
-            }
-        }
+        // Should return the computed keccak256 hash (placeholder in this example)
+        assert_eq!(balance_key, [0u8; 32]); // This is just the placeholder result
     }
 }

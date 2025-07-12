@@ -80,85 +80,14 @@ pub fn create_witness_from_request(
     }
 }
 
-/// Create a semantic storage witness with light client validation (no_std compatible)
+/// Create a semantic storage witness from structured data - internal helper (no_std compatible)
 ///
-/// This enhanced API includes light client validation for state root verification.
-/// The light client provides cryptographically verified block information.
-///
-/// ## Security Features
-/// - All features from create_witness_from_request
-/// - Light client state verification
-/// - Block height and hash validation
-/// - Ensures proofs are from verified blocks
-#[cfg(feature = "domain")]
-pub fn create_witness_from_request_with_light_client<L: LightClient>(
+/// This internal function contains the common logic for witness creation.
+/// It handles all the parsing, validation, and witness generation.
+fn create_witness_from_request_internal(
     request: &StorageVerificationRequest,
-    light_client: Option<&L>,
-) -> Result<Witness, TraverseValenceError> {
-    let storage_query = &request.storage_query;
-    let storage_proof = &request.storage_proof;
-
-    // Parse storage key with validation
-    let storage_key = parse_hex_bytes(&storage_query.storage_key, 32)
-        .ok_or_else(|| TraverseValenceError::InvalidStorageKey("Invalid storage key format".into()))?;
-
-    // Parse layout commitment with validation  
-    let layout_commitment = parse_hex_bytes(&storage_query.layout_commitment, 32)
-        .ok_or_else(|| TraverseValenceError::LayoutMismatch("Invalid layout commitment format".into()))?;
-
-    // Parse storage value with validation
-    let value = parse_hex_bytes(&storage_proof.value, 32)
-        .ok_or_else(|| TraverseValenceError::InvalidWitness("Invalid storage value format".into()))?;
-
-    // Parse and concatenate proof nodes
-    let mut proof_data = Vec::new();
-    for node in &storage_proof.proof {
-        let node_bytes = parse_hex_bytes_variable(node)
-            .ok_or_else(|| TraverseValenceError::ProofVerificationFailed("Invalid proof node format".into()))?;
-        proof_data.extend_from_slice(&node_bytes);
-    }
-
-    // Use semantic defaults for structured data (can be enhanced with semantic analysis)
-    let zero_semantics = derive_zero_semantics(&value);
-    let semantic_source = 0u8; // Declared via structured data
-
-    // Extract block information if available
-    let (block_height, block_hash) = if let Some(lc) = light_client {
-        (lc.block_height(), lc.proven_block_hash())
-    } else if let Some(bn) = request.block_number {
-        // Use provided block number, but no hash validation without light client
-        (bn, [0u8; 32])
-    } else {
-        // No block information available
-        (0u64, [0u8; 32])
-    };
-
-    create_semantic_witness_from_raw_data_with_block(
-        &storage_key,
-        &layout_commitment,
-        &value,
-        zero_semantics,
-        semantic_source,
-        &proof_data,
-        block_height,
-        &block_hash,
-    )
-}
-
-/// Create a semantic storage witness without light client validation (no_std compatible)
-///
-/// This is the fallback API used when the domain feature is not enabled.
-/// Provides the same witness creation functionality but without light client validation.
-///
-/// ## Security Features
-/// - Validates storage key format and length
-/// - Verifies layout commitment integrity  
-/// - Ensures proof data consistency
-/// - Applies semantic validation rules
-/// - Uses provided block number if available
-#[cfg(not(feature = "domain"))]
-pub fn create_witness_from_request_without_light_client(
-    request: &StorageVerificationRequest,
+    block_height: u64,
+    block_hash: [u8; 32],
 ) -> Result<Witness, TraverseValenceError> {
     let storage_query = &request.storage_query;
     let storage_proof = &request.storage_proof;
@@ -187,11 +116,7 @@ pub fn create_witness_from_request_without_light_client(
     let zero_semantics = derive_zero_semantics(&value);
     let semantic_source = 0u8; // Declared via structured data
 
-    // Use provided block number if available, otherwise use zero
-    let block_height = request.block_number.unwrap_or(0);
-    let block_hash = [0u8; 32]; // No hash validation without light client
-
-    create_semantic_witness_from_raw_data_with_block(
+    create_semantic_witness_from_raw_data(
         &storage_key,
         &layout_commitment,
         &value,
@@ -200,7 +125,60 @@ pub fn create_witness_from_request_without_light_client(
         &proof_data,
         block_height,
         &block_hash,
+        0, // field_index - TODO: derive from layout
+        &storage_key, // expected_slot - TODO: compute from layout
     )
+}
+
+/// Create a semantic storage witness with light client validation (no_std compatible)
+///
+/// This enhanced API includes light client validation for state root verification.
+/// The light client provides cryptographically verified block information.
+///
+/// ## Security Features
+/// - All features from create_witness_from_request
+/// - Light client state verification
+/// - Block height and hash validation
+/// - Ensures proofs are from verified blocks
+#[cfg(feature = "domain")]
+pub fn create_witness_from_request_with_light_client<L: LightClient>(
+    request: &StorageVerificationRequest,
+    light_client: Option<&L>,
+) -> Result<Witness, TraverseValenceError> {
+    // Extract block information if available
+    let (block_height, block_hash) = if let Some(lc) = light_client {
+        (lc.block_height(), lc.proven_block_hash())
+    } else if let Some(bn) = request.block_number {
+        // Use provided block number, but no hash validation without light client
+        (bn, [0u8; 32])
+    } else {
+        // No block information available
+        (0u64, [0u8; 32])
+    };
+
+    create_witness_from_request_internal(request, block_height, block_hash)
+}
+
+/// Create a semantic storage witness without light client validation (no_std compatible)
+///
+/// This is the fallback API used when the domain feature is not enabled.
+/// Provides the same witness creation functionality but without light client validation.
+///
+/// ## Security Features
+/// - Validates storage key format and length
+/// - Verifies layout commitment integrity  
+/// - Ensures proof data consistency
+/// - Applies semantic validation rules
+/// - Uses provided block number if available
+#[cfg(not(feature = "domain"))]
+pub fn create_witness_from_request_without_light_client(
+    request: &StorageVerificationRequest,
+) -> Result<Witness, TraverseValenceError> {
+    // Use provided block number if available, otherwise use zero
+    let block_height = request.block_number.unwrap_or(0);
+    let block_hash = [0u8; 32]; // No hash validation without light client
+
+    create_witness_from_request_internal(request, block_height, block_hash)
 }
 
 /// Create witnesses from batch storage verification request (no_std compatible)
@@ -221,81 +199,11 @@ pub fn create_witnesses_from_batch_request(
     Ok(witnesses)
 }
 
-/// Core witness creation function (no_std compatible)
-///
-/// Creates a semantic witness from raw byte data. This is the lowest-level API
-/// and is used by all other witness creation functions.
-///
-/// ## Extended Witness Format (176+ bytes)
-/// ```text
-/// [32 bytes storage_key] +
-/// [32 bytes layout_commitment] + 
-/// [32 bytes value] +
-/// [1 byte zero_semantics] +
-/// [1 byte semantic_source] + 
-/// [8 bytes block_height] +
-/// [32 bytes block_hash] +
-/// [4 bytes proof_len] +
-/// [variable proof_data] +
-/// [2 bytes field_index] +
-/// [32 bytes expected_slot]
-/// ```
-pub fn create_semantic_witness_from_raw_data(
-    storage_key: &[u8],
-    layout_commitment: &[u8],
-    value: &[u8],
-    zero_semantics: u8,
-    semantic_source: u8,
-    proof_data: &[u8],
-) -> Result<Witness, TraverseValenceError> {
-    // Default values for backward compatibility
-    create_semantic_witness_from_raw_data_with_block_and_field(
-        storage_key,
-        layout_commitment,
-        value,
-        zero_semantics,
-        semantic_source,
-        proof_data,
-        0,
-        &[0u8; 32],
-        0,
-        storage_key, // Use storage_key as expected_slot by default
-    )
-}
 
-/// Enhanced witness creation with block validation data (no_std compatible)
+/// Create a semantic witness from raw byte data (no_std compatible)
 ///
-/// Creates a semantic witness that includes block height and hash for light client validation.
-/// Uses default field_index=0 and expected_slot=storage_key for backward compatibility.
-#[allow(clippy::too_many_arguments)]
-pub fn create_semantic_witness_from_raw_data_with_block(
-    storage_key: &[u8],
-    layout_commitment: &[u8],
-    value: &[u8],
-    zero_semantics: u8,
-    semantic_source: u8,
-    proof_data: &[u8],
-    block_height: u64,
-    block_hash: &[u8],
-) -> Result<Witness, TraverseValenceError> {
-    create_semantic_witness_from_raw_data_with_block_and_field(
-        storage_key,
-        layout_commitment,
-        value,
-        zero_semantics,
-        semantic_source,
-        proof_data,
-        block_height,
-        block_hash,
-        0,
-        storage_key, // Use storage_key as expected_slot by default
-    )
-}
-
-/// Complete witness creation with all fields (no_std compatible)
-///
-/// Creates a semantic witness with full extended format including field_index and expected_slot.
-/// This is the primary witness creation function that includes all security fields.
+/// Creates a semantic witness with full extended format including all security fields.
+/// This is the primary witness creation function for raw data.
 ///
 /// ## Extended Witness Format (176+ bytes)
 /// ```text
@@ -312,7 +220,7 @@ pub fn create_semantic_witness_from_raw_data_with_block(
 /// [32 bytes expected_slot]
 /// ```
 #[allow(clippy::too_many_arguments)]
-pub fn create_semantic_witness_from_raw_data_with_block_and_field(
+pub fn create_semantic_witness_from_raw_data(
     storage_key: &[u8],
     layout_commitment: &[u8],
     value: &[u8],
@@ -524,6 +432,10 @@ fn create_single_semantic_storage_witness(
         zero_semantics,
         semantic_source,
         &proof_data,
+        0, // block_height - TODO: extract from JSON if available
+        &[0u8; 32], // block_hash - TODO: extract from JSON if available
+        0, // field_index - TODO: derive from layout
+        &storage_key, // expected_slot - TODO: compute from layout
     )
 }
 
@@ -572,35 +484,6 @@ pub fn extract_batch_storage_verification_request(
     })
 }
 
-// === Legacy APIs (deprecated) ===
-
-/// **Deprecated**: Use `create_witness_from_request` instead.
-#[cfg(feature = "std")]
-#[deprecated(since = "0.2.0", note = "Use create_witness_from_request instead")]
-pub fn prepare_semantic_witnesses_from_request(
-    request: &StorageVerificationRequest,
-) -> Result<Witness, TraverseValenceError> {
-    let json_value = serde_json::to_value(request)
-        .map_err(|e| TraverseValenceError::Json(format!("Failed to serialize request: {:?}", e)))?;
-
-    create_single_semantic_storage_witness(&json_value)
-}
-
-/// **Deprecated**: Use `create_witnesses_from_batch_request` instead.
-#[cfg(feature = "std")]
-#[deprecated(since = "0.2.0", note = "Use create_witnesses_from_batch_request instead")]
-pub fn prepare_semantic_witnesses_from_batch_request(
-    request: &BatchStorageVerificationRequest,
-) -> Result<Vec<Witness>, TraverseValenceError> {
-    let mut witnesses = Vec::new();
-
-    for storage_request in &request.storage_batch {
-        let witness = create_witness_from_request(storage_request)?;
-        witnesses.push(witness);
-    }
-
-    Ok(witnesses)
-}
 
 #[cfg(test)]
 mod tests {
@@ -627,6 +510,10 @@ mod tests {
             zero_semantics,
             semantic_source,
             &proof_data,
+            0, // block_height
+            &[0u8; 32], // block_hash
+            0, // field_index
+            &storage_key, // expected_slot
         )
         .unwrap();
 
