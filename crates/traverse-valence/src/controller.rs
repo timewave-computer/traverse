@@ -44,6 +44,9 @@ use alloc::{format, vec::Vec};
 use valence_coprocessor::Witness;
 
 use crate::{BatchStorageVerificationRequest, StorageVerificationRequest, TraverseValenceError};
+
+// Conditional import of domain module (only when domain feature is enabled)
+#[cfg(feature = "domain")]
 use crate::domain::LightClient;
 
 // === Primary no_std APIs (structured data) ===
@@ -67,22 +70,24 @@ use crate::domain::LightClient;
 pub fn create_witness_from_request(
     request: &StorageVerificationRequest,
 ) -> Result<Witness, TraverseValenceError> {
-    create_witness_from_request_with_light_client::<crate::domain::MockLightClient>(request, None)
+    #[cfg(feature = "domain")]
+    {
+        create_witness_from_request_with_light_client::<crate::domain::MockLightClient>(request, None)
+    }
+    #[cfg(not(feature = "domain"))]
+    {
+        create_witness_from_request_without_light_client(request)
+    }
 }
 
-/// Create a semantic storage witness with light client validation (no_std compatible)
+/// Create a semantic storage witness from structured data - internal helper (no_std compatible)
 ///
-/// This enhanced API includes light client validation for state root verification.
-/// The light client provides cryptographically verified block information.
-///
-/// ## Security Features
-/// - All features from create_witness_from_request
-/// - Light client state verification
-/// - Block height and hash validation
-/// - Ensures proofs are from verified blocks
-pub fn create_witness_from_request_with_light_client<L: LightClient>(
+/// This internal function contains the common logic for witness creation.
+/// It handles all the parsing, validation, and witness generation.
+fn create_witness_from_request_internal(
     request: &StorageVerificationRequest,
-    light_client: Option<&L>,
+    block_height: u64,
+    block_hash: [u8; 32],
 ) -> Result<Witness, TraverseValenceError> {
     let storage_query = &request.storage_query;
     let storage_proof = &request.storage_proof;
@@ -107,10 +112,39 @@ pub fn create_witness_from_request_with_light_client<L: LightClient>(
         proof_data.extend_from_slice(&node_bytes);
     }
 
-    // Use semantic defaults for structured data (can be enhanced with semantic analysis)
+    // Use semantic defaults for structured data
     let zero_semantics = derive_zero_semantics(&value);
     let semantic_source = 0u8; // Declared via structured data
 
+    create_semantic_witness_from_raw_data(
+        &storage_key,
+        &layout_commitment,
+        &value,
+        zero_semantics,
+        semantic_source,
+        &proof_data,
+        block_height,
+        &block_hash,
+        0, // field_index - TODO: derive from layout
+        &storage_key, // expected_slot - TODO: compute from layout
+    )
+}
+
+/// Create a semantic storage witness with light client validation (no_std compatible)
+///
+/// This enhanced API includes light client validation for state root verification.
+/// The light client provides cryptographically verified block information.
+///
+/// ## Security Features
+/// - All features from create_witness_from_request
+/// - Light client state verification
+/// - Block height and hash validation
+/// - Ensures proofs are from verified blocks
+#[cfg(feature = "domain")]
+pub fn create_witness_from_request_with_light_client<L: LightClient>(
+    request: &StorageVerificationRequest,
+    light_client: Option<&L>,
+) -> Result<Witness, TraverseValenceError> {
     // Extract block information if available
     let (block_height, block_hash) = if let Some(lc) = light_client {
         (lc.block_height(), lc.proven_block_hash())
@@ -122,16 +156,29 @@ pub fn create_witness_from_request_with_light_client<L: LightClient>(
         (0u64, [0u8; 32])
     };
 
-    create_semantic_witness_from_raw_data_with_block(
-        &storage_key,
-        &layout_commitment,
-        &value,
-        zero_semantics,
-        semantic_source,
-        &proof_data,
-        block_height,
-        &block_hash,
-    )
+    create_witness_from_request_internal(request, block_height, block_hash)
+}
+
+/// Create a semantic storage witness without light client validation (no_std compatible)
+///
+/// This is the fallback API used when the domain feature is not enabled.
+/// Provides the same witness creation functionality but without light client validation.
+///
+/// ## Security Features
+/// - Validates storage key format and length
+/// - Verifies layout commitment integrity  
+/// - Ensures proof data consistency
+/// - Applies semantic validation rules
+/// - Uses provided block number if available
+#[cfg(not(feature = "domain"))]
+pub fn create_witness_from_request_without_light_client(
+    request: &StorageVerificationRequest,
+) -> Result<Witness, TraverseValenceError> {
+    // Use provided block number if available, otherwise use zero
+    let block_height = request.block_number.unwrap_or(0);
+    let block_hash = [0u8; 32]; // No hash validation without light client
+
+    create_witness_from_request_internal(request, block_height, block_hash)
 }
 
 /// Create witnesses from batch storage verification request (no_std compatible)
@@ -152,48 +199,13 @@ pub fn create_witnesses_from_batch_request(
     Ok(witnesses)
 }
 
-/// Core witness creation function (no_std compatible)
-///
-/// Creates a semantic witness from raw byte data. This is the lowest-level API
-/// and is used by all other witness creation functions.
-///
-/// ## Witness Format
-/// ```text
-/// [32 bytes storage_key] +
-/// [32 bytes layout_commitment] + 
-/// [32 bytes value] +
-/// [1 byte zero_semantics] +
-/// [1 byte semantic_source] + 
-/// [4 bytes proof_len] +
-/// [variable proof_data]
-/// ```
-pub fn create_semantic_witness_from_raw_data(
-    storage_key: &[u8],
-    layout_commitment: &[u8],
-    value: &[u8],
-    zero_semantics: u8,
-    semantic_source: u8,
-    proof_data: &[u8],
-) -> Result<Witness, TraverseValenceError> {
-    // For backward compatibility, use zero block data
-    create_semantic_witness_from_raw_data_with_block(
-        storage_key,
-        layout_commitment,
-        value,
-        zero_semantics,
-        semantic_source,
-        proof_data,
-        0,
-        &[0u8; 32],
-    )
-}
 
-/// Enhanced witness creation with block validation data (no_std compatible)
+/// Create a semantic witness from raw byte data (no_std compatible)
 ///
-/// Creates a semantic witness that includes block height and hash for light client validation.
-/// This is the most secure witness format when light client verification is available.
+/// Creates a semantic witness with full extended format including all security fields.
+/// This is the primary witness creation function for raw data.
 ///
-/// ## Enhanced Witness Format
+/// ## Extended Witness Format (176+ bytes)
 /// ```text
 /// [32 bytes storage_key] +
 /// [32 bytes layout_commitment] + 
@@ -203,10 +215,12 @@ pub fn create_semantic_witness_from_raw_data(
 /// [8 bytes block_height] +
 /// [32 bytes block_hash] +
 /// [4 bytes proof_len] +
-/// [variable proof_data]
+/// [variable proof_data] +
+/// [2 bytes field_index] +
+/// [32 bytes expected_slot]
 /// ```
 #[allow(clippy::too_many_arguments)]
-pub fn create_semantic_witness_from_raw_data_with_block(
+pub fn create_semantic_witness_from_raw_data(
     storage_key: &[u8],
     layout_commitment: &[u8],
     value: &[u8],
@@ -215,6 +229,8 @@ pub fn create_semantic_witness_from_raw_data_with_block(
     proof_data: &[u8],
     block_height: u64,
     block_hash: &[u8],
+    field_index: u16,
+    expected_slot: &[u8],
 ) -> Result<Witness, TraverseValenceError> {
     // Validate semantic enum values
     if zero_semantics > 3 {
@@ -250,11 +266,17 @@ pub fn create_semantic_witness_from_raw_data_with_block(
         ));
     }
 
-    // Calculate total witness size (includes block data)
-    let witness_size = 32 + 32 + 32 + 1 + 1 + 8 + 32 + 4 + proof_data.len();
+    if expected_slot.len() != 32 {
+        return Err(TraverseValenceError::InvalidWitness(
+            "Expected slot must be 32 bytes".into(),
+        ));
+    }
+
+    // Calculate total witness size (includes block data and extended fields)
+    let witness_size = 32 + 32 + 32 + 1 + 1 + 8 + 32 + 4 + proof_data.len() + 2 + 32;
     let mut witness_data = Vec::with_capacity(witness_size);
 
-    // Serialize witness data in enhanced format
+    // Serialize witness data in extended format
     witness_data.extend_from_slice(storage_key);
     witness_data.extend_from_slice(layout_commitment);
     witness_data.extend_from_slice(value);
@@ -264,6 +286,8 @@ pub fn create_semantic_witness_from_raw_data_with_block(
     witness_data.extend_from_slice(block_hash); // 32 bytes block hash
     witness_data.extend_from_slice(&(proof_data.len() as u32).to_le_bytes());
     witness_data.extend_from_slice(proof_data);
+    witness_data.extend_from_slice(&field_index.to_le_bytes()); // 2 bytes field index
+    witness_data.extend_from_slice(expected_slot); // 32 bytes expected slot
 
     Ok(Witness::Data(witness_data))
 }
@@ -408,6 +432,10 @@ fn create_single_semantic_storage_witness(
         zero_semantics,
         semantic_source,
         &proof_data,
+        0, // block_height - TODO: extract from JSON if available
+        &[0u8; 32], // block_hash - TODO: extract from JSON if available
+        0, // field_index - TODO: derive from layout
+        &storage_key, // expected_slot - TODO: compute from layout
     )
 }
 
@@ -456,35 +484,6 @@ pub fn extract_batch_storage_verification_request(
     })
 }
 
-// === Legacy APIs (deprecated) ===
-
-/// **Deprecated**: Use `create_witness_from_request` instead.
-#[cfg(feature = "std")]
-#[deprecated(since = "0.2.0", note = "Use create_witness_from_request instead")]
-pub fn prepare_semantic_witnesses_from_request(
-    request: &StorageVerificationRequest,
-) -> Result<Witness, TraverseValenceError> {
-    let json_value = serde_json::to_value(request)
-        .map_err(|e| TraverseValenceError::Json(format!("Failed to serialize request: {:?}", e)))?;
-
-    create_single_semantic_storage_witness(&json_value)
-}
-
-/// **Deprecated**: Use `create_witnesses_from_batch_request` instead.
-#[cfg(feature = "std")]
-#[deprecated(since = "0.2.0", note = "Use create_witnesses_from_batch_request instead")]
-pub fn prepare_semantic_witnesses_from_batch_request(
-    request: &BatchStorageVerificationRequest,
-) -> Result<Vec<Witness>, TraverseValenceError> {
-    let mut witnesses = Vec::new();
-
-    for storage_request in &request.storage_batch {
-        let witness = create_witness_from_request(storage_request)?;
-        witnesses.push(witness);
-    }
-
-    Ok(witnesses)
-}
 
 #[cfg(test)]
 mod tests {
@@ -511,18 +510,24 @@ mod tests {
             zero_semantics,
             semantic_source,
             &proof_data,
+            0, // block_height
+            &[0u8; 32], // block_hash
+            0, // field_index
+            &storage_key, // expected_slot
         )
         .unwrap();
 
         if let Witness::Data(data) = witness {
-            // Updated format includes block height (8 bytes) and block hash (32 bytes)
-            assert_eq!(data.len(), 32 + 32 + 32 + 1 + 1 + 8 + 32 + 4 + 4);
+            // Extended format includes field_index (2 bytes) and expected_slot (32 bytes)
+            assert_eq!(data.len(), 32 + 32 + 32 + 1 + 1 + 8 + 32 + 4 + 4 + 2 + 32);
             assert_eq!(data[96], 1); // zero_semantics
             assert_eq!(data[97], 0); // semantic_source
             assert_eq!(data[98..106], [0, 0, 0, 0, 0, 0, 0, 0]); // block_height (8 bytes, little endian)
             assert_eq!(data[106..138], [0u8; 32]); // block_hash (32 bytes)
             assert_eq!(data[138..142], [4, 0, 0, 0]); // proof_len (little endian)
             assert_eq!(data[142..146], [0xde, 0xad, 0xbe, 0xef]); // proof_data
+            assert_eq!(data[146..148], [0, 0]); // field_index (2 bytes, little endian)
+            assert_eq!(data[148..180], storage_key); // expected_slot (32 bytes)
         } else {
             panic!("Expected Data witness");
         }
@@ -550,7 +555,7 @@ mod tests {
         let witness = create_witness_from_request(&request).unwrap();
 
         if let Witness::Data(data) = witness {
-            assert!(data.len() >= 102); // Minimum witness size
+            assert!(data.len() >= 176); // Minimum extended witness size
         } else {
             panic!("Expected Data witness");
         }

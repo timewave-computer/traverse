@@ -12,17 +12,19 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = ["std", "ethereum", "cosmos", "dep:base64", "dep:bincode", "dep:glob", "dep:toml"]
+default = ["std", "ethereum", "cosmos", "codegen", "dep:base64", "dep:bincode", "dep:glob", "dep:toml"]
 std = ["traverse-core/std", "traverse-ethereum?/std", "dep:tokio", "dep:tracing-subscriber"]
 ethereum = ["dep:traverse-ethereum", "traverse-ethereum?/ethereum"]
 cosmos = ["dep:traverse-cosmos"]
 minimal = ["traverse-core/minimal"]
 client = ["ethereum", "traverse-ethereum?/client", "dep:valence-domain-clients", "dep:alloy"]
+codegen = ["dep:traverse-valence", "traverse-valence?/codegen"]
 
 [dependencies]
 traverse-core = { path = "../traverse-core" }
 traverse-ethereum = { path = "../traverse-ethereum", optional = true }
 traverse-cosmos = { path = "../traverse-cosmos", optional = true }
+traverse-valence = { path = "../traverse-valence", optional = true, features = ["codegen"] }
 serde.workspace = true
 serde_json.workspace = true
 clap.workspace = true
