@@ -12,27 +12,31 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = ["std"]
-std = []
-cosmos = ["dep:cosmos-sdk-proto"]
-client = ["dep:reqwest", "dep:tokio", "cosmos"]
+default = ["std", "cosmos"]
+std = ["traverse-core/std", "dep:tokio", "dep:reqwest"]
+no-std = ["traverse-core/no-std"]
+minimal = ["traverse-core/minimal"]
+cosmos = ["dep:cosmos-sdk-proto", "dep:cosmwasm-schema", "dep:cosmwasm-std"]
+client = ["std", "cosmos", "dep:reqwest", "dep:tokio"]
 
 [dependencies]
-traverse-core = { path = "../traverse-core", features = ["std", "serde_json"] }
+traverse-core = { path = "../traverse-core" }
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 hex.workspace = true
 thiserror.workspace = true
-sha2 = "0.10"
-cosmwasm-schema = "2.1"
-cosmwasm-std = { version = "2.1", features = ["stargate"] }
-ics23 = { version = "0.12", default-features = false, features = ["std", "host-functions"] }
-cosmos-sdk-proto = { version = "0.21", optional = true }
-base64 = "0.22"
+sha2 = { version = ">=0.10.0,<1.0", default-features = false }
+base64 = { version = ">=0.21.0,<1.0", default-features = false }
+ics23 = { version = ">=0.12.0,<1.0", default-features = false, features = ["std", "host-functions"], optional = true }
+
+# Cosmos-specific dependencies (optional)
+cosmwasm-schema = { version = ">=2.0.0,<3.0", optional = true }
+cosmwasm-std = { version = ">=2.0.0,<3.0", features = ["stargate"], optional = true }
+cosmos-sdk-proto = { version = ">=0.21.0,<1.0", optional = true }
 
 # Optional HTTP client for live contract queries
-reqwest = { version = "0.12", features = ["json"], optional = true }
+reqwest = { version = ">=0.12.0,<1.0", features = ["json"], optional = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]

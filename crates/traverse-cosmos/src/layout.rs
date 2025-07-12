@@ -323,11 +323,11 @@ impl LayoutCompiler for CosmosLayoutCompiler {
 
         // Generate storage entries and type information
         let storage = Self::generate_storage_entries(&contract).map_err(|e| {
-            TraverseError::InvalidLayout(format!("Failed to generate storage: {}", e))
+                            TraverseError::InvalidInput(format!("Failed to generate storage: {}", e))
         })?;
 
         let types = Self::generate_type_info(&contract).map_err(|e| {
-            TraverseError::InvalidLayout(format!("Failed to generate types: {}", e))
+                            TraverseError::InvalidInput(format!("Failed to generate types: {}", e))
         })?;
 
         let layout = LayoutInfo {

@@ -4,21 +4,27 @@ name = "traverse-e2e-tests"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["std", "ethereum", "cosmos"]
+std = ["traverse-core/std", "traverse-ethereum?/std", "traverse-cosmos?/std"]
+ethereum = ["dep:traverse-ethereum", "traverse-ethereum?/ethereum"]
+cosmos = ["dep:traverse-cosmos", "traverse-cosmos?/cosmos"]
+
 [dependencies]
-traverse-core = { path = "../crates/traverse-core", features = ["std", "serde_json"] }
-traverse-ethereum = { path = "../crates/traverse-ethereum" }
-traverse-cosmos = { path = "../crates/traverse-cosmos" }
-serde_json = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.0", features = ["full"] }
-anyhow = "1.0"
-tempfile = "3.8"
-assert_cmd = "2.0"
-predicates = "3.0"
-hex = "0.4"
-toml = "0.8"
-serde_yaml = "0.9"
-base64 = "0.22"
+traverse-core = { path = "../crates/traverse-core" }
+traverse-ethereum = { path = "../crates/traverse-ethereum", optional = true }
+traverse-cosmos = { path = "../crates/traverse-cosmos", optional = true }
+serde_json = { version = ">=1.0.0,<2.0" }
+serde = { version = ">=1.0.0,<2.0", features = ["derive"] }
+tokio = { version = ">=1.0.0,<2.0", features = ["full"] }
+anyhow = { version = ">=1.0.0,<2.0" }
+tempfile = { version = ">=3.8.0,<4.0" }
+assert_cmd = { version = ">=2.0.0,<3.0" }
+predicates = { version = ">=3.0.0,<4.0" }
+hex = { version = ">=0.4.0,<1.0" }
+toml = { version = ">=0.8.0,<1.0" }
+serde_yaml = { version = ">=0.9.0,<1.0" }
+base64 = { version = ">=0.21.0,<1.0" }
 
 [dev-dependencies]
-pretty_assertions = "1.4" 
+pretty_assertions = { version = ">=1.4.0,<2.0" } 

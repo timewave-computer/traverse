@@ -8,6 +8,10 @@ Cargo.lock
 .cargo/
 *.orig
 *.rej
+*.rlib
+*.rmeta
+*.d
+.rustc_info.json
 
 # IDE and Editor files
 .vscode/
@@ -48,6 +52,9 @@ out/
 # Testing
 coverage/
 *.profraw
+*.profdata
+flamegraph.svg
+perf.data*
 
 # Temporary files
 tmp/
@@ -62,6 +69,8 @@ node_modules/
 # Generated files
 generated/
 *.generated.*
+*_spec.json
+*.spec.json
 
 # Documentation build artifacts
 book/
@@ -81,6 +90,9 @@ data/
 circuit.wasm
 verification_key.json
 witness.wtns
+*.r1cs
+*.sym
+proving_key.json
 
 # Backup files
 *.bak

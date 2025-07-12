@@ -12,25 +12,60 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = []
-client = ["dep:valence-domain-clients"]
+default = ["std", "ethereum"]
+std = ["traverse-core/std", "dep:tokio", "dep:reqwest"]
+ethereum = ["dep:tiny-keccak", "dep:rlp"]
+minimal = ["traverse-core/minimal"]
+
+# Lightweight alloy with selective imports
+lightweight-alloy = [
+    "ethereum", 
+    "std", 
+    "dep:alloy-primitives", 
+    "dep:alloy-sol-types",
+    "dep:alloy-rpc-types-eth",
+    "dep:alloy-provider",
+    "dep:alloy-transport-http"
+]
+
+# Client integration
+client = ["ethereum", "std", "dep:valence-domain-clients"]
 
 [dependencies]
-traverse-core = { path = "../traverse-core", features = ["std", "serde_json"] }
+traverse-core = { path = "../traverse-core" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
-hex.workspace = true
-tiny-keccak.workspace = true
-alloy.workspace = true
-rlp.workspace = true
-tokio.workspace = true
-reqwest = { version = "0.11", features = ["json"] }
+hex = { workspace = true, features = ["serde"] }
+
+# Ethereum-specific dependencies (optional)
+tiny-keccak = { workspace = true, optional = true }
+rlp = { workspace = true, optional = true }
+
+# Heavy dependencies (optional)
+tokio = { workspace = true, optional = true }
+reqwest = { version = ">=0.11.0,<1.0", features = ["json"], optional = true }
+
+# Selective alloy imports - only the specific crates we need
+alloy-primitives = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
+alloy-sol-types = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
+alloy-rpc-types-eth = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
+alloy-provider = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
+alloy-transport-http = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
 
 # Optional valence-domain-clients integration
 valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", branch = "main", optional = true }
 
 [dev-dependencies]
+tempfile.workspace = true
 proptest.workspace = true
-tempfile.workspace = true 
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[[test]]
+name = "integration"
+required-features = ["std", "ethereum"]
+
+[[test]]
+name = "complex_contracts"
+required-features = ["std", "ethereum"] 

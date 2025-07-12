@@ -23,8 +23,13 @@ Generate ZK-compatible storage proofs for blockchain contract verification. Trav
 # Enter nix shell
 nix develop
 
-# Build all crates
+# Build all crates with default features
 cargo build
+
+# Build with specific features
+cargo build --features ethereum,client
+cargo build --features minimal --no-default-features
+cargo build --features wasm --no-default-features
 
 # Run all tests including integration tests
 cargo test
@@ -35,6 +40,21 @@ cargo test -- --nocapture
 # Build and run the CLI
 cargo run -- --help
 ```
+
+#### Feature Flags
+
+Traverse supports comprehensive feature flags for different use cases:
+
+- **`std`** (default): Full standard library support
+- **`no-std`**: Minimal build for embedded/circuit environments  
+- **`minimal`**: Lightweight build with essential functionality
+- **`wasm`**: WebAssembly-compatible build
+- **`ethereum`** (default): Ethereum blockchain support
+- **`cosmos`**: Cosmos/CosmWasm blockchain support
+- **`client`**: Live blockchain integration
+- **`examples`**: Example code and demonstrations
+
+See [Feature Flags Guide](docs/feature_flags.md) for detailed usage instructions.
 
 #### CLI Examples
 

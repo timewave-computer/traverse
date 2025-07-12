@@ -102,25 +102,20 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-traverse-valence = { git = "https://github.com/timewave-computer/traverse", features = ["alloc"] }
+traverse-valence = { git = "https://github.com/timewave-computer/traverse", features = ["no-std"] }
+traverse-core = { git = "https://github.com/timewave-computer/traverse", features = ["no-std"] }
 reqwest = { version = "0.12", features = ["json"], optional = true }
 
-# For ABI encoding (optional)
-[dependencies.traverse-valence-alloy]
+# For lightweight ABI encoding support
+[dependencies.traverse-valence-abi]
 package = "traverse-valence"
 git = "https://github.com/timewave-computer/traverse"
-features = ["alloy"]
-optional = true
-
-# For std-compatible components (optional)
-[dependencies.traverse-valence-std]
-package = "traverse-valence"
-git = "https://github.com/timewave-computer/traverse"
-features = ["std"]
+features = ["lightweight-alloy"]
 optional = true
 
 [features]
 client = ["dep:reqwest"]
+abi = ["dep:traverse-valence-abi"]
 ```
 
 ### 3. Implement Controller with Semantic Business Logic
@@ -227,9 +222,10 @@ pub async fn vault_controller_get_witnesses(
 The circuit should be MINIMAL and only handle cryptographic verification with semantic validation:
 
 ```rust
-use traverse_valence::circuit;
-use traverse_core::{ZeroSemantics, SemanticStorageProof};
+use traverse_valence::{circuit::{CircuitProcessor, CircuitResult}, TraverseValenceError};
+use traverse_core::ZeroSemantics;
 use valence_coprocessor::Witness;
+use serde_json::Value;
 
 /// MINIMAL circuit - only cryptographic verification with semantic validation, NO business logic
 pub fn vault_circuit_verify_semantic_proofs(coprocessor_data: &Value) -> Result<Vec<u8>, TraverseValenceError> {
@@ -242,20 +238,29 @@ pub fn vault_circuit_verify_semantic_proofs(coprocessor_data: &Value) -> Result<
         return Err(TraverseValenceError::InvalidWitness("No semantic witnesses for verification".to_string()));
     }
     
-    // ONLY cryptographic verification - verify semantic storage proofs are valid
-    let verification_results = circuit::verify_semantic_storage_proofs_and_extract(&semantic_witnesses)?;
+    // Create circuit processor with semantic validation
+    let processor = CircuitProcessor::new(
+        layout_commitment,
+        field_types,
+        field_semantics
+    );
     
-    // Validate semantic consistency (circuit validates semantics match expectations)
-    for (i, result) in verification_results.iter().enumerate() {
-        if *result != 0x01 { // 0x01 = valid proof
-            return Err(TraverseValenceError::ProofVerificationFailed(
-                format!("Semantic storage proof {} failed validation", i)
-            ));
+    // Process witnesses with semantic validation
+    let results = processor.process_batch(&circuit_witnesses);
+    
+    // Check verification results
+    for (i, result) in results.iter().enumerate() {
+        match result {
+            CircuitResult::Valid { .. } => {
+                // Proof is valid and semantics match
+            }
+            CircuitResult::Invalid => {
+                return Err(TraverseValenceError::ProofVerificationFailed(
+                    format!("Storage proof {} failed validation", i)
+                ));
+            }
         }
     }
-    
-    // Extract values to prove they're valid (semantic-aware extraction)
-    let _verified_values = circuit::extract_semantic_values(&semantic_witnesses)?;
     
     println!("Circuit: Cryptographic verification successful");
     
