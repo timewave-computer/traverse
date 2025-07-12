@@ -233,19 +233,27 @@ impl CircuitProcessor {
         }
     }
 
-    /// Parse witness data from raw bytes
+    /// Parse witness data from raw bytes (extended format only)
     /// 
-    /// SECURITY: This function parses the witness format created by the controller.
-    /// It supports both legacy format (without block data) and enhanced format
-    /// (with block height and hash for light client validation).
+    /// SECURITY: This function parses the extended witness format created by the controller.
+    /// The extended format includes field_index and expected_slot for enhanced validation.
     /// 
-    /// The field_index and expected_slot are derived from the witness data format:
-    /// - field_index: Extracted from witness data after proof (if present)
-    /// - expected_slot: Uses the storage key as expected slot (standard case)
+    /// Extended witness format (176+ bytes):
+    /// - [32 bytes] storage_key
+    /// - [32 bytes] layout_commitment
+    /// - [32 bytes] value
+    /// - [1 byte] zero_semantics
+    /// - [1 byte] semantic_source
+    /// - [8 bytes] block_height
+    /// - [32 bytes] block_hash
+    /// - [4 bytes] proof_len
+    /// - [variable] proof_data
+    /// - [2 bytes] field_index
+    /// - [32 bytes] expected_slot
     pub fn parse_witness_from_bytes(witness_data: &[u8]) -> Result<CircuitWitness, &'static str> {
-        // Minimum size check for legacy format
-        if witness_data.len() < 102 {
-            return Err("Witness data too small");
+        // Minimum size check for extended format (without proof data)
+        if witness_data.len() < 176 {
+            return Err("Witness data too small (extended format required)");
         }
         
         let mut offset = 0;
@@ -278,26 +286,18 @@ impl CircuitProcessor {
         let _semantic_source = witness_data[offset]; // Currently unused in circuit
         offset += 1;
         
-        // Check if this is enhanced format with block data
-        let (block_height, block_hash) = if witness_data.len() >= offset + 40 {
-            // Parse block height (8 bytes)
-            let height_bytes = &witness_data[offset..offset + 8];
-            let block_height = u64::from_le_bytes([
-                height_bytes[0], height_bytes[1], height_bytes[2], height_bytes[3],
-                height_bytes[4], height_bytes[5], height_bytes[6], height_bytes[7],
-            ]);
-            offset += 8;
-            
-            // Parse block hash (32 bytes)
-            let mut block_hash = [0u8; 32];
-            block_hash.copy_from_slice(&witness_data[offset..offset + 32]);
-            offset += 32;
-            
-            (block_height, block_hash)
-        } else {
-            // Legacy format without block data
-            (0u64, [0u8; 32])
-        };
+        // Parse block height (8 bytes)
+        let height_bytes = &witness_data[offset..offset + 8];
+        let block_height = u64::from_le_bytes([
+            height_bytes[0], height_bytes[1], height_bytes[2], height_bytes[3],
+            height_bytes[4], height_bytes[5], height_bytes[6], height_bytes[7],
+        ]);
+        offset += 8;
+        
+        // Parse block hash (32 bytes)
+        let mut block_hash = [0u8; 32];
+        block_hash.copy_from_slice(&witness_data[offset..offset + 32]);
+        offset += 32;
         
         // Parse proof length (4 bytes)
         if witness_data.len() < offset + 4 {
@@ -316,23 +316,19 @@ impl CircuitProcessor {
         let proof = witness_data[offset..offset + proof_len].to_vec();
         offset += proof_len;
         
-        // Parse field_index if present in extended format
-        let field_index = if witness_data.len() >= offset + 2 {
-            let index = u16::from_le_bytes([witness_data[offset], witness_data[offset + 1]]);
-            offset += 2;
-            index
-        } else {
-            0 // Default to first field for legacy format
-        };
+        // Parse field_index (2 bytes) - mandatory in extended format
+        if witness_data.len() < offset + 2 {
+            return Err("Missing field_index");
+        }
+        let field_index = u16::from_le_bytes([witness_data[offset], witness_data[offset + 1]]);
+        offset += 2;
         
-        // Parse expected_slot if present in extended format
-        let expected_slot = if witness_data.len() >= offset + 32 {
-            let mut slot = [0u8; 32];
-            slot.copy_from_slice(&witness_data[offset..offset + 32]);
-            slot
-        } else {
-            key // Use storage key as expected slot (standard case for simple storage)
-        };
+        // Parse expected_slot (32 bytes) - mandatory in extended format
+        if witness_data.len() < offset + 32 {
+            return Err("Missing expected_slot");
+        }
+        let mut expected_slot = [0u8; 32];
+        expected_slot.copy_from_slice(&witness_data[offset..offset + 32]);
         
         Ok(CircuitWitness {
             key,
@@ -911,6 +907,12 @@ mod tests {
         // Proof data
         witness_data.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
         
+        // Extended format: field_index (2 bytes)
+        witness_data.extend_from_slice(&7u16.to_le_bytes());
+        
+        // Extended format: expected_slot (32 bytes)
+        witness_data.extend_from_slice(&[9u8; 32]);
+        
         let witness = CircuitProcessor::parse_witness_from_bytes(&witness_data).unwrap();
         
         assert_eq!(witness.key, [1u8; 32]);
@@ -920,44 +922,10 @@ mod tests {
         assert_eq!(witness.block_height, 12345);
         assert_eq!(witness.block_hash, [4u8; 32]);
         assert_eq!(witness.proof, vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        assert_eq!(witness.field_index, 7);
+        assert_eq!(witness.expected_slot, [9u8; 32]);
     }
 
-    #[test]
-    fn test_witness_parsing_legacy_format() {
-        // Test legacy format without block data
-        let mut witness_data = Vec::new();
-        
-        // Storage key (32 bytes)
-        witness_data.extend_from_slice(&[1u8; 32]);
-        
-        // Layout commitment (32 bytes)
-        witness_data.extend_from_slice(&[2u8; 32]);
-        
-        // Value (32 bytes)
-        witness_data.extend_from_slice(&[3u8; 32]);
-        
-        // Semantics (1 byte)
-        witness_data.push(1); // ExplicitlyZero
-        
-        // Semantic source (1 byte)
-        witness_data.push(0);
-        
-        // Proof length (4 bytes)
-        witness_data.extend_from_slice(&4u32.to_le_bytes());
-        
-        // Proof data
-        witness_data.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
-        
-        let witness = CircuitProcessor::parse_witness_from_bytes(&witness_data).unwrap();
-        
-        assert_eq!(witness.key, [1u8; 32]);
-        assert_eq!(witness.layout_commitment, [2u8; 32]);
-        assert_eq!(witness.value, [3u8; 32]);
-        assert_eq!(witness.semantics, ZeroSemantics::ExplicitlyZero);
-        assert_eq!(witness.block_height, 0); // Default for legacy format
-        assert_eq!(witness.block_hash, [0u8; 32]); // Default for legacy format
-        assert_eq!(witness.proof, vec![0xDE, 0xAD, 0xBE, 0xEF]);
-    }
 
     #[test]
     fn test_semantic_validation_bug_fix() {
@@ -1395,13 +1363,13 @@ mod tests {
     #[test]
     fn test_edge_case_witness_parsing_errors() {
         // Test too small witness data
-        let small_data = vec![0u8; 50]; // Less than minimum 102 bytes
+        let small_data = vec![0u8; 50]; // Less than minimum 176 bytes
         let result = CircuitProcessor::parse_witness_from_bytes(&small_data);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Witness data too small");
+        assert_eq!(result.unwrap_err(), "Witness data too small (extended format required)");
         
         // Test invalid semantics value
-        let mut invalid_semantics_data = vec![0u8; 102];
+        let mut invalid_semantics_data = vec![0u8; 176];
         invalid_semantics_data[96] = 5; // Invalid semantics value (> 3)
         let result = CircuitProcessor::parse_witness_from_bytes(&invalid_semantics_data);
         assert!(result.is_err());
@@ -1417,6 +1385,28 @@ mod tests {
         let result = CircuitProcessor::parse_witness_from_bytes(&incomplete_proof);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Incomplete proof data");
+        
+        // Test missing field_index
+        let mut missing_field_index = vec![0u8; 142];
+        // Set proof length to 0 so we get to field_index check
+        missing_field_index[138] = 0;
+        missing_field_index[139] = 0;
+        missing_field_index[140] = 0;
+        missing_field_index[141] = 0;
+        let result = CircuitProcessor::parse_witness_from_bytes(&missing_field_index);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Missing field_index");
+        
+        // Test missing expected_slot
+        let mut missing_expected_slot = vec![0u8; 144];
+        // Set proof length to 0 so we get past field_index
+        missing_expected_slot[138] = 0;
+        missing_expected_slot[139] = 0;
+        missing_expected_slot[140] = 0;
+        missing_expected_slot[141] = 0;
+        let result = CircuitProcessor::parse_witness_from_bytes(&missing_expected_slot);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Missing expected_slot");
     }
 
     #[test]

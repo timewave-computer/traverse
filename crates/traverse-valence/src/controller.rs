@@ -226,15 +226,19 @@ pub fn create_witnesses_from_batch_request(
 /// Creates a semantic witness from raw byte data. This is the lowest-level API
 /// and is used by all other witness creation functions.
 ///
-/// ## Witness Format
+/// ## Extended Witness Format (176+ bytes)
 /// ```text
 /// [32 bytes storage_key] +
 /// [32 bytes layout_commitment] + 
 /// [32 bytes value] +
 /// [1 byte zero_semantics] +
 /// [1 byte semantic_source] + 
+/// [8 bytes block_height] +
+/// [32 bytes block_hash] +
 /// [4 bytes proof_len] +
-/// [variable proof_data]
+/// [variable proof_data] +
+/// [2 bytes field_index] +
+/// [32 bytes expected_slot]
 /// ```
 pub fn create_semantic_witness_from_raw_data(
     storage_key: &[u8],
@@ -244,8 +248,8 @@ pub fn create_semantic_witness_from_raw_data(
     semantic_source: u8,
     proof_data: &[u8],
 ) -> Result<Witness, TraverseValenceError> {
-    // For backward compatibility, use zero block data
-    create_semantic_witness_from_raw_data_with_block(
+    // Default values for backward compatibility
+    create_semantic_witness_from_raw_data_with_block_and_field(
         storage_key,
         layout_commitment,
         value,
@@ -254,26 +258,15 @@ pub fn create_semantic_witness_from_raw_data(
         proof_data,
         0,
         &[0u8; 32],
+        0,
+        storage_key, // Use storage_key as expected_slot by default
     )
 }
 
 /// Enhanced witness creation with block validation data (no_std compatible)
 ///
 /// Creates a semantic witness that includes block height and hash for light client validation.
-/// This is the most secure witness format when light client verification is available.
-///
-/// ## Enhanced Witness Format
-/// ```text
-/// [32 bytes storage_key] +
-/// [32 bytes layout_commitment] + 
-/// [32 bytes value] +
-/// [1 byte zero_semantics] +
-/// [1 byte semantic_source] +
-/// [8 bytes block_height] +
-/// [32 bytes block_hash] +
-/// [4 bytes proof_len] +
-/// [variable proof_data]
-/// ```
+/// Uses default field_index=0 and expected_slot=storage_key for backward compatibility.
 #[allow(clippy::too_many_arguments)]
 pub fn create_semantic_witness_from_raw_data_with_block(
     storage_key: &[u8],
@@ -284,6 +277,52 @@ pub fn create_semantic_witness_from_raw_data_with_block(
     proof_data: &[u8],
     block_height: u64,
     block_hash: &[u8],
+) -> Result<Witness, TraverseValenceError> {
+    create_semantic_witness_from_raw_data_with_block_and_field(
+        storage_key,
+        layout_commitment,
+        value,
+        zero_semantics,
+        semantic_source,
+        proof_data,
+        block_height,
+        block_hash,
+        0,
+        storage_key, // Use storage_key as expected_slot by default
+    )
+}
+
+/// Complete witness creation with all fields (no_std compatible)
+///
+/// Creates a semantic witness with full extended format including field_index and expected_slot.
+/// This is the primary witness creation function that includes all security fields.
+///
+/// ## Extended Witness Format (176+ bytes)
+/// ```text
+/// [32 bytes storage_key] +
+/// [32 bytes layout_commitment] + 
+/// [32 bytes value] +
+/// [1 byte zero_semantics] +
+/// [1 byte semantic_source] +
+/// [8 bytes block_height] +
+/// [32 bytes block_hash] +
+/// [4 bytes proof_len] +
+/// [variable proof_data] +
+/// [2 bytes field_index] +
+/// [32 bytes expected_slot]
+/// ```
+#[allow(clippy::too_many_arguments)]
+pub fn create_semantic_witness_from_raw_data_with_block_and_field(
+    storage_key: &[u8],
+    layout_commitment: &[u8],
+    value: &[u8],
+    zero_semantics: u8,
+    semantic_source: u8,
+    proof_data: &[u8],
+    block_height: u64,
+    block_hash: &[u8],
+    field_index: u16,
+    expected_slot: &[u8],
 ) -> Result<Witness, TraverseValenceError> {
     // Validate semantic enum values
     if zero_semantics > 3 {
@@ -319,11 +358,17 @@ pub fn create_semantic_witness_from_raw_data_with_block(
         ));
     }
 
-    // Calculate total witness size (includes block data)
-    let witness_size = 32 + 32 + 32 + 1 + 1 + 8 + 32 + 4 + proof_data.len();
+    if expected_slot.len() != 32 {
+        return Err(TraverseValenceError::InvalidWitness(
+            "Expected slot must be 32 bytes".into(),
+        ));
+    }
+
+    // Calculate total witness size (includes block data and extended fields)
+    let witness_size = 32 + 32 + 32 + 1 + 1 + 8 + 32 + 4 + proof_data.len() + 2 + 32;
     let mut witness_data = Vec::with_capacity(witness_size);
 
-    // Serialize witness data in enhanced format
+    // Serialize witness data in extended format
     witness_data.extend_from_slice(storage_key);
     witness_data.extend_from_slice(layout_commitment);
     witness_data.extend_from_slice(value);
@@ -333,6 +378,8 @@ pub fn create_semantic_witness_from_raw_data_with_block(
     witness_data.extend_from_slice(block_hash); // 32 bytes block hash
     witness_data.extend_from_slice(&(proof_data.len() as u32).to_le_bytes());
     witness_data.extend_from_slice(proof_data);
+    witness_data.extend_from_slice(&field_index.to_le_bytes()); // 2 bytes field index
+    witness_data.extend_from_slice(expected_slot); // 32 bytes expected slot
 
     Ok(Witness::Data(witness_data))
 }
@@ -584,14 +631,16 @@ mod tests {
         .unwrap();
 
         if let Witness::Data(data) = witness {
-            // Updated format includes block height (8 bytes) and block hash (32 bytes)
-            assert_eq!(data.len(), 32 + 32 + 32 + 1 + 1 + 8 + 32 + 4 + 4);
+            // Extended format includes field_index (2 bytes) and expected_slot (32 bytes)
+            assert_eq!(data.len(), 32 + 32 + 32 + 1 + 1 + 8 + 32 + 4 + 4 + 2 + 32);
             assert_eq!(data[96], 1); // zero_semantics
             assert_eq!(data[97], 0); // semantic_source
             assert_eq!(data[98..106], [0, 0, 0, 0, 0, 0, 0, 0]); // block_height (8 bytes, little endian)
             assert_eq!(data[106..138], [0u8; 32]); // block_hash (32 bytes)
             assert_eq!(data[138..142], [4, 0, 0, 0]); // proof_len (little endian)
             assert_eq!(data[142..146], [0xde, 0xad, 0xbe, 0xef]); // proof_data
+            assert_eq!(data[146..148], [0, 0]); // field_index (2 bytes, little endian)
+            assert_eq!(data[148..180], storage_key); // expected_slot (32 bytes)
         } else {
             panic!("Expected Data witness");
         }
@@ -619,7 +668,7 @@ mod tests {
         let witness = create_witness_from_request(&request).unwrap();
 
         if let Witness::Data(data) = witness {
-            assert!(data.len() >= 102); // Minimum witness size
+            assert!(data.len() >= 176); // Minimum extended witness size
         } else {
             panic!("Expected Data witness");
         }
