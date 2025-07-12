@@ -203,6 +203,9 @@ pub enum Commands {
     /// Generate minimal valence coprocessor applications
     #[command(subcommand)]
     Codegen(CodegenCommands),
+    
+    /// Generate minimal, schema-specific code without abstractions
+    Minimal(commands::minimal::GenerateMinimalArgs),
 
     /// Auto-generate everything from configuration file
     AutoGenerate {

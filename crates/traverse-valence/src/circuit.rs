@@ -1375,35 +1375,34 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid zero semantics value");
         
-        // Test incomplete proof data
-        let mut incomplete_proof = vec![0u8; 138];
+        // Test incomplete proof data (too small for extended format)
+        let mut incomplete_proof = vec![0u8; 142];
         // Set proof length to 100 but don't provide enough data
-        incomplete_proof[138] = 100;
-        incomplete_proof[139] = 0;
-        incomplete_proof[140] = 0;
-        incomplete_proof[141] = 0;
+        incomplete_proof[138..142].copy_from_slice(&100u32.to_le_bytes());
         let result = CircuitProcessor::parse_witness_from_bytes(&incomplete_proof);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Witness data too small (extended format required)");
+        
+        // Test incomplete proof data (passes size check but proof too large)
+        let mut incomplete_proof_large = vec![0u8; 176];
+        // Set proof length to 100 at offset 138, but only provide minimum 176 bytes (which includes 38 bytes for base + proof)
+        incomplete_proof_large[138..142].copy_from_slice(&100u32.to_le_bytes());
+        let result = CircuitProcessor::parse_witness_from_bytes(&incomplete_proof_large);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Incomplete proof data");
         
         // Test missing field_index
-        let mut missing_field_index = vec![0u8; 142];
+        let mut missing_field_index = vec![0u8; 176];
         // Set proof length to 0 so we get to field_index check
-        missing_field_index[138] = 0;
-        missing_field_index[139] = 0;
-        missing_field_index[140] = 0;
-        missing_field_index[141] = 0;
+        missing_field_index[138..142].copy_from_slice(&0u32.to_le_bytes());
         let result = CircuitProcessor::parse_witness_from_bytes(&missing_field_index);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Missing field_index");
         
         // Test missing expected_slot
-        let mut missing_expected_slot = vec![0u8; 144];
-        // Set proof length to 0 so we get past field_index
-        missing_expected_slot[138] = 0;
-        missing_expected_slot[139] = 0;
-        missing_expected_slot[140] = 0;
-        missing_expected_slot[141] = 0;
+        let mut missing_expected_slot = vec![0u8; 178];
+        // Set proof length to 0 so we get past field_index, include 2 bytes for field_index
+        missing_expected_slot[138..142].copy_from_slice(&0u32.to_le_bytes());
         let result = CircuitProcessor::parse_witness_from_bytes(&missing_expected_slot);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Missing expected_slot");

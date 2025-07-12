@@ -151,6 +151,10 @@ pub mod abi;
 #[cfg(feature = "codegen")]
 pub mod codegen;
 
+// Minimal code generation support
+#[cfg(feature = "codegen")]
+pub mod minimal_codegen;
+
 // Conditional re-exports based on enabled features
 #[cfg(feature = "circuit")]
 pub use circuit::{

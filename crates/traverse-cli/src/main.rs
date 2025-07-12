@@ -242,6 +242,10 @@ async fn main() -> Result<()> {
         Commands::Codegen(codegen_cmd) => {
             cmd_codegen(codegen_cmd).await
         }
+        
+        Commands::Minimal(args) => {
+            cmd_generate_minimal(args).await
+        }
 
         Commands::AutoGenerate {
             config_file,
