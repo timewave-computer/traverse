@@ -22,6 +22,7 @@ use commands::ethereum::{
 use commands::{cmd_auto_generate, cmd_batch_generate, cmd_watch};
 use commands::{
     cmd_batch_resolve, cmd_compile_layout, cmd_generate_proof, cmd_resolve, cmd_resolve_all,
+    cmd_codegen,
 };
 
 #[tokio::main]
@@ -237,6 +238,10 @@ async fn main() -> Result<()> {
                 .await
             }
         },
+
+        Commands::Codegen(codegen_cmd) => {
+            cmd_codegen(codegen_cmd).await
+        }
 
         Commands::AutoGenerate {
             config_file,

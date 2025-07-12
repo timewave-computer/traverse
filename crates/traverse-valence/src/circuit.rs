@@ -238,6 +238,10 @@ impl CircuitProcessor {
     /// SECURITY: This function parses the witness format created by the controller.
     /// It supports both legacy format (without block data) and enhanced format
     /// (with block height and hash for light client validation).
+    /// 
+    /// The field_index and expected_slot are derived from the witness data format:
+    /// - field_index: Extracted from witness data after proof (if present)
+    /// - expected_slot: Uses the storage key as expected slot (standard case)
     pub fn parse_witness_from_bytes(witness_data: &[u8]) -> Result<CircuitWitness, &'static str> {
         // Minimum size check for legacy format
         if witness_data.len() < 102 {
@@ -310,17 +314,34 @@ impl CircuitProcessor {
             return Err("Incomplete proof data");
         }
         let proof = witness_data[offset..offset + proof_len].to_vec();
+        offset += proof_len;
         
-        // For now, we'll use dummy values for field_index and expected_slot
-        // In a real implementation, these would be derived from the layout
+        // Parse field_index if present in extended format
+        let field_index = if witness_data.len() >= offset + 2 {
+            let index = u16::from_le_bytes([witness_data[offset], witness_data[offset + 1]]);
+            offset += 2;
+            index
+        } else {
+            0 // Default to first field for legacy format
+        };
+        
+        // Parse expected_slot if present in extended format
+        let expected_slot = if witness_data.len() >= offset + 32 {
+            let mut slot = [0u8; 32];
+            slot.copy_from_slice(&witness_data[offset..offset + 32]);
+            slot
+        } else {
+            key // Use storage key as expected slot (standard case for simple storage)
+        };
+        
         Ok(CircuitWitness {
             key,
             value,
             proof,
             layout_commitment,
-            field_index: 0, // TODO: Derive from layout
+            field_index,
             semantics,
-            expected_slot: key, // TODO: Compute expected slot
+            expected_slot,
             block_height,
             block_hash,
         })
@@ -459,16 +480,9 @@ impl CircuitProcessor {
                 _ => false, // SECURITY: Any other combination indicates potential attack
             }
         } else {
-            // SECURITY: Non-zero values with zero semantics indicate attacks
-            // Non-zero values should never claim to be uninitialized or explicitly zero.
-            // This catches semantic manipulation attacks where adversaries try to
-            // claim non-zero values have zero-related semantics.
-            match witness.semantics {
-                ZeroSemantics::NeverWritten => false,  // ATTACK: Non-zero claiming never written
-                ZeroSemantics::ExplicitlyZero => false, // ATTACK: Non-zero claiming explicitly zero
-                ZeroSemantics::Cleared => false,        // ATTACK: Non-zero claiming cleared
-                ZeroSemantics::ValidZero => false,      // ATTACK: Non-zero claiming valid zero
-            }
+            // SECURITY: Non-zero values cannot have zero semantics
+            // Any non-zero value with zero-related semantics is invalid
+            false // Non-zero values should never have any zero semantics
         }
     }
 
@@ -1144,5 +1158,425 @@ mod tests {
         
         let result = processor.process_witness(&addr_witness);
         assert!(matches!(result, CircuitResult::Invalid)); // Zero address should fail
+    }
+
+    #[test]
+    fn test_edge_case_field_index_bounds() {
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Uint256, FieldType::Uint256];
+        let field_semantics = vec![ZeroSemantics::ValidZero, ZeroSemantics::ValidZero];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        // Test field_index at boundary
+        let witness_at_boundary = CircuitWitness {
+            key: [1u8; 32],
+            value: [0u8; 32],
+            proof: vec![],
+            layout_commitment,
+            field_index: 1, // Last valid index
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [1u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&witness_at_boundary);
+        assert!(matches!(result, CircuitResult::Valid { .. }));
+        
+        // Test field_index out of bounds
+        let witness_out_of_bounds = CircuitWitness {
+            key: [1u8; 32],
+            value: [0u8; 32],
+            proof: vec![],
+            layout_commitment,
+            field_index: 2, // Out of bounds
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [1u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&witness_out_of_bounds);
+        assert!(matches!(result, CircuitResult::Invalid));
+        
+        // Test with u16::MAX field_index
+        let witness_max_index = CircuitWitness {
+            key: [1u8; 32],
+            value: [0u8; 32],
+            proof: vec![],
+            layout_commitment,
+            field_index: u16::MAX,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [1u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&witness_max_index);
+        assert!(matches!(result, CircuitResult::Invalid));
+    }
+
+    #[test]
+    fn test_edge_case_empty_proof() {
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Uint256];
+        let field_semantics = vec![ZeroSemantics::ValidZero];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        // Test with empty proof vector
+        let witness_empty_proof = CircuitWitness {
+            key: [1u8; 32],
+            value: [42u8; 32],
+            proof: vec![], // Empty proof
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [1u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        // Should still validate other aspects even with empty proof
+        let result = processor.process_witness(&witness_empty_proof);
+        assert!(matches!(result, CircuitResult::Invalid)); // Non-zero with ValidZero semantics
+    }
+
+    #[test]
+    fn test_edge_case_large_proof() {
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Uint256];
+        let field_semantics = vec![ZeroSemantics::ValidZero];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        // Test with very large proof
+        let large_proof = vec![0xFFu8; 10000]; // 10KB proof
+        let witness_large_proof = CircuitWitness {
+            key: [1u8; 32],
+            value: [0u8; 32],
+            proof: large_proof,
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [1u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&witness_large_proof);
+        assert!(matches!(result, CircuitResult::Valid { .. }));
+    }
+
+    #[test]
+    fn test_edge_case_all_field_types() {
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![
+            FieldType::Bool,
+            FieldType::Uint8,
+            FieldType::Uint16,
+            FieldType::Uint32,
+            FieldType::Uint64,
+            FieldType::Uint256,
+            FieldType::Address,
+            FieldType::Bytes32,
+            FieldType::String,
+            FieldType::Bytes,
+        ];
+        let field_semantics = vec![ZeroSemantics::ValidZero; 10];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types.clone(), field_semantics);
+        
+        // Test each field type with appropriate values
+        for (index, field_type) in field_types.iter().enumerate() {
+            let mut value = [0u8; 32];
+            
+            // Set appropriate non-zero values for each type
+            match field_type {
+                FieldType::Bool => value[31] = 1, // true
+                FieldType::Uint8 => value[31] = 255,
+                FieldType::Uint16 => {
+                    value[30] = 0xFF;
+                    value[31] = 0xFF;
+                },
+                FieldType::Uint32 => {
+                    value[28] = 0xFF;
+                    value[29] = 0xFF;
+                    value[30] = 0xFF;
+                    value[31] = 0xFF;
+                },
+                FieldType::Uint64 => {
+                    for i in 24..32 {
+                        value[i] = 0xFF;
+                    }
+                },
+                FieldType::Uint256 | FieldType::Bytes32 => {
+                    for i in 0..32 {
+                        value[i] = 0xFF;
+                    }
+                },
+                FieldType::Address => {
+                    // Valid non-zero address
+                    for i in 12..32 {
+                        value[i] = 0x42;
+                    }
+                },
+                _ => {
+                    // For String/Bytes, just use non-zero value
+                    value[31] = 1;
+                },
+            }
+            
+            let witness = CircuitWitness {
+                key: [(index + 1) as u8; 32],
+                value,
+                proof: vec![],
+                layout_commitment,
+                field_index: index as u16,
+                semantics: ZeroSemantics::ValidZero,
+                expected_slot: [(index + 1) as u8; 32],
+                block_height: 0,
+                block_hash: [0u8; 32],
+            };
+            
+            let result = processor.process_witness(&witness);
+            
+            // All non-zero values with ValidZero semantics should be invalid
+            assert!(matches!(result, CircuitResult::Invalid), 
+                "Field type {:?} should be invalid with non-zero value and ValidZero semantics", field_type);
+        }
+    }
+
+    #[test]
+    fn test_edge_case_witness_parsing_extended_format() {
+        // Test extended format with field_index and expected_slot
+        let mut witness_data = Vec::new();
+        
+        // Storage key (32 bytes)
+        witness_data.extend_from_slice(&[1u8; 32]);
+        
+        // Layout commitment (32 bytes)
+        witness_data.extend_from_slice(&[2u8; 32]);
+        
+        // Value (32 bytes)
+        witness_data.extend_from_slice(&[3u8; 32]);
+        
+        // Semantics (1 byte)
+        witness_data.push(1); // ExplicitlyZero
+        
+        // Semantic source (1 byte)
+        witness_data.push(0);
+        
+        // Block height (8 bytes)
+        witness_data.extend_from_slice(&12345u64.to_le_bytes());
+        
+        // Block hash (32 bytes)
+        witness_data.extend_from_slice(&[4u8; 32]);
+        
+        // Proof length (4 bytes)
+        witness_data.extend_from_slice(&4u32.to_le_bytes());
+        
+        // Proof data
+        witness_data.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
+        
+        // Extended format: field_index (2 bytes)
+        witness_data.extend_from_slice(&42u16.to_le_bytes());
+        
+        // Extended format: expected_slot (32 bytes)
+        witness_data.extend_from_slice(&[5u8; 32]);
+        
+        let witness = CircuitProcessor::parse_witness_from_bytes(&witness_data).unwrap();
+        
+        assert_eq!(witness.field_index, 42);
+        assert_eq!(witness.expected_slot, [5u8; 32]);
+    }
+
+    #[test]
+    fn test_edge_case_witness_parsing_errors() {
+        // Test too small witness data
+        let small_data = vec![0u8; 50]; // Less than minimum 102 bytes
+        let result = CircuitProcessor::parse_witness_from_bytes(&small_data);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Witness data too small");
+        
+        // Test invalid semantics value
+        let mut invalid_semantics_data = vec![0u8; 102];
+        invalid_semantics_data[96] = 5; // Invalid semantics value (> 3)
+        let result = CircuitProcessor::parse_witness_from_bytes(&invalid_semantics_data);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Invalid zero semantics value");
+        
+        // Test incomplete proof data
+        let mut incomplete_proof = vec![0u8; 138];
+        // Set proof length to 100 but don't provide enough data
+        incomplete_proof[138] = 100;
+        incomplete_proof[139] = 0;
+        incomplete_proof[140] = 0;
+        incomplete_proof[141] = 0;
+        let result = CircuitProcessor::parse_witness_from_bytes(&incomplete_proof);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Incomplete proof data");
+    }
+
+    #[test]
+    fn test_edge_case_batch_processing() {
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Uint256; 100]; // 100 fields
+        let field_semantics = vec![ZeroSemantics::ValidZero; 100];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        // Create 100 witnesses
+        let mut witnesses = Vec::new();
+        for i in 0..100 {
+            let mut key = [0u8; 32];
+            key[31] = i as u8;
+            
+            let witness = CircuitWitness {
+                key,
+                value: [0u8; 32], // All zero values
+                proof: vec![i as u8; 10], // Different proof for each
+                layout_commitment,
+                field_index: i as u16,
+                semantics: ZeroSemantics::ValidZero,
+                expected_slot: key,
+                block_height: i as u64,
+                block_hash: [i as u8; 32],
+            };
+            witnesses.push(witness);
+        }
+        
+        // Process batch
+        let results = processor.process_batch(&witnesses);
+        assert_eq!(results.len(), 100);
+        
+        // All should be valid (zero values with ValidZero semantics)
+        for result in results {
+            assert!(matches!(result, CircuitResult::Valid { .. }));
+        }
+    }
+
+    #[test]
+    fn test_edge_case_malformed_value_extraction() {
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![
+            FieldType::Uint16,
+            FieldType::Uint32,
+            FieldType::Uint64,
+            FieldType::Address,
+        ];
+        let field_semantics = vec![ZeroSemantics::ValidZero; 4];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        // Test Uint16 extraction with specific pattern
+        let mut value_u16 = [0u8; 32];
+        value_u16[30] = 0xAB;
+        value_u16[31] = 0xCD;
+        
+        let witness_u16 = CircuitWitness {
+            key: [1u8; 32],
+            value: value_u16,
+            proof: vec![],
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [1u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&witness_u16);
+        if let CircuitResult::Valid { extracted_value, .. } = result {
+            if let ExtractedValue::Uint16(val) = extracted_value {
+                assert_eq!(val, 0xABCD); // Big-endian
+            } else {
+                panic!("Expected Uint16 extraction");
+            }
+        } else {
+            panic!("Expected valid result for non-zero Uint16");
+        }
+        
+        // Test Address extraction with pattern
+        let mut value_addr = [0u8; 32];
+        // Set address bytes (12-31)
+        for i in 12..32 {
+            value_addr[i] = (i - 12) as u8;
+        }
+        
+        let witness_addr = CircuitWitness {
+            key: [2u8; 32],
+            value: value_addr,
+            proof: vec![],
+            layout_commitment,
+            field_index: 3,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [2u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&witness_addr);
+        if let CircuitResult::Valid { extracted_value, .. } = result {
+            if let ExtractedValue::Address(addr) = extracted_value {
+                // Check address extraction
+                for i in 0..20 {
+                    assert_eq!(addr[i], i as u8);
+                }
+            } else {
+                panic!("Expected Address extraction");
+            }
+        } else {
+            panic!("Expected valid result for non-zero address");
+        }
+    }
+
+    #[test]
+    fn test_edge_case_concurrent_witness_validation() {
+        // Test that witnesses don't interfere with each other
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Uint256, FieldType::Address];
+        let field_semantics = vec![ZeroSemantics::ExplicitlyZero, ZeroSemantics::NeverWritten];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        // Create two witnesses with different validation results
+        let valid_witness = CircuitWitness {
+            key: [1u8; 32],
+            value: [0u8; 32], // Zero value
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ExplicitlyZero, // Matches expected
+            expected_slot: [1u8; 32],
+            block_height: 100,
+            block_hash: [0xAAu8; 32],
+        };
+        
+        let invalid_witness = CircuitWitness {
+            key: [2u8; 32],
+            value: [0u8; 32], // Zero address
+            proof: vec![4, 5, 6],
+            layout_commitment,
+            field_index: 1,
+            semantics: ZeroSemantics::NeverWritten, // Zero address is suspicious
+            expected_slot: [2u8; 32],
+            block_height: 101,
+            block_hash: [0xBBu8; 32],
+        };
+        
+        // Process in different orders
+        let batch1 = vec![valid_witness.clone(), invalid_witness.clone()];
+        let batch2 = vec![invalid_witness.clone(), valid_witness.clone()];
+        
+        let results1 = processor.process_batch(&batch1);
+        let results2 = processor.process_batch(&batch2);
+        
+        // First should be valid, second invalid regardless of order
+        assert!(matches!(results1[0], CircuitResult::Valid { .. }));
+        assert!(matches!(results1[1], CircuitResult::Invalid));
+        assert!(matches!(results2[0], CircuitResult::Invalid));
+        assert!(matches!(results2[1], CircuitResult::Valid { .. }));
     }
 }

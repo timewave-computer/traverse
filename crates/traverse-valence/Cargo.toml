@@ -12,18 +12,36 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = ["alloc", "mpt-verification"]
-alloc = ["traverse-core/std"]
+default = ["std", "controller", "circuit"]
+
+# Core features
 std = ["alloc", "traverse-core/std", "serde/std", "serde_json/std", "hex/std"]
+alloc = ["traverse-core/std"]
 no-std = ["traverse-core/no-std", "traverse-core/constrained"]
 minimal = ["traverse-core/minimal"]
 constrained = ["no-std", "traverse-core/constrained"]
 embedded = ["constrained"]
 wasm = ["alloc", "traverse-core/wasm", "serde/std", "serde_json/std"]
+
+# Modular components (following valence-coprocessor-app pattern)
+controller = ["no-std"]  # Controller is always no_std for maximum compatibility
+circuit = ["constrained"]  # Circuit is always minimal/constrained for ZK environments
+domain = []  # Domain validation (optional)
+
+# Chain-specific features (optional)
+ethereum = ["dep:rlp", "dep:tiny-keccak"]
+cosmos = []
+
+# ABI support levels
 lightweight-alloy = ["std", "dep:alloy-primitives", "dep:alloy-sol-types"]
 full-alloy = ["std", "dep:alloy"]
-alloy = ["lightweight-alloy"]  # Default to lightweight for better performance
-mpt-verification = ["dep:rlp", "dep:tiny-keccak"]  # Enable proper MPT verification
+alloy = ["lightweight-alloy"]
+
+# Proof verification
+mpt-verification = ["dep:rlp", "dep:tiny-keccak"]
+
+# Generator features (for creating custom crates)
+codegen = ["std", "dep:tera", "dep:toml"]
 
 # Valence coprocessor integration (no_std)
 [dependencies]
@@ -35,7 +53,7 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 anyhow = { version = "1.0", default-features = false, optional = true }
 
-# MPT verification dependencies
+# Chain-specific dependencies (optional)
 rlp = { version = "0.5", default-features = false, optional = true }
 tiny-keccak = { version = "2.0", default-features = false, features = ["keccak"], optional = true }
 
@@ -45,6 +63,10 @@ alloy-sol-types = { version = ">=0.9.0,<2.0", default-features = false, optional
 
 # Full alloy dependency (for backwards compatibility)
 alloy = { version = ">=0.9.0,<2.0", optional = true, features = ["sol-types"], default-features = false }
+
+# Code generation dependencies (for creating custom crates)
+tera = { version = "1.0", optional = true }
+toml = { version = "0.8", optional = true }
 
 [dev-dependencies]
 hex = { workspace = true, features = ["std"] } 

@@ -5,6 +5,7 @@
 
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
+use crate::commands::CodegenCommands;
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum ZeroSemanticsArg {
@@ -198,6 +199,10 @@ pub enum Commands {
     /// Enhanced Cosmos commands
     #[command(subcommand)]
     Cosmos(CosmosCommands),
+
+    /// Generate minimal valence coprocessor applications
+    #[command(subcommand)]
+    Codegen(CodegenCommands),
 
     /// Auto-generate everything from configuration file
     AutoGenerate {

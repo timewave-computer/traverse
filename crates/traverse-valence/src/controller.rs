@@ -44,6 +44,9 @@ use alloc::{format, vec::Vec};
 use valence_coprocessor::Witness;
 
 use crate::{BatchStorageVerificationRequest, StorageVerificationRequest, TraverseValenceError};
+
+// Conditional import of domain module (only when domain feature is enabled)
+#[cfg(feature = "domain")]
 use crate::domain::LightClient;
 
 // === Primary no_std APIs (structured data) ===
@@ -67,7 +70,14 @@ use crate::domain::LightClient;
 pub fn create_witness_from_request(
     request: &StorageVerificationRequest,
 ) -> Result<Witness, TraverseValenceError> {
-    create_witness_from_request_with_light_client::<crate::domain::MockLightClient>(request, None)
+    #[cfg(feature = "domain")]
+    {
+        create_witness_from_request_with_light_client::<crate::domain::MockLightClient>(request, None)
+    }
+    #[cfg(not(feature = "domain"))]
+    {
+        create_witness_from_request_without_light_client(request)
+    }
 }
 
 /// Create a semantic storage witness with light client validation (no_std compatible)
@@ -80,6 +90,7 @@ pub fn create_witness_from_request(
 /// - Light client state verification
 /// - Block height and hash validation
 /// - Ensures proofs are from verified blocks
+#[cfg(feature = "domain")]
 pub fn create_witness_from_request_with_light_client<L: LightClient>(
     request: &StorageVerificationRequest,
     light_client: Option<&L>,
@@ -121,6 +132,64 @@ pub fn create_witness_from_request_with_light_client<L: LightClient>(
         // No block information available
         (0u64, [0u8; 32])
     };
+
+    create_semantic_witness_from_raw_data_with_block(
+        &storage_key,
+        &layout_commitment,
+        &value,
+        zero_semantics,
+        semantic_source,
+        &proof_data,
+        block_height,
+        &block_hash,
+    )
+}
+
+/// Create a semantic storage witness without light client validation (no_std compatible)
+///
+/// This is the fallback API used when the domain feature is not enabled.
+/// Provides the same witness creation functionality but without light client validation.
+///
+/// ## Security Features
+/// - Validates storage key format and length
+/// - Verifies layout commitment integrity  
+/// - Ensures proof data consistency
+/// - Applies semantic validation rules
+/// - Uses provided block number if available
+#[cfg(not(feature = "domain"))]
+pub fn create_witness_from_request_without_light_client(
+    request: &StorageVerificationRequest,
+) -> Result<Witness, TraverseValenceError> {
+    let storage_query = &request.storage_query;
+    let storage_proof = &request.storage_proof;
+
+    // Parse storage key with validation
+    let storage_key = parse_hex_bytes(&storage_query.storage_key, 32)
+        .ok_or_else(|| TraverseValenceError::InvalidStorageKey("Invalid storage key format".into()))?;
+
+    // Parse layout commitment with validation  
+    let layout_commitment = parse_hex_bytes(&storage_query.layout_commitment, 32)
+        .ok_or_else(|| TraverseValenceError::LayoutMismatch("Invalid layout commitment format".into()))?;
+
+    // Parse storage value with validation
+    let value = parse_hex_bytes(&storage_proof.value, 32)
+        .ok_or_else(|| TraverseValenceError::InvalidWitness("Invalid storage value format".into()))?;
+
+    // Parse and concatenate proof nodes
+    let mut proof_data = Vec::new();
+    for node in &storage_proof.proof {
+        let node_bytes = parse_hex_bytes_variable(node)
+            .ok_or_else(|| TraverseValenceError::ProofVerificationFailed("Invalid proof node format".into()))?;
+        proof_data.extend_from_slice(&node_bytes);
+    }
+
+    // Use semantic defaults for structured data
+    let zero_semantics = derive_zero_semantics(&value);
+    let semantic_source = 0u8; // Declared via structured data
+
+    // Use provided block number if available, otherwise use zero
+    let block_height = request.block_number.unwrap_or(0);
+    let block_hash = [0u8; 32]; // No hash validation without light client
 
     create_semantic_witness_from_raw_data_with_block(
         &storage_key,
