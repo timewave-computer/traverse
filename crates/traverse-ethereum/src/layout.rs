@@ -117,16 +117,16 @@ impl EthereumLayoutCompiler {
             let slot = entry
                 .slot
                 .parse::<u64>()
-                .map_err(|e| TraverseError::InvalidLayout(format!("Invalid slot number: {}", e)))?;
+                .map_err(|e| TraverseError::InvalidInput(format!("Invalid slot number: {}", e)))?;
 
             let type_info = type_map.get(&entry.type_name).ok_or_else(|| {
-                TraverseError::InvalidLayout(format!("Type not found: {}", entry.type_name))
+                TraverseError::InvalidInput(format!("Type not found: {}", entry.type_name))
             })?;
 
             let size = type_info
                 .number_of_bytes
                 .parse::<u32>()
-                .map_err(|e| TraverseError::InvalidLayout(format!("Invalid type size: {}", e)))?;
+                .map_err(|e| TraverseError::InvalidInput(format!("Invalid type size: {}", e)))?;
 
             let end_offset = u32::from(entry.offset) + size;
 
@@ -147,7 +147,7 @@ impl EthereumLayoutCompiler {
                         && entry.label == existing_label.split('.').next().unwrap_or("");
 
                     if !is_struct_member_conflict && !is_parent_struct_conflict {
-                        return Err(TraverseError::InvalidLayout(format!(
+                        return Err(TraverseError::InvalidInput(format!(
                             "Storage conflict: {} (slot {}, bytes {}-{}) overlaps with {} (bytes {}-{})",
                             entry.label, slot, entry.offset, end_offset,
                             existing_label, existing_offset, existing_end
@@ -208,7 +208,7 @@ impl EthereumLayoutCompiler {
         for member in members {
             let member_slot = struct_slot
                 + member.slot.parse::<u64>().map_err(|e| {
-                    TraverseError::InvalidLayout(format!("Invalid member slot: {}", e))
+                    TraverseError::InvalidInput(format!("Invalid member slot: {}", e))
                 })?;
 
             let member_name = format!("{}.{}", struct_name, member.label);
@@ -219,7 +219,7 @@ impl EthereumLayoutCompiler {
                 offset: if member.offset <= 255 {
                     member.offset as u8
                 } else {
-                    return Err(TraverseError::InvalidLayout(format!(
+                    return Err(TraverseError::InvalidInput(format!(
                         "Offset too large for u8: {}",
                         member.offset
                     )));
@@ -538,7 +538,7 @@ impl LayoutCompiler for EthereumLayoutCompiler {
                     offset: if forge_entry.offset <= 255 {
                         forge_entry.offset as u8
                     } else {
-                        return Err(TraverseError::InvalidLayout(format!(
+                        return Err(TraverseError::InvalidInput(format!(
                             "Offset too large for u8: {}",
                             forge_entry.offset
                         )));
@@ -553,7 +553,7 @@ impl LayoutCompiler for EthereumLayoutCompiler {
                         "bytes" => {
                             // Dynamic array/string - add length and data access
                             let slot = forge_entry.slot.parse::<u64>().map_err(|e| {
-                                TraverseError::InvalidLayout(format!("Invalid slot: {}", e))
+                                TraverseError::InvalidInput(format!("Invalid slot: {}", e))
                             })?;
                             let dynamic_entries =
                                 Self::generate_dynamic_array_entries(&forge_entry.label, slot);
@@ -563,7 +563,7 @@ impl LayoutCompiler for EthereumLayoutCompiler {
                             // Check if this is a struct with members
                             if let Some(members) = &forge_type.members {
                                 let slot = forge_entry.slot.parse::<u64>().map_err(|e| {
-                                    TraverseError::InvalidLayout(format!("Invalid slot: {}", e))
+                                    TraverseError::InvalidInput(format!("Invalid slot: {}", e))
                                 })?;
                                 let struct_entries = Self::generate_struct_storage_entries(
                                     &forge_entry.label,

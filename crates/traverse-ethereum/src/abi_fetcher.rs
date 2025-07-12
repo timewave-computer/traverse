@@ -107,12 +107,12 @@ impl AbiFetcher {
             .get(&url)
             .send()
             .await
-            .map_err(|e| TraverseError::Network(format!("Failed to fetch ABI: {}", e)))?;
+            .map_err(|e| TraverseError::ExternalService(format!("Failed to fetch ABI: {}", e)))?;
 
         let response_text = response
             .text()
             .await
-            .map_err(|e| TraverseError::Network(format!("Failed to read response: {}", e)))?;
+            .map_err(|e| TraverseError::ExternalService(format!("Failed to read response: {}", e)))?;
 
         let etherscan_response: EtherscanAbiResponse = serde_json::from_str(&response_text)
             .map_err(|e| {
@@ -120,7 +120,7 @@ impl AbiFetcher {
             })?;
 
         if etherscan_response.status != "1" {
-            return Err(TraverseError::Network(format!(
+            return Err(TraverseError::ExternalService(format!(
                 "Etherscan API error: {}",
                 etherscan_response.message
             )));

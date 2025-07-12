@@ -147,10 +147,17 @@ pub trait KeyResolver {
 }
 
 pub struct LayoutInfo {
-    pub version: String,
-    pub types: HashMap<String, TypeInfo>,
+    pub contract_name: String,
     pub storage: Vec<StorageEntry>,
-    pub commitment: [u8; 32],
+    pub types: Vec<TypeInfo>,
+}
+
+pub struct StorageEntry {
+    pub label: String,
+    pub slot: String,
+    pub offset: u8,
+    pub type_name: String,
+    pub zero_semantics: ZeroSemantics,
 }
 
 pub enum Key {
@@ -438,25 +445,28 @@ The commitment hash includes all layout-critical information:
 ```rust
 impl LayoutInfo {
     pub fn commitment(&self) -> [u8; 32] {
-        #[cfg(feature = "serde_json")]
-        {
-            let normalized = serde_json::to_vec(self).expect("LayoutInfo should serialize");
-            let mut hasher = Sha256::new();
-            hasher.update(&normalized);
-            hasher.finalize().into()
+        // Deterministic hash of layout structure
+        let mut hasher = Sha256::new();
+        
+        // Hash contract name with length prefix
+        hasher.update((self.contract_name.len() as u32).to_le_bytes());
+        hasher.update(self.contract_name.as_bytes());
+        
+        // Hash number of storage entries
+        hasher.update((self.storage.len() as u32).to_le_bytes());
+        
+        // Hash each storage entry in order
+        for entry in &self.storage {
+            hasher.update((entry.label.len() as u32).to_le_bytes());
+            hasher.update(entry.label.as_bytes());
+            hasher.update((entry.slot.len() as u32).to_le_bytes());
+            hasher.update(entry.slot.as_bytes());
+            hasher.update((entry.offset as u32).to_le_bytes());
+            hasher.update((entry.type_name.len() as u32).to_le_bytes());
+            hasher.update(entry.type_name.as_bytes());
         }
-        #[cfg(not(feature = "serde_json"))]
-        {
-            let mut hasher = Sha256::new();
-            hasher.update(self.contract_name.as_bytes());
-            for entry in &self.storage {
-                hasher.update(entry.label.as_bytes());     // Variable names
-                hasher.update(entry.slot.as_bytes());      // Storage slots
-                hasher.update(&[entry.offset]);            // Byte offsets
-                hasher.update(entry.type_name.as_bytes()); // Type info
-            }
-            hasher.finalize().into()
-        }
+        
+        hasher.finalize().into()
     }
 }
 ```

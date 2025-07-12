@@ -110,16 +110,26 @@ impl EthereumKeyResolver {
         // Convert base key to u256 and add index
         let mut result = base_key;
 
-        // Add index to the base key (treating as big-endian u256)
+        // SECURITY: Add index to the base key with overflow protection
+        // This prevents integer overflow attacks with large array indices
+        // by ensuring the addition wraps around within the 256-bit space
         let mut carry = index;
         for i in (0..32).rev() {
-            let sum = result[i] as u64 + carry;
+            // Use wrapping_add to handle overflow correctly
+            let byte_val = result[i] as u64;
+            let sum = byte_val.wrapping_add(carry & 0xFF);
             result[i] = sum as u8;
-            carry = sum >> 8;
+            carry = (carry >> 8) + (sum >> 8);
             if carry == 0 {
                 break;
             }
         }
+        
+        // SECURITY: If carry is still non-zero after processing all 32 bytes,
+        // it means the index addition would overflow the 256-bit space.
+        // In Ethereum, this wraps around, which we handle by ignoring the
+        // remaining carry (it's effectively modulo 2^256).
+        // This matches Ethereum's behavior for array storage calculations.
 
         result
     }
@@ -215,7 +225,7 @@ impl EthereumKeyResolver {
         if query.contains('.') {
             let parts: Vec<&str> = query.split('.').collect();
             if parts.len() != 2 {
-                return Err(TraverseError::InvalidQuery(format!(
+                return Err(TraverseError::InvalidInput(format!(
                     "Invalid struct field access: {}. Expected format: struct.field",
                     query
                 )));
@@ -226,7 +236,7 @@ impl EthereumKeyResolver {
 
             // Check if the struct part has array/mapping access
             if struct_name.contains('[') {
-                return Err(TraverseError::InvalidQuery(
+                return Err(TraverseError::InvalidInput(
                     "Complex struct access with arrays/mappings not yet implemented".to_string(),
                 ));
             }
@@ -259,7 +269,7 @@ impl EthereumKeyResolver {
             let close_brackets = query.matches(']').count();
 
             if open_brackets != close_brackets {
-                return Err(TraverseError::InvalidQuery(format!(
+                return Err(TraverseError::InvalidInput(format!(
                     "Mismatched brackets in query: {}",
                     query
                 )));
@@ -270,7 +280,7 @@ impl EthereumKeyResolver {
                 .split('[')
                 .next()
                 .ok_or_else(|| {
-                    TraverseError::InvalidQuery(format!("Invalid query format: {}", query))
+                    TraverseError::InvalidInput(format!("Invalid query format: {}", query))
                 })?
                 .trim()
                 .to_string();
@@ -282,7 +292,7 @@ impl EthereumKeyResolver {
 
             while let Some(start) = current.find('[') {
                 let end = current.find(']').ok_or_else(|| {
-                    TraverseError::InvalidQuery(format!("Unclosed bracket in query: {}", query))
+                    TraverseError::InvalidInput(format!("Unclosed bracket in query: {}", query))
                 })?;
 
                 let key_str = &current[start + 1..end];
@@ -304,7 +314,7 @@ impl EthereumKeyResolver {
             }
 
             if keys.is_empty() {
-                return Err(TraverseError::InvalidQuery(format!(
+                return Err(TraverseError::InvalidInput(format!(
                     "No keys found in mapping query: {}",
                     query
                 )));
@@ -364,7 +374,7 @@ impl EthereumKeyResolver {
         if key_str.starts_with("0x") || key_str.len() == 40 || key_str.len() == 64 {
             let hex_str = key_str.strip_prefix("0x").unwrap_or(key_str);
             hex::decode(hex_str)
-                .map_err(|e| TraverseError::InvalidQuery(format!("Invalid hex key: {}", e)))
+                .map_err(|e| TraverseError::InvalidInput(format!("Invalid hex key: {}", e)))
         } else {
             // Try parsing as decimal number
             if let Ok(num) = key_str.parse::<u64>() {
@@ -374,7 +384,7 @@ impl EthereumKeyResolver {
             } else {
                 // Try as hex without 0x prefix
                 hex::decode(key_str).map_err(|e| {
-                    TraverseError::InvalidQuery(format!(
+                    TraverseError::InvalidInput(format!(
                         "Could not parse key '{}' as hex or number: {}",
                         key_str, e
                     ))
@@ -419,13 +429,13 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|s| s.label == field_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!("Field not found: {}", field_name))
+                        TraverseError::KeyResolution(format!("Field not found: {}", field_name))
                     })?;
 
                 let slot = entry
                     .slot
                     .parse::<u64>()
-                    .map_err(|e| TraverseError::PathResolution(format!("Invalid slot: {}", e)))?;
+                    .map_err(|e| TraverseError::KeyResolution(format!("Invalid slot: {}", e)))?;
 
                 let mut key_bytes = [0u8; 32];
                 key_bytes[24..].copy_from_slice(&slot.to_be_bytes());
@@ -436,7 +446,7 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|t| t.label == entry.type_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!(
+                        TraverseError::KeyResolution(format!(
                             "Type not found: {}",
                             entry.type_name
                         ))
@@ -464,13 +474,13 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|s| s.label == field_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!("Mapping not found: {}", field_name))
+                        TraverseError::KeyResolution(format!("Mapping not found: {}", field_name))
                     })?;
 
                 let slot = entry
                     .slot
                     .parse::<u64>()
-                    .map_err(|e| TraverseError::PathResolution(format!("Invalid slot: {}", e)))?;
+                    .map_err(|e| TraverseError::KeyResolution(format!("Invalid slot: {}", e)))?;
 
                 let storage_key = Self::derive_mapping_key(&key, slot);
 
@@ -480,7 +490,7 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|t| t.label == entry.type_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!(
+                        TraverseError::KeyResolution(format!(
                             "Type not found: {}",
                             entry.type_name
                         ))
@@ -512,13 +522,13 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|s| s.label == field_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!("Mapping not found: {}", field_name))
+                        TraverseError::KeyResolution(format!("Mapping not found: {}", field_name))
                     })?;
 
                 let slot = entry
                     .slot
                     .parse::<u64>()
-                    .map_err(|e| TraverseError::PathResolution(format!("Invalid slot: {}", e)))?;
+                    .map_err(|e| TraverseError::KeyResolution(format!("Invalid slot: {}", e)))?;
 
                 // For nested mappings like allowances[owner][spender]:
                 // 1. Derive key1 = keccak256(owner ++ slot)
@@ -536,7 +546,7 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|t| t.label == entry.type_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!(
+                        TraverseError::KeyResolution(format!(
                             "Type not found: {}",
                             entry.type_name
                         ))
@@ -568,13 +578,13 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|s| s.label == field_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!("Array not found: {}", field_name))
+                        TraverseError::KeyResolution(format!("Array not found: {}", field_name))
                     })?;
 
                 let slot = entry
                     .slot
                     .parse::<u64>()
-                    .map_err(|e| TraverseError::PathResolution(format!("Invalid slot: {}", e)))?;
+                    .map_err(|e| TraverseError::KeyResolution(format!("Invalid slot: {}", e)))?;
 
                 let array_key = Self::derive_array_key(slot, index);
 
@@ -584,7 +594,7 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|t| t.label == entry.type_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!(
+                        TraverseError::KeyResolution(format!(
                             "Type not found: {}",
                             entry.type_name
                         ))
@@ -611,13 +621,13 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|s| s.label == struct_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!("Struct not found: {}", struct_name))
+                        TraverseError::KeyResolution(format!("Struct not found: {}", struct_name))
                     })?;
 
                 let slot = entry
                     .slot
                     .parse::<u64>()
-                    .map_err(|e| TraverseError::PathResolution(format!("Invalid slot: {}", e)))?;
+                    .map_err(|e| TraverseError::KeyResolution(format!("Invalid slot: {}", e)))?;
 
                 let mut key_bytes = [0u8; 32];
                 key_bytes[24..].copy_from_slice(&slot.to_be_bytes());
@@ -628,7 +638,7 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|t| t.label == field_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!("Field not found: {}", field_name))
+                        TraverseError::KeyResolution(format!("Field not found: {}", field_name))
                     })?;
 
                 let field_size = type_info.number_of_bytes.parse::<u8>().ok();
@@ -649,7 +659,7 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|s| s.label == field_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!(
+                        TraverseError::KeyResolution(format!(
                             "Dynamic field not found: {}",
                             field_name
                         ))
@@ -658,7 +668,7 @@ impl KeyResolver for EthereumKeyResolver {
                 let slot = entry
                     .slot
                     .parse::<u64>()
-                    .map_err(|e| TraverseError::PathResolution(format!("Invalid slot: {}", e)))?;
+                    .map_err(|e| TraverseError::KeyResolution(format!("Invalid slot: {}", e)))?;
 
                 let mut key_bytes = [0u8; 32];
                 key_bytes[24..].copy_from_slice(&slot.to_be_bytes());
@@ -679,7 +689,7 @@ impl KeyResolver for EthereumKeyResolver {
                     .iter()
                     .find(|s| s.label == field_name)
                     .ok_or_else(|| {
-                        TraverseError::PathResolution(format!(
+                        TraverseError::KeyResolution(format!(
                             "Dynamic field not found: {}",
                             field_name
                         ))
@@ -688,7 +698,7 @@ impl KeyResolver for EthereumKeyResolver {
                 let slot = entry
                     .slot
                     .parse::<u64>()
-                    .map_err(|e| TraverseError::PathResolution(format!("Invalid slot: {}", e)))?;
+                    .map_err(|e| TraverseError::KeyResolution(format!("Invalid slot: {}", e)))?;
 
                 // Data starts at keccak256(slot)
                 let mut slot_bytes = [0u8; 32];
@@ -934,5 +944,47 @@ mod tests {
             }
             _ => panic!("Expected dynamic data query"),
         }
+    }
+
+    #[test]
+    fn test_array_key_overflow_protection() {
+        // Test 1: Normal array index
+        let key1 = EthereumKeyResolver::derive_array_key(5, 100);
+        assert_eq!(key1.len(), 32);
+        
+        // Test 2: Large array index that would cause overflow in naive implementation
+        let key2 = EthereumKeyResolver::derive_array_key(5, u64::MAX);
+        assert_eq!(key2.len(), 32);
+        
+        // Test 3: Verify that overflow wraps correctly
+        // Get base key for slot 5
+        let mut slot_bytes = [0u8; 32];
+        slot_bytes[24..].copy_from_slice(&5u64.to_be_bytes());
+        let base_key = EthereumKeyResolver::keccak256(&slot_bytes);
+        
+        // Add u64::MAX to base key
+        let key_with_max = EthereumKeyResolver::derive_array_key(5, u64::MAX);
+        
+        // The result should be well-defined and not panic
+        // Verify it's different from the base key
+        assert_ne!(base_key, key_with_max);
+        
+        // Test 4: Sequential indices produce different keys
+        let key_0 = EthereumKeyResolver::derive_array_key(5, 0);
+        let key_1 = EthereumKeyResolver::derive_array_key(5, 1);
+        let key_2 = EthereumKeyResolver::derive_array_key(5, 2);
+        
+        assert_ne!(key_0, key_1);
+        assert_ne!(key_1, key_2);
+        assert_ne!(key_0, key_2);
+        
+        // Test 5: Verify addition is correct for small indices
+        // base_key + 0 should equal base_key
+        assert_eq!(base_key, key_0);
+        
+        // base_key + 1 should be base_key with last byte incremented
+        let mut expected_key_1 = base_key;
+        expected_key_1[31] = expected_key_1[31].wrapping_add(1);
+        assert_eq!(expected_key_1, key_1);
     }
 }

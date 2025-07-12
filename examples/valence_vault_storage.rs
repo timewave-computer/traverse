@@ -478,12 +478,13 @@ fn demonstrate_semantic_vault_workflow() -> Result<(), Box<dyn std::error::Error
 
     // Demonstrate semantic storage proof creation
     println!("5. Creating semantic storage witnesses...");
+    let layout = create_valence_vault_semantic_layout();
     let semantic_data = json!({
         "storage_query": {
             "query": "total_assets",
             "storage_key": "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "layout_commitment": "0x8de5c0642675d25caa3a9f51ebb9b07748561638d0a364bb32fd56870ebc283b",
-            "zero_semantics": 0,  // 0 = NeverWritten
+            "layout_commitment": hex::encode(layout.commitment()),
+            "zero_semantics": 1,  // 1 = ExplicitlyZero (matching layout)
             "semantic_source": 0  // 0 = Declared
         },
         "storage_proof": {
@@ -504,9 +505,39 @@ fn demonstrate_semantic_vault_workflow() -> Result<(), Box<dyn std::error::Error
 
     // Verify semantic storage proofs in circuit (simplified demonstration)
     println!("6. Verifying semantic storage proofs in circuit...");
-    let verification_results = circuit::verify_semantic_storage_proofs_and_extract(witnesses);
-
-    let all_valid = verification_results.iter().all(|&result| result == 0x01);
+    
+    // Create circuit processor with layout commitment and field types
+    let layout = create_valence_vault_semantic_layout();
+    let layout_commitment = layout.commitment();
+    let field_types = vec![circuit::FieldType::Uint256]; // total_assets is uint256
+    let field_semantics = vec![circuit::ZeroSemantics::ExplicitlyZero]; // Initialized to zero
+    let processor = circuit::CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+    
+    // Process each witness
+    let mut all_valid = true;
+    for witness in &witnesses {
+        if let valence_coprocessor::Witness::Data(data) = witness {
+            match circuit::CircuitProcessor::parse_witness_from_bytes(data) {
+                Ok(parsed_witness) => {
+                    match processor.process_witness(&parsed_witness) {
+                        circuit::CircuitResult::Valid { field_index, extracted_value } => {
+                            println!("   [OK] Witness validated for field index {}", field_index);
+                            println!("        Extracted value: {:?}", extracted_value);
+                        }
+                        circuit::CircuitResult::Invalid => {
+                            println!("   [FAIL] Witness validation failed");
+                            all_valid = false;
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("   [FAIL] Failed to parse witness: {}", e);
+                    all_valid = false;
+                }
+            }
+        }
+    }
+    
     if all_valid {
         println!("   All semantic storage proofs verified successfully");
     } else {

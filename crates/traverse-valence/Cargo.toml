@@ -12,23 +12,39 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = ["alloc"]
-alloc = []
-std = ["alloc"]
-alloy = ["dep:alloy"]
+default = ["alloc", "mpt-verification"]
+alloc = ["traverse-core/std"]
+std = ["alloc", "traverse-core/std", "serde/std", "serde_json/std", "hex/std"]
+no-std = ["traverse-core/no-std", "traverse-core/constrained"]
+minimal = ["traverse-core/minimal"]
+constrained = ["no-std", "traverse-core/constrained"]
+embedded = ["constrained"]
+wasm = ["alloc", "traverse-core/wasm", "serde/std", "serde_json/std"]
+lightweight-alloy = ["std", "dep:alloy-primitives", "dep:alloy-sol-types"]
+full-alloy = ["std", "dep:alloy"]
+alloy = ["lightweight-alloy"]  # Default to lightweight for better performance
+mpt-verification = ["dep:rlp", "dep:tiny-keccak"]  # Enable proper MPT verification
 
 # Valence coprocessor integration (no_std)
 [dependencies]
 traverse-core = { path = "../traverse-core", default-features = false }
 valence-coprocessor = { git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false }
 valence-coprocessor-wasm = { git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false, optional = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-hex = { workspace = true }
-anyhow = { workspace = true }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+anyhow = { version = "1.0", default-features = false, optional = true }
 
-# Optional alloy dependencies for ABI encoding
-alloy = { workspace = true, optional = true, features = ["sol-types"] }
+# MPT verification dependencies
+rlp = { version = "0.5", default-features = false, optional = true }
+tiny-keccak = { version = "2.0", default-features = false, features = ["keccak"], optional = true }
+
+# Lightweight alloy dependencies (minimal imports)
+alloy-primitives = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
+alloy-sol-types = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
+
+# Full alloy dependency (for backwards compatibility)
+alloy = { version = ">=0.9.0,<2.0", optional = true, features = ["sol-types"], default-features = false }
 
 [dev-dependencies]
 hex = { workspace = true, features = ["std"] } 

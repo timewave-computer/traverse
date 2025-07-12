@@ -22,7 +22,7 @@ fn get_live_usdt_proof_response() -> serde_json::Value {
             "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
             "storageProof": [{
                 "key": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "value": "0xc6cde7c39eb2f0f0095f41570af89efc2c1ea828", // USDT owner address
+                "value": "0x000000000000000000000000c6cde7c39eb2f0f0095f41570af89efc2c1ea828", // USDT owner address
                 "proof": [
                     "0xf90211a07c3e80da05fb73f6cf77b7817b2b793831e0285950ea3318a63883e4c7cf6e31a0e730c4e0b164130e31c68d36b91cfbdd0f586c58113f09e09b27389d28e6b5a9a0f9f2e2c36090febb43fce28072a4ba05a01dbe8c16d7c143018004a02a11f0c2a0d4c2d9ed6823e749f4ae3dc41d8ca55897391f47a62bc9c38e0ece72a7effc3da0bb60065f74d3b9625679fc04376c128569b8644703e0865054cf5196ad8e5d6ca04400cc05aeeb0afcb3ac2632dde8bfd38a2bc689cc0b7bf6e01d1187be452d7da0c4457aac5d22764a301cf7ca5fddb27aaa5b6d8496d95ec80678b988477a31a3a0967fb2e152f212904df8ff2519f1a7b6479f073ddf50ef12cb32beba4babf2f2a0bd310666fe755d4fb74a3ec1fdc6572cd816facfde3e993071704da193537aafa050c333457df57c0a6c2ab68bdf1bfc1107735c7ad6fdfb06d4f292ddba1ca26aa017249ba734841584ba393a9ff055a5419f0d103bb5a43918afa1e46cfe341f94a0cb241a9051d4326dae376c939b24ea71cf57b5b65d3a211c27325f63bcbe1072a05a270456728166d5ac61a5d995e67fc1b070ea6912ca8cc79e86ca873d2ef3bca061957b42d5fc750b2c58cc1a7180b061133db5b5614cf1cc56491045fcb68daca0455af84adb1947601f88cd351f0cdf62a808d5272a9a1b8ec82b7780843736efa09c6c4fc465ec7f952d94bf24d7c2ba3919ae26dec746f242fe2d02bd90b6143180",
                     "0xf90211a0c14f11e43674494b6e5c25b1f9feef755e949f02a8d5318c32fd319e80b3f723a0e5a6632f411122b264560f8391321da64792890e2c3b7724baf176abd9bf05f3a06f3299ecfe816f317f742334b727a00739cac4d642a23a2e5e51eb8b5dc88705a01c66fd0ddcf9d59c10fbb905104b142291c2e23c42e759c973c24eee0f2a81eaa0ce56eba87c7a44958521fc832698cc0b6413c84772eaf1426e611a3e181bf707a0ca092e91fe63c8f5cafdd4ecfe0aecb85db1c9f678c3b816425e85b1a9333da014bbf0433021cdbab49b7f77e8ffae9295453c70337bf7793a2407190e2ac558a0b633e82ae70eb1804d56d80b0504402c67c5bbffc1b23cc7c508e543b8218029a035006bc3b795e778e6c0d44c4881ff3af7e06e7fddb35e3975c97629fa180592a033e2c3c82041e3e4261b3403cc94382f8c5502fc4f7516aff31a5da36dd415c9a05c22d544595472440e8f4fc9b8251b27915eb64a701ec722a864c034c5b27b2ea0e5cdf6d4303f884812d750877730ef8d8e510a1acdd8936a7ceb5ac87b530c24a00152169a2803000328ed861f95ff1231de38e368f2d374bfb1be195cd4862a22a0099dcaa283fed285a3c06ab9db95d43f35bd1a23f90931eff6de64f7a458f313a03edd66d6d8e5198c9c131ccc3729475fb9559cb88691191ad4a22a5f6e10d72aa0ea1429f06a8b0620a5511c2c1bc3fcf2501acfe37253e15c3c98cbf23a8d932d80"
@@ -32,20 +32,20 @@ fn get_live_usdt_proof_response() -> serde_json::Value {
     })
 }
 
-/// Get zero-value USDT balance proof for demonstration of semantic conflicts
-/// This shows a user balance that is zero - but what does zero mean?
-fn get_zero_balance_proof() -> serde_json::Value {
+/// Get zero-value USDT totalSupply proof for demonstration
+/// This shows totalSupply at zero - initialized but no tokens minted yet
+fn get_zero_totalsupply_proof() -> serde_json::Value {
     json!({
         "jsonrpc": "2.0",
-        "id": 2,
+        "id": 2,  
         "result": {
             "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
             "storageProof": [{
-                "key": "0x123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0", // Derived balance key
-                "value": "0x0000000000000000000000000000000000000000000000000000000000000000", // Zero balance
+                "key": "0x0000000000000000000000000000000000000000000000000000000000000002", // totalSupply slot
+                "value": "0x0000000000000000000000000000000000000000000000000000000000000000", // Zero totalSupply
                 "proof": [
-                    "0xf90211a01234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdefa012345678",
-                    "0xf90211a09876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba098765432"
+                    "0x32ed6150c5467c630f4868fcb5591d4a7f73bf4899f785a41d845dc55d2805e97324929da6e5673748c9b1db859df03c7f8dc6ed67a0d6f8f2cbb8ed41f85cdd8d166a0e486b4fcf7aaae59f04812ee5a072c16164e5f4bf862b5ab8f742036e8e203a9529e2a4fa02d45ccdf84ffa2da6fe5d7f0385ec76cbe7c71d39f7e8750547108b570e12cfa70d0c00f728b8e62c75454b435649ec72d4180785540d90629618c52a0f2712240002f7bfd5379ce9f5c1a0aadc517321f7793d7331df3173b6d4e1f3e1ab7c493fe0e27bef2480ec2e621a3ae43f3f43f91f2363f3c40ba86dcbcd151fcb8292a55469b71f74214222303f281d0ec93d0c4c15abd5d521cd6f0bc424fb981de4",
+                    "0xca1382eb23af6b38abe28f7899169e7646f43a6f406bb6c644fb1fa56783b910f0ee8685a4304e0015ebe20653f3d471b1853ae87b7e6265d09613ec8bb337ef7feaace759a2b7fe51644fcff70970f33006af2793d47531e6f6b13680d726eadca0bbef05e4df8e233296268bd38bf59fab58b4e741f8b28db501f87f65fc079c9a8b83440913f1af78980b4b570b25407ff544e9c6c5531e23fd901afb8d14ab26c1fc96dc7de64da8646dac2a3131656557c147f37ee9b81e4aa577c4dbf60c878fb85b4e02ca532990d665344a9c960e4bc278128acc691560f7c3312bf4a5ded6cf837b55d23d6c288b9cdb6ae89d73e2ec75445adb268965aaadb7b4bab6d890e956b9984be3"
                 ]
             }]
         }
@@ -211,18 +211,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("====================================");
     println!();
 
-    // Step 1: Parse live eth_getProof response for USDT owner
-    println!("1. Processing live USDT eth_getProof response...");
-    let proof_response = get_live_usdt_proof_response();
+    // Step 1: Parse live eth_getProof response for USDT totalSupply (zero value for semantic demo)
+    println!("1. Processing USDT eth_getProof response for totalSupply...");
+    let proof_response = get_zero_totalsupply_proof();
     let storage_proof_data = &proof_response["result"]["storageProof"][0];
 
     println!("   [OK] Contract: 0xdAC17F958D2ee523a2206206994597C13D831ec7 (USDT)");
     println!(
-        "   [OK] Storage Slot: {}",
+        "   [OK] Storage Slot: {} (totalSupply)",
         storage_proof_data["key"].as_str().unwrap()
     );
     println!(
-        "   [OK] Storage Value: {} (USDT owner address)",
+        "   [OK] Storage Value: {} (zero totalSupply)",
         storage_proof_data["value"].as_str().unwrap()
     );
     println!(
@@ -246,10 +246,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!();
 
-    // Step 3: Create semantic storage proof for USDT owner
-    println!("3. Creating semantic storage proof...");
-    let owner_semantics = StorageSemantics::new(ZeroSemantics::ExplicitlyZero); // Owner was set in constructor
-    let semantic_proof = create_semantic_storage_proof(&proof_response, owner_semantics)?;
+    // Step 3: Create semantic storage proof for USDT totalSupply
+    println!("3. Creating semantic storage proof for totalSupply...");
+    let totalsupply_semantics = StorageSemantics::new(ZeroSemantics::ExplicitlyZero); // totalSupply initialized to zero
+    let semantic_proof = create_semantic_storage_proof(&proof_response, totalsupply_semantics)?;
 
     println!("   [OK] Semantic proof created:");
     println!(
@@ -272,15 +272,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Step 5: Create semantic witnesses
     println!("5. Creating semantic storage witnesses...");
     let semantic_data = json!({
-        "semantic_storage_proof": {
+        "storage_query": {
+            "query": "totalSupply",
+            "storage_key": hex::encode(semantic_proof.key),
+            "layout_commitment": hex::encode(layout_commitment),
+            "zero_semantics": 1,  // 1 = ExplicitlyZero
+            "semantic_source": 0  // 0 = Declared
+        },
+        "storage_proof": {
             "key": hex::encode(semantic_proof.key),
             "value": hex::encode(semantic_proof.value),
-            "proof": semantic_proof.proof.iter().map(hex::encode).collect::<Vec<_>>(),
-            "semantics": {
-                "declared_semantics": "ExplicitlyZero",
-                "validated_semantics": null,
-                "zero_meaning": "ExplicitlyZero"
-            }
+            "proof": semantic_proof.proof.iter().map(hex::encode).collect::<Vec<_>>()
         }
     });
 
@@ -292,40 +294,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 6: Verify semantic storage proof in circuit
     println!("6. Verifying semantic storage proof in circuit...");
-    let verification_results = circuit::verify_semantic_storage_proofs_and_extract(witnesses);
-
-    let all_valid = verification_results.iter().all(|&result| result == 0x01);
+    
+    // Create circuit processor with layout commitment and field types
+    let field_types = vec![circuit::FieldType::Uint256]; // totalSupply is uint256
+    let field_semantics = vec![circuit::ZeroSemantics::ExplicitlyZero]; // Initialized to zero
+    let processor = circuit::CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+    
+    // Process each witness
+    let mut all_valid = true;
+    for witness in &witnesses {
+        if let valence_coprocessor::Witness::Data(data) = witness {
+            match circuit::CircuitProcessor::parse_witness_from_bytes(data) {
+                Ok(parsed_witness) => {
+                    match processor.process_witness(&parsed_witness) {
+                        circuit::CircuitResult::Valid { field_index, extracted_value } => {
+                            println!("   [OK] Witness validated for field index {}", field_index);
+                            println!("        Extracted value: {:?}", extracted_value);
+                        }
+                        circuit::CircuitResult::Invalid => {
+                            println!("   [FAIL] Witness validation failed");
+                            all_valid = false;
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("   [FAIL] Failed to parse witness: {}", e);
+                    all_valid = false;
+                }
+            }
+        }
+    }
+    
     if all_valid {
         println!("   All semantic storage proofs verified successfully");
-        println!(
-            "   [OK] Verification results: {} bytes",
-            verification_results.len()
-        );
     } else {
         println!("   Some semantic storage proofs failed verification");
     }
     println!();
 
     // Step 7: Analyze storage value with semantic context
-    println!("7. Analyzing USDT owner data with semantic context...");
-    let owner_address_bytes = &semantic_proof.value[12..32]; // Last 20 bytes for address
-    let owner_address = format!("0x{}", hex::encode(owner_address_bytes));
+    println!("7. Analyzing USDT totalSupply data with semantic context...");
+    let is_zero = semantic_proof.value.iter().all(|&b| b == 0);
 
     println!("   Semantic Analysis:");
-    println!("      - Storage type: USDT contract owner");
+    println!("      - Storage type: USDT totalSupply");
     println!(
         "      - Semantic meaning: {:?}",
         semantic_proof.semantics.zero_meaning
     );
-    println!("      - Current owner: {}", owner_address);
+    println!("      - Current value: {} (zero)", if is_zero { "0x0...0" } else { "non-zero" });
     println!(
-        "      - Interpretation: This address was explicitly set as owner (not zero/uninitialized)"
+        "      - Interpretation: Total supply was initialized to zero in constructor"
     );
     println!();
 
     // Step 8: Demonstrate zero-value semantic handling
     println!("8. Demonstrating zero-value semantic scenarios...");
-    let zero_proof_response = get_zero_balance_proof();
+    let zero_proof_response = get_zero_totalsupply_proof();
 
     // Scenario A: Never written balance (semantic: never_written)
     let never_written_semantics = StorageSemantics::new(ZeroSemantics::NeverWritten);

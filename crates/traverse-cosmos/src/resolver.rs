@@ -78,13 +78,13 @@ impl CosmosKeyResolver {
     fn parse_map_query(query: &str) -> Result<CosmWasmQuery, TraverseError> {
         let open_bracket = query
             .find('[')
-            .ok_or_else(|| TraverseError::InvalidQuery("Missing opening bracket".into()))?;
+            .ok_or_else(|| TraverseError::InvalidInput("Missing opening bracket".into()))?;
         let close_bracket = query
             .rfind(']')
-            .ok_or_else(|| TraverseError::InvalidQuery("Missing closing bracket".into()))?;
+            .ok_or_else(|| TraverseError::InvalidInput("Missing closing bracket".into()))?;
 
         if open_bracket >= close_bracket {
-            return Err(TraverseError::InvalidQuery("Invalid bracket order".into()));
+            return Err(TraverseError::InvalidInput("Invalid bracket order".into()));
         }
 
         let map_name = &query[..open_bracket];
@@ -115,7 +115,7 @@ impl CosmosKeyResolver {
             .iter()
             .find(|entry| entry.label == name || entry.label.starts_with(&format!("{}[", name)))
             .ok_or_else(|| {
-                TraverseError::InvalidQuery(format!("Storage entry not found: {}", name))
+                TraverseError::InvalidInput(format!("Storage entry not found: {}", name))
             })
     }
 
@@ -128,7 +128,7 @@ impl CosmosKeyResolver {
             .types
             .iter()
             .find(|t| t.label == type_name)
-            .ok_or_else(|| TraverseError::InvalidQuery(format!("Type not found: {}", type_name)))
+            .ok_or_else(|| TraverseError::InvalidInput(format!("Type not found: {}", type_name)))
     }
 }
 
@@ -189,7 +189,7 @@ impl KeyResolver for CosmosKeyResolver {
                     layout_commitment: layout.commitment(),
                     field_size: Some(
                         type_info.number_of_bytes.parse::<u8>().map_err(|_| {
-                            TraverseError::InvalidQuery("Invalid field size".into())
+                            TraverseError::InvalidInput("Invalid field size".into())
                         })?,
                     ),
                     offset: None, // CosmWasm doesn't use offsets
@@ -214,7 +214,7 @@ impl KeyResolver for CosmosKeyResolver {
                     layout_commitment: layout.commitment(),
                     field_size: Some(
                         type_info.number_of_bytes.parse::<u8>().map_err(|_| {
-                            TraverseError::InvalidQuery("Invalid field size".into())
+                            TraverseError::InvalidInput("Invalid field size".into())
                         })?,
                     ),
                     offset: None,
@@ -304,7 +304,7 @@ impl KeyResolver for CosmosKeyResolver {
                     type_info
                         .number_of_bytes
                         .parse::<u8>()
-                        .map_err(|_| TraverseError::InvalidQuery("Invalid field size".into()))?,
+                        .map_err(|_| TraverseError::InvalidInput("Invalid field size".into()))?,
                 ),
                 offset: None,
                 zero_semantics: entry.zero_semantics,

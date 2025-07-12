@@ -15,19 +15,13 @@
 //! ## Message Flow Integration
 //!
 //! ```rust,ignore
-//! use traverse_valence::{controller, circuit};
-//! use serde_json::Value;
-//! use valence_coprocessor::Witness;
+//! use traverse_valence::circuit::{CircuitProcessor, CircuitWitness, FieldType};
 //!
-//! // Controller: Standard Valence entry point
-//! pub fn get_witnesses(args: Value) -> anyhow::Result<Vec<Witness>> {
-//!     controller::create_semantic_storage_witnesses(&args)
-//! }
+//! // Create minimal processor for ZK circuits
+//! let processor = CircuitProcessor::new(layout_commitment, field_types);
 //!
-//! // Circuit: Standard Valence entry point  
-//! pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
-//!     circuit::verify_storage_proofs_and_extract(&witnesses)
-//! }
+//! // Process witnesses with maximum efficiency
+//! let results = processor.process_batch(&circuit_witnesses);
 //! ```
 //!
 //! ## Storage Proof Integration
@@ -44,6 +38,26 @@
 //! The circuit helpers can generate ABI-encoded structures compatible with
 //! the Valence Authorization contract ecosystem, following the same patterns
 //! as other Valence coprocessor applications.
+//!
+//! ## Lightweight Alloy Integration
+//!
+//! This crate supports multiple levels of alloy integration:
+//! - `lightweight-alloy`: Minimal alloy imports for reduced compilation time
+//! - `full-alloy`: Complete alloy ecosystem for full functionality
+//! - Fallback: Basic encoding without alloy dependencies
+//!
+//! ## Minimal Circuit Support
+//!
+//! For ZK circuits and constrained environments:
+//! ```rust,ignore
+//! use traverse_valence::circuit::{CircuitProcessor, CircuitWitness, FieldType};
+//! 
+//! // Create minimal processor for maximum efficiency
+//! let processor = CircuitProcessor::new(layout_commitment, field_types);
+//! 
+//! // Process witnesses with no error handling overhead
+//! let result = processor.process_witness(&witness); // Returns Valid/Invalid
+//! ```
 
 #![no_std]
 extern crate alloc;
@@ -60,11 +74,26 @@ pub mod controller;
 pub mod domain;
 pub mod messages;
 
+// Lightweight ABI support
+#[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+pub mod abi;
+
+// Constrained environment support
+
+
 // Re-export the module contents at the crate root for convenience
-pub use circuit::*;
+pub use circuit::{
+    CircuitProcessor, CircuitResult, CircuitWitness,
+    ExtractedValue, FieldType, ZeroSemantics
+};
 pub use controller::*;
 pub use domain::*;
 pub use messages::*;
+
+// Re-export lightweight ABI when available
+#[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+pub use abi::{AlloyAbiTypes, AbiValue, AbiType};
+
 
 /// Error type for valence coprocessor integration
 #[derive(Debug)]
@@ -83,6 +112,7 @@ pub enum TraverseValenceError {
     AbiError(String),
     /// Storage proof validation error
     StorageProofError(String),
+
 }
 
 impl core::fmt::Display for TraverseValenceError {
@@ -107,6 +137,8 @@ impl core::fmt::Display for TraverseValenceError {
 
 #[cfg(feature = "std")]
 impl std::error::Error for TraverseValenceError {}
+
+
 
 /// Coprocessor-compatible storage query format (matches traverse-cli output)
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -156,4 +188,20 @@ pub struct BatchStorageVerificationRequest {
     pub contract_address: Option<String>,
     /// Common block number (if all proofs are from same block)
     pub block_number: Option<u64>,
+}
+
+#[cfg(any(feature = "no-std", feature = "constrained", feature = "embedded"))]
+pub mod constrained_prelude {
+    //! Prelude for constrained environments
+    //! Common imports for constrained environments
+    
+    pub use crate::{
+        CircuitProcessor, CircuitWitness, CircuitResult,
+        ExtractedValue, FieldType,
+    };
+    
+    pub use traverse_core::{
+        ConstrainedLayoutInfo, ConstrainedStorageEntry, ConstrainedFieldType,
+        ConstrainedKeyResolver, MemoryUsage, ZeroSemantics,
+    };
 }
