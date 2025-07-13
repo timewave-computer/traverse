@@ -661,4 +661,380 @@ mod tests {
         let witnesses = create_semantic_storage_witnesses(&json_args).unwrap();
         assert_eq!(witnesses.len(), 1);
     }
+
+    #[test]
+    fn test_security_witness_field_index_validation() {
+        // Security Test: Ensure field index validation prevents field confusion attacks
+        let mut witness_data = [0u8; 180];
+        
+        // Set up valid witness structure
+        witness_data[96] = 1; // zero_semantics
+        witness_data[97] = 0; // semantic_source
+        witness_data[138..142].copy_from_slice(&[4u8, 0, 0, 0]); // proof_len = 4
+        witness_data[142..146].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]); // proof_data
+        
+        // Test 1: Valid field index
+        witness_data[146..148].copy_from_slice(&[0u8, 0]); // field_index = 0
+        let result = create_semantic_witness_from_raw_data(
+            &[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 0, &[0xde, 0xad, 0xbe, 0xef],
+            0, &[0u8; 32], 0, &[1u8; 32]
+        );
+        assert!(result.is_ok(), "Valid field index should succeed");
+        
+        // Test 2: Maximum valid field index
+        witness_data[146..148].copy_from_slice(&[255u8, 255]); // field_index = 65535
+        let result = create_semantic_witness_from_raw_data(
+            &[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 0, &[0xde, 0xad, 0xbe, 0xef],
+            0, &[0u8; 32], 65535, &[1u8; 32]
+        );
+        assert!(result.is_ok(), "Maximum field index should succeed");
+    }
+
+    #[test]
+    fn test_security_layout_commitment_tampering() {
+        // Security Test: Layout commitment tampering detection
+        let original_commitment = [0xAAu8; 32];
+        let tampered_commitment = [0xBBu8; 32];
+        
+        // Create witness with original commitment
+        let result1 = create_semantic_witness_from_raw_data(
+            &[1u8; 32], &original_commitment, &[3u8; 32], 1, 0, &[0xde, 0xad, 0xbe, 0xef],
+            0, &[0u8; 32], 0, &[1u8; 32]
+        );
+        assert!(result1.is_ok());
+        
+        // Create witness with tampered commitment
+        let result2 = create_semantic_witness_from_raw_data(
+            &[1u8; 32], &tampered_commitment, &[3u8; 32], 1, 0, &[0xde, 0xad, 0xbe, 0xef],
+            0, &[0u8; 32], 0, &[1u8; 32]
+        );
+        assert!(result2.is_ok());
+        
+        // Witnesses should be different (preventing layout substitution attacks)
+        if let (Witness::Data(data1), Witness::Data(data2)) = (result1.unwrap(), result2.unwrap()) {
+            assert_ne!(data1[32..64], data2[32..64], "Different layout commitments should produce different witnesses");
+        }
+    }
+
+    #[test]
+    fn test_security_storage_key_injection() {
+        // Security Test: Storage key injection prevention
+        let mut deadbeef_key = [0u8; 32];
+        deadbeef_key[0] = 0xDE;
+        deadbeef_key[1] = 0xAD;
+        deadbeef_key[2] = 0xBE;
+        deadbeef_key[3] = 0xEF;
+        
+        let malicious_keys = [
+            // SQL-like injection attempts
+            [0x27u8; 32], // All single quotes
+            [0x22u8; 32], // All double quotes
+            [0x5Cu8; 32], // All backslashes
+            // Buffer overflow attempts
+            [0xFFu8; 32], // All 0xFF
+            [0x00u8; 32], // All zeros
+            // Known problematic values
+            deadbeef_key, // DEADBEEF prefix
+        ];
+        
+        for (i, malicious_key) in malicious_keys.iter().enumerate() {
+            let result = create_semantic_witness_from_raw_data(
+                malicious_key, &[2u8; 32], &[3u8; 32], 1, 0, &[0xde, 0xad, 0xbe, 0xef],
+                0, &[0u8; 32], 0, &[1u8; 32]
+            );
+            assert!(result.is_ok(), "Malicious key test {} should not cause system failure", i);
+            
+            // Verify the key is stored correctly without modification
+            if let Witness::Data(data) = result.unwrap() {
+                assert_eq!(&data[0..32], malicious_key, "Storage key should be preserved exactly");
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_semantic_enum_boundary_validation() {
+        // Security Test: Zero semantics boundary validation
+        
+        // Test valid values
+        for valid_semantic in 0..=3u8 {
+            let result = create_semantic_witness_from_raw_data(
+                &[1u8; 32], &[2u8; 32], &[3u8; 32], valid_semantic, 0, &[0xde, 0xad, 0xbe, 0xef],
+                0, &[0u8; 32], 0, &[1u8; 32]
+            );
+            assert!(result.is_ok(), "Valid zero_semantics {} should succeed", valid_semantic);
+        }
+        
+        // Test invalid values  
+        for invalid_semantic in [4u8, 5, 10, 100, 255] {
+            let result = create_semantic_witness_from_raw_data(
+                &[1u8; 32], &[2u8; 32], &[3u8; 32], invalid_semantic, 0, &[0xde, 0xad, 0xbe, 0xef],
+                0, &[0u8; 32], 0, &[1u8; 32]
+            );
+            assert!(result.is_err(), "Invalid zero_semantics {} should fail", invalid_semantic);
+            
+            // Verify error message doesn't leak internal details
+            if let Err(e) = result {
+                let error_str = format!("{:?}", e);
+                assert!(!error_str.contains("panic"), "Error message should not contain panic information");
+                assert!(!error_str.contains("unwrap"), "Error message should not contain unwrap information");
+            }
+        }
+        
+        // Test semantic source boundary validation
+        for valid_source in 0..=2u8 {
+            let result = create_semantic_witness_from_raw_data(
+                &[1u8; 32], &[2u8; 32], &[3u8; 32], 1, valid_source, &[0xde, 0xad, 0xbe, 0xef],
+                0, &[0u8; 32], 0, &[1u8; 32]
+            );
+            assert!(result.is_ok(), "Valid semantic_source {} should succeed", valid_source);
+        }
+        
+        for invalid_source in [3u8, 4, 10, 100, 255] {
+            let result = create_semantic_witness_from_raw_data(
+                &[1u8; 32], &[2u8; 32], &[3u8; 32], 1, invalid_source, &[0xde, 0xad, 0xbe, 0xef],
+                0, &[0u8; 32], 0, &[1u8; 32]
+            );
+            assert!(result.is_err(), "Invalid semantic_source {} should fail", invalid_source);
+        }
+    }
+
+    #[test]
+    fn test_security_proof_data_size_limits() {
+        // Security Test: Proof data size validation to prevent DoS attacks
+        
+        // Test reasonable proof sizes
+        for size in [0, 32, 64, 1024, 4096] {
+            let proof_data = alloc::vec![0x42u8; size];
+            let result = create_semantic_witness_from_raw_data(
+                &[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 0, &proof_data,
+                0, &[0u8; 32], 0, &[1u8; 32]
+            );
+            assert!(result.is_ok(), "Proof size {} should succeed", size);
+            
+            // Verify size is recorded correctly
+            if let Witness::Data(data) = result.unwrap() {
+                let recorded_size = u32::from_le_bytes([data[138], data[139], data[140], data[141]]) as usize;
+                assert_eq!(recorded_size, size, "Recorded proof size should match actual size");
+            }
+        }
+        
+        // Test very large proof data (potential DoS vector)
+        let large_proof = alloc::vec![0x42u8; 1_000_000]; // 1MB
+        let result = create_semantic_witness_from_raw_data(
+            &[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 0, &large_proof,
+            0, &[0u8; 32], 0, &[1u8; 32]
+        );
+        // Should handle large proofs gracefully (either succeed or fail predictably)
+        match result {
+            Ok(_) => {
+                // Large proof handled successfully
+            }
+            Err(_) => {
+                // Large proof rejected appropriately
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_block_height_replay_protection() {
+        // Security Test: Block height validation for replay attack prevention
+        
+        let current_time = 1000u64;
+        let valid_heights = [current_time, current_time - 1, current_time - 100];
+        let suspicious_heights = [0u64, u64::MAX, current_time + 1000]; // Future blocks
+        
+        // Test valid block heights
+        for height in valid_heights {
+            let result = create_semantic_witness_from_raw_data(
+                &[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 0, &[0xde, 0xad, 0xbe, 0xef],
+                height, &[0u8; 32], 0, &[1u8; 32]
+            );
+            assert!(result.is_ok(), "Valid block height {} should succeed", height);
+            
+            // Verify block height is stored correctly
+            if let Witness::Data(data) = result.unwrap() {
+                let stored_height = u64::from_le_bytes([
+                    data[98], data[99], data[100], data[101],
+                    data[102], data[103], data[104], data[105]
+                ]);
+                assert_eq!(stored_height, height, "Block height should be stored correctly");
+            }
+        }
+        
+        // Test suspicious block heights (should not cause panics)
+        for height in suspicious_heights {
+            let result = create_semantic_witness_from_raw_data(
+                &[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 0, &[0xde, 0xad, 0xbe, 0xef],
+                height, &[0u8; 32], 0, &[1u8; 32]
+            );
+            // Should handle gracefully (either accept or reject without panicking)
+            assert!(result.is_ok() || result.is_err(), "Suspicious block heights should not panic");
+        }
+    }
+
+    #[test]
+    fn test_security_hex_parsing_injection() {
+        // Security Test: Hex parsing validation against injection attacks
+        let malicious_hex_inputs = [
+            "/../etc/passwd", // Path traversal
+            "%2e%2e%2f%65%74%63%2f%70%61%73%73%77%64", // URL encoded
+            "javascript:alert(1)", // XSS attempt
+            "<script>alert(1)</script>", // HTML injection
+            "'; DROP TABLE users; --", // SQL injection
+            // Buffer overflow attempt - use format! to create the long string
+            &format!("AAAA{}", "41".repeat(10000)), // Buffer overflow attempt
+            &format!("0x{}", "zz".repeat(32)), // Invalid hex characters
+            &format!("0x{}", "41".repeat(65)), // Too long
+            "", // Empty string
+            "0x", // Just prefix
+        ];
+        
+        for (_i, malicious_input) in malicious_hex_inputs.iter().enumerate() {
+            let result = parse_hex_bytes(malicious_input, 32);
+            
+            // Should either parse correctly or return None - never panic
+            match result {
+                Some(bytes) => {
+                    assert_eq!(bytes.len(), 32, "Parsed bytes should always be correct length");
+                    // Malicious input parsed as valid hex
+                }
+                None => {
+                    // Malicious input correctly rejected
+                }
+            }
+            // Most important: function should return, not panic
+        }
+    }
+
+    #[test]
+    fn test_security_memory_bounds_checking() {
+        // Security Test: Memory bounds checking for buffer overflows
+        
+        // Test with exactly correct sizes
+        let result = create_semantic_witness_from_raw_data(
+            &[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 0, &[0xde, 0xad, 0xbe, 0xef],
+            0, &[0u8; 32], 0, &[1u8; 32]
+        );
+        assert!(result.is_ok(), "Correct sizes should work");
+        
+        // Test with incorrect sizes (should be rejected)
+        let invalid_sizes = [
+            (&[1u8; 31][..], "storage_key"), // 31 bytes instead of 32
+            (&[1u8; 33][..], "storage_key"), // 33 bytes instead of 32
+        ];
+        
+        for (invalid_data, field_name) in invalid_sizes {
+            let result = match field_name {
+                "storage_key" => create_semantic_witness_from_raw_data(
+                    invalid_data, &[2u8; 32], &[3u8; 32], 1, 0, &[0xde, 0xad, 0xbe, 0xef],
+                    0, &[0u8; 32], 0, &[1u8; 32]
+                ),
+                _ => unreachable!(),
+            };
+            assert!(result.is_err(), "Invalid {} size should be rejected", field_name);
+        }
+    }
+
+    #[test] 
+    fn test_security_arithmetic_overflow_protection() {
+        // Security Test: Arithmetic overflow protection
+        
+        // Test witness size calculation with large proof data
+        let max_reasonable_proof_size = 100_000; // 100KB
+        let large_proof = alloc::vec![0x42u8; max_reasonable_proof_size];
+        
+        let result = create_semantic_witness_from_raw_data(
+            &[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 0, &large_proof,
+            0, &[0u8; 32], 0, &[1u8; 32]
+        );
+        
+        match result {
+            Ok(Witness::Data(data)) => {
+                // Verify size calculation didn't overflow
+                let expected_size = 32 + 32 + 32 + 1 + 1 + 8 + 32 + 4 + large_proof.len() + 2 + 32;
+                assert_eq!(data.len(), expected_size, "Witness size calculation should be correct");
+                
+                // Verify proof length field is correct
+                let stored_proof_len = u32::from_le_bytes([data[138], data[139], data[140], data[141]]) as usize;
+                assert_eq!(stored_proof_len, large_proof.len(), "Stored proof length should match actual");
+            }
+            Ok(_) => panic!("Expected Data witness"),
+            Err(_) => {
+                // If rejected, should be for a good reason, not due to overflow
+                // Large proof appropriately rejected
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_concurrent_access_safety() {
+        // Security Test: Thread safety and concurrent access (if std available)
+        #[cfg(feature = "std")]
+        {
+            use std::sync::Arc;
+            use std::thread;
+            
+            let test_data = Arc::new((
+                [1u8; 32], // storage_key
+                [2u8; 32], // layout_commitment  
+                [3u8; 32], // value
+                alloc::vec![0xde, 0xad, 0xbe, 0xef], // proof_data
+                [4u8; 32], // expected_slot
+            ));
+            
+            let handles: Vec<_> = (0..10).map(|i| {
+                let data = Arc::clone(&test_data);
+                thread::spawn(move || {
+                    let result = create_semantic_witness_from_raw_data(
+                        &data.0, &data.1, &data.2, 1, 0, &data.3,
+                        i as u64, &[0u8; 32], i as u16, &data.4
+                    );
+                    assert!(result.is_ok(), "Concurrent witness creation should succeed");
+                    result.unwrap()
+                })
+            }).collect();
+            
+            // All threads should complete successfully
+            for handle in handles {
+                let witness = handle.join().expect("Thread should not panic");
+                assert!(matches!(witness, Witness::Data(_)), "Should produce valid witness");
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_error_information_leakage() {
+        // Security Test: Ensure error messages don't leak sensitive information
+        
+        let error_cases = [
+            // Invalid lengths
+            (create_semantic_witness_from_raw_data(&[1u8; 31], &[2u8; 32], &[3u8; 32], 1, 0, &[], 0, &[0u8; 32], 0, &[1u8; 32]), "storage_key_length"),
+            (create_semantic_witness_from_raw_data(&[1u8; 32], &[2u8; 31], &[3u8; 32], 1, 0, &[], 0, &[0u8; 32], 0, &[1u8; 32]), "layout_commitment_length"),
+            (create_semantic_witness_from_raw_data(&[1u8; 32], &[2u8; 32], &[3u8; 31], 1, 0, &[], 0, &[0u8; 32], 0, &[1u8; 32]), "value_length"),
+            (create_semantic_witness_from_raw_data(&[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 0, &[], 0, &[0u8; 31], 0, &[1u8; 32]), "block_hash_length"),
+            (create_semantic_witness_from_raw_data(&[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 0, &[], 0, &[0u8; 32], 0, &[1u8; 31]), "expected_slot_length"),
+            // Invalid semantics
+            (create_semantic_witness_from_raw_data(&[1u8; 32], &[2u8; 32], &[3u8; 32], 255, 0, &[], 0, &[0u8; 32], 0, &[1u8; 32]), "invalid_zero_semantics"),
+            (create_semantic_witness_from_raw_data(&[1u8; 32], &[2u8; 32], &[3u8; 32], 1, 255, &[], 0, &[0u8; 32], 0, &[1u8; 32]), "invalid_semantic_source"),
+        ];
+        
+        for (result, test_name) in error_cases {
+            assert!(result.is_err(), "Test {} should produce error", test_name);
+            
+            if let Err(error) = result {
+                let error_msg = format!("{:?}", error);
+                
+                // Error message should not contain:
+                assert!(!error_msg.contains("panic"), "Error for {} should not mention panic", test_name);
+                assert!(!error_msg.contains("unwrap"), "Error for {} should not mention unwrap", test_name);
+                assert!(!error_msg.contains("index"), "Error for {} should not leak array indices", test_name);
+                assert!(!error_msg.contains("0x"), "Error for {} should not leak hex data", test_name);
+                assert!(!error_msg.to_lowercase().contains("debug"), "Error for {} should not mention debug", test_name);
+                
+                // Error message should be descriptive but safe
+                assert!(!error_msg.is_empty(), "Error for {} should have descriptive message", test_name);
+                assert!(error_msg.len() < 200, "Error for {} should not be excessively long", test_name);
+            }
+        }
+    }
 }

@@ -391,8 +391,8 @@ fn parse_storage_slot(slot_str: &str) -> Result<String, String> {
         ));
     }
     
-    // Pad to 64 characters (32 bytes) with leading zeros
-    let padded_hex = format!("{:0>64}", hex_str);
+    // Pad to 64 characters (32 bytes) with leading zeros and convert to lowercase
+    let padded_hex = format!("{:0>64}", hex_str.to_lowercase());
     
     Ok(format!("0x{}", padded_hex))
 }
@@ -544,10 +544,10 @@ mod tests {
         );
         
         // Test value larger than u64::MAX (this is why we needed the fix!)
-        let larger_than_u64 = "1ffffffffffffffff"; // 9 hex chars = 36 bits > 64-bit
+        let larger_than_u64 = "1ffffffffffffffff"; // 17 hex chars
         assert_eq!(
             parse_storage_slot(larger_than_u64).unwrap(),
-            "0x0000000000000000000000000000000000000000000000001ffffffffffffffff"
+            "0x000000000000000000000000000000000000000000000001ffffffffffffffff"
         );
         
         // Test mixed case
