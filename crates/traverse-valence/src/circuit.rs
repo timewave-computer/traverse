@@ -960,7 +960,7 @@ mod tests {
             block_hash: [0u8; 32],
         };
         
-        // Should be valid - non-zero values with ValidZero semantics is allowed
+        // Should be valid - non-zero values with ValidZero semantics are allowed
         let result = processor.process_witness(&witness);
         assert!(matches!(result, CircuitResult::Valid { .. }));
         

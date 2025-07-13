@@ -205,6 +205,10 @@ pub enum Commands {
     #[command(subcommand)]
     Cosmos(CosmosCommands),
 
+    /// Enhanced Solana commands
+    #[command(subcommand)]
+    Solana(SolanaCommands),
+
     /// Generate minimal valence coprocessor applications
     #[command(subcommand)]
     Codegen(CodegenCommands),
@@ -524,6 +528,104 @@ pub enum CosmosCommands {
         /// Contract address
         #[arg(long)]
         contract: String,
+
+        /// Comma-separated list of queries
+        #[arg(long)]
+        queries: String,
+
+        /// Output directory
+        #[arg(long)]
+        output_dir: PathBuf,
+
+        /// Enable dry-run mode
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SolanaCommands {
+    /// Analyze Solana program from IDL
+    AnalyzeProgram {
+        /// Solana program IDL file
+        #[arg(value_name = "IDL_FILE")]
+        idl_file: PathBuf,
+
+        /// Output file
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Validate schema
+        #[arg(long)]
+        validate_schema: bool,
+    },
+
+    /// Compile Solana storage layout
+    CompileLayout {
+        /// Solana program IDL file
+        #[arg(value_name = "IDL_FILE")]
+        idl_file: PathBuf,
+
+        /// Output file
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Output format
+        #[arg(long, default_value = "traverse", value_enum)]
+        format: OutputFormat,
+    },
+
+    /// Generate storage queries for Solana state
+    GenerateQueries {
+        /// Compiled layout file
+        #[arg(value_name = "LAYOUT_FILE")]
+        layout_file: PathBuf,
+
+        /// Comma-separated list of state keys
+        #[arg(long)]
+        state_keys: String,
+
+        /// Output file
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Include example keys for maps
+        #[arg(long)]
+        include_examples: bool,
+    },
+
+    /// Resolve specific Solana storage query
+    ResolveQuery {
+        /// Query string
+        #[arg(value_name = "QUERY")]
+        query: String,
+
+        /// Layout file
+        #[arg(long)]
+        layout: PathBuf,
+
+        /// Output format
+        #[arg(long, default_value = "coprocessor-json", value_enum)]
+        format: OutputFormat,
+
+        /// Output file
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
+    /// End-to-end automation for Solana
+    AutoGenerate {
+        /// Solana program IDL file
+        #[arg(value_name = "IDL_FILE")]
+        idl_file: PathBuf,
+
+        /// RPC endpoint URL
+        #[arg(long)]
+        rpc: String,
+
+        /// Program address
+        #[arg(long)]
+        program_address: String,
 
         /// Comma-separated list of queries
         #[arg(long)]

@@ -170,6 +170,12 @@ pub use domain::*;
 
 pub use messages::*;
 
+// Re-export Solana types
+pub use messages::{
+    SolanaAccountQuery, SolanaAccountProof, SolanaAccountVerificationRequest,
+    BatchSolanaAccountVerificationRequest, SolanaAccountValidationResult,
+};
+
 // Re-export lightweight ABI when available
 #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
 pub use abi::{AlloyAbiTypes, AbiValue, AbiType};

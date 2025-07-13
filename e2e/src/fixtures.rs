@@ -10,6 +10,17 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
+/// Get path to a fixture file from the fixtures directory
+pub fn get_fixture_path(relative_path: &str) -> PathBuf {
+    let fixtures_dir = std::env::current_dir()
+        .expect("Failed to get current directory")
+        .join("e2e")
+        .join("src")
+        .join("fixtures");
+    
+    fixtures_dir.join(relative_path)
+}
+
 /// Test fixtures containing all necessary test data with semantic examples
 pub struct TestFixtures {
     /// Temporary directory for test files
@@ -1093,5 +1104,167 @@ impl TestFixtures {
             .insert("conflicts".to_string(), conflict_events);
 
         Ok(())
+    }
+}
+
+/// Solana test context for e2e testing with local validator
+pub struct SolanaTestContext {
+    /// Temporary directory for test files
+    temp_dir: TempDir,
+    /// Solana test validator process handle
+    validator_process: Option<std::process::Child>,
+    /// Validator RPC URL
+    rpc_url: String,
+}
+
+impl SolanaTestContext {
+    /// Create new Solana test context
+    pub async fn new() -> Result<Self> {
+        let temp_dir = TempDir::new()?;
+        
+        // Create Solana test directories
+        let solana_dir = temp_dir.path().join("solana");
+        fs::create_dir_all(&solana_dir)?;
+        
+        Ok(Self {
+            temp_dir,
+            validator_process: None,
+            rpc_url: "http://127.0.0.1:8899".to_string(),
+        })
+    }
+    
+    /// Get temporary directory
+    pub fn temp_dir(&self) -> &std::path::Path {
+        self.temp_dir.path()
+    }
+    
+    /// Get RPC URL
+    pub fn rpc_url(&self) -> &str {
+        &self.rpc_url
+    }
+    
+    /// Start local Solana test validator
+    pub async fn start_test_validator(&mut self) -> Result<()> {
+        use std::process::{Command, Stdio};
+        
+        // Check if solana-test-validator is available
+        let validator_available = Command::new("solana-test-validator")
+            .arg("--help")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+            
+        if !validator_available {
+            return Err(anyhow::anyhow!("solana-test-validator not available. Please install Solana CLI tools."));
+        }
+        
+        // Start validator with custom settings
+        let ledger_dir = self.temp_dir.path().join("test-ledger");
+        fs::create_dir_all(&ledger_dir)?;
+        
+        let mut cmd = Command::new("solana-test-validator");
+        cmd.arg("--ledger").arg(&ledger_dir)
+           .arg("--bind-address").arg("127.0.0.1")
+           .arg("--rpc-port").arg("8899")
+           .arg("--reset")
+           .arg("--quiet")
+           .stdout(Stdio::null())
+           .stderr(Stdio::null());
+           
+        let process = cmd.spawn()?;
+        self.validator_process = Some(process);
+        
+        // Wait for validator to start
+        for _attempt in 0..30 {
+            if self.check_validator_health().await {
+                return Ok(());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        }
+        
+        Err(anyhow::anyhow!("Solana test validator failed to start within 30 seconds"))
+    }
+    
+    /// Stop the test validator
+    pub async fn stop_test_validator(&mut self) -> Result<()> {
+        if let Some(mut process) = self.validator_process.take() {
+            process.kill()?;
+            process.wait()?;
+        }
+        Ok(())
+    }
+    
+    /// Check if validator is healthy
+    async fn check_validator_health(&self) -> bool {
+        use std::process::{Command, Stdio};
+        
+        Command::new("solana")
+            .args(&["cluster-version", "--url", &self.rpc_url])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+    
+    /// Deploy a test program (placeholder for future implementation)
+    pub async fn deploy_test_program(&self, _program_path: &std::path::Path) -> Result<String> {
+        // This would deploy a test program and return its program ID
+        // For now, return a mock program ID
+        Ok("11111111111111111111111111111112".to_string())
+    }
+    
+    /// Create a test account with some SOL
+    pub async fn create_test_account(&self) -> Result<String> {
+        use std::process::{Command, Stdio};
+        
+        // Generate a new keypair
+        let output = Command::new("solana-keygen")
+            .args(&["new", "--no-bip39-passphrase", "--silent", "--outfile", "-"])
+            .env("SOLANA_CLI_CONFIG", self.temp_dir.path().join("cli-config.yml"))
+            .output()?;
+            
+        if !output.status.success() {
+            return Err(anyhow::anyhow!("Failed to generate keypair"));
+        }
+        
+        // Extract pubkey (this is simplified)
+        Ok("11111111111111111111111111111112".to_string())
+    }
+    
+    /// Fund a test account with SOL
+    pub async fn fund_account(&self, pubkey: &str, amount: f64) -> Result<()> {
+        use std::process::{Command, Stdio};
+        
+        let _output = Command::new("solana")
+            .args(&[
+                "airdrop", 
+                &amount.to_string(), 
+                pubkey,
+                "--url", &self.rpc_url
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .output()?;
+            
+        Ok(())
+    }
+    
+    /// Cleanup test context
+    pub async fn cleanup(&mut self) -> Result<()> {
+        self.stop_test_validator().await?;
+        // TempDir will automatically clean up when dropped
+        Ok(())
+    }
+}
+
+impl Drop for SolanaTestContext {
+    fn drop(&mut self) {
+        if let Some(mut process) = self.validator_process.take() {
+            let _ = process.kill();
+            let _ = process.wait();
+        }
     }
 }

@@ -3,6 +3,7 @@
 members = [
     "crates/traverse-core",
     "crates/traverse-ethereum", 
+    "crates/traverse-solana",
     "crates/traverse-cli",
     "crates/traverse-valence", "crates/traverse-cosmos",
     "e2e",
@@ -26,6 +27,7 @@ categories = ["cryptography", "development-tools"]
 [dependencies]
 traverse-core = { path = "crates/traverse-core" }
 traverse-ethereum = { path = "crates/traverse-ethereum", optional = true }
+traverse-solana = { path = "crates/traverse-solana", optional = true }
 traverse-cosmos = { path = "crates/traverse-cosmos", optional = true }
 traverse-valence = { path = "crates/traverse-valence", optional = true }
 serde = { workspace = true }
@@ -38,8 +40,8 @@ valence-coprocessor = { git = "https://github.com/timewave-computer/valence-copr
 anyhow = { workspace = true, optional = true }
 dotenv = { workspace = true, optional = true }
 
-# Client feature dependencies
-valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", branch = "main", optional = true }
+# Client feature dependencies (only for ethereum due to k256 version conflicts)
+# valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", rev = "0b75856", optional = true }
 base64 = { version = "0.22", optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }
 
@@ -94,6 +96,11 @@ name = "minimal_circuit_example"
 path = "examples/minimal_circuit_example.rs"
 required-features = ["constrained"]
 
+[[example]]
+name = "solana_idl_example"
+path = "examples/solana_idl_example.rs"
+required-features = ["solana"]
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
@@ -136,18 +143,27 @@ dotenv = "0.15"
 default = ["std", "ethereum"]
 
 # Core feature flags
-std = ["traverse-core/std", "traverse-ethereum?/std", "traverse-valence?/std", "dep:tokio"]
-no-std = ["traverse-core/no-std", "traverse-valence?/no-std"]
+std = ["traverse-core/std", "traverse-ethereum?/std", "traverse-solana?/std", "traverse-valence?/std", "dep:tokio"]
+no-std = ["traverse-core/no-std", "traverse-solana?/no-std", "traverse-valence?/no-std"]
 minimal = ["traverse-core/minimal"]
 wasm = ["traverse-core/wasm", "traverse-valence?/wasm"]
 constrained = ["no-std", "traverse-core/constrained", "traverse-valence?/constrained"]
 embedded = ["constrained", "traverse-core/embedded", "traverse-valence?/embedded"]
 
 # Chain-specific features
-ethereum = ["dep:traverse-ethereum", "traverse-ethereum?/lightweight-alloy", "dep:traverse-valence"]
+ethereum = ["dep:traverse-ethereum", "traverse-ethereum?/lightweight-alloy"]
 cosmos = ["dep:traverse-cosmos"]
 
+# Solana support (WARNING: Conflicts with Alloy ecosystem - use separately)
+# Note: The solana feature includes dependencies that conflict with the Alloy ecosystem:
+# - solana-sdk requires k256 ^0.13
+# - alloy-* crates require k256 ^0.14
+# Use either 'ethereum' OR 'solana', not both in the same binary.
+solana = ["dep:traverse-solana", "traverse-solana?/solana"]
+solana-anchor = ["solana", "traverse-solana?/anchor"]
+
 # Integration features
-client = ["dep:valence-domain-clients", "dep:reqwest", "traverse-ethereum?/client"]
+client = ["dep:reqwest", "traverse-ethereum?/client", "traverse-solana?/client"]
+ethereum-client = ["ethereum", "client"]
 examples = ["dep:valence-coprocessor", "dep:anyhow", "dep:dotenv", "dep:base64"]
-lightweight = ["ethereum", "traverse-ethereum?/lightweight-alloy", "traverse-valence?/lightweight-alloy", "dep:traverse-valence"] 
+lightweight = ["ethereum", "traverse-ethereum?/lightweight-alloy", "dep:traverse-valence"] 

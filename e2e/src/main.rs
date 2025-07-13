@@ -10,6 +10,7 @@ mod fixtures;
 mod test_core;
 mod test_cosmos;
 mod test_ethereum;
+mod test_solana;
 mod test_unified;
 mod utils;
 
@@ -55,6 +56,15 @@ async fn main() -> Result<()> {
     run_test_suite(
         "Cosmos Commands",
         test_cosmos::run_tests(&fixtures),
+        &mut passed,
+        &mut failed,
+    )
+    .await;
+
+    // Test Solana commands (if Solana tools are available)
+    run_test_suite(
+        "Solana Commands",
+        test_solana::run_tests(&fixtures),
         &mut passed,
         &mut failed,
     )

@@ -2,14 +2,15 @@
 //!
 //! This module contains the implementation of all CLI commands, organized by functionality.
 
+pub mod codegen;
 pub mod cosmos;
 pub mod ethereum;
 pub mod layout;
+pub mod minimal;
 pub mod proof;
 pub mod resolve;
+pub mod solana;
 pub mod unified;
-pub mod codegen;
-pub mod minimal;
 
 pub use layout::cmd_compile_layout;
 pub use proof::cmd_generate_proof;

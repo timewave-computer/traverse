@@ -5,6 +5,7 @@
 
 use crate::commands::cosmos::cmd_cosmos_auto_generate;
 use crate::commands::ethereum::cmd_ethereum_auto_generate;
+use crate::commands::solana::cmd_solana_auto_generate;
 use crate::formatters::write_output;
 use anyhow::Result;
 use serde_json::json;
@@ -124,6 +125,22 @@ pub async fn cmd_unified_auto_generate(
                 serde_json::to_string_pretty(&cosmos_summary)?,
             )?;
 
+            // Create Solana test files
+            let solana_dir = output_dir.join("solana");
+            std::fs::create_dir_all(&solana_dir)?;
+            let solana_summary = json!({
+                "contract_type": "solana",
+                "test_mode": true,
+                "generated_at": std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            });
+            std::fs::write(
+                solana_dir.join("test_summary.json"),
+                serde_json::to_string_pretty(&solana_summary)?,
+            )?;
+
             println!("   Placeholder files created for testing");
         }
     }
@@ -173,6 +190,28 @@ pub async fn cmd_unified_auto_generate(
                     {
                         eprintln!(
                             "Error processing Cosmos contract {}: {}",
+                            config.file.display(),
+                            e
+                        );
+                    }
+                }
+            }
+            "solana" => {
+                if let (Some(rpc), Some(contract), Some(queries)) =
+                    (&config.rpc, &config.contract, &config.queries)
+                {
+                    if let Err(e) = cmd_solana_auto_generate(
+                        &config.file,
+                        rpc,
+                        contract,
+                        queries,
+                        &contract_output_dir,
+                        dry_run,
+                    )
+                    .await
+                    {
+                        eprintln!(
+                            "Error processing Solana contract {}: {}",
                             config.file.display(),
                             e
                         );

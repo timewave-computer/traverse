@@ -10,7 +10,7 @@ mod cli;
 mod commands;
 mod formatters;
 
-use cli::{Cli, Commands, CosmosCommands, EthereumCommands};
+use cli::{Cli, Commands, CosmosCommands, EthereumCommands, SolanaCommands};
 use commands::cosmos::{
     cmd_cosmos_analyze_contract, cmd_cosmos_auto_generate, cmd_cosmos_compile_layout,
     cmd_cosmos_generate_queries, cmd_cosmos_resolve_query,
@@ -18,6 +18,10 @@ use commands::cosmos::{
 use commands::ethereum::{
     cmd_ethereum_analyze_contract, cmd_ethereum_auto_generate, cmd_ethereum_compile_layout,
     cmd_ethereum_generate_queries, cmd_ethereum_resolve_query, cmd_ethereum_verify_layout,
+};
+use commands::solana::{
+    cmd_solana_analyze_program, cmd_solana_auto_generate, cmd_solana_compile_layout,
+    cmd_solana_generate_queries, cmd_solana_resolve_query,
 };
 use commands::{cmd_auto_generate, cmd_batch_generate, cmd_watch};
 use commands::{
@@ -234,6 +238,68 @@ async fn main() -> Result<()> {
                     &queries,
                     &output_dir,
                     false,
+                    dry_run,
+                )
+                .await
+            }
+        },
+
+        Commands::Solana(solana_cmd) => match solana_cmd {
+            SolanaCommands::AnalyzeProgram {
+                idl_file,
+                output,
+                validate_schema,
+            } => {
+                cmd_solana_analyze_program(
+                    &idl_file,
+                    output.as_deref(),
+                    validate_schema,
+                )
+                .await
+            }
+            SolanaCommands::CompileLayout {
+                idl_file,
+                output,
+                format,
+            } => {
+                cmd_solana_compile_layout(&idl_file, output.as_deref(), &format).await
+            }
+            SolanaCommands::GenerateQueries {
+                layout_file,
+                state_keys,
+                output,
+                include_examples,
+            } => {
+                cmd_solana_generate_queries(
+                    &layout_file,
+                    &state_keys,
+                    output.as_deref(),
+                    include_examples,
+                )
+                .await
+            }
+            SolanaCommands::ResolveQuery {
+                query,
+                layout,
+                format,
+                output,
+            } => {
+                cmd_solana_resolve_query(&query, &layout, &format, output.as_deref()).await
+            }
+            SolanaCommands::AutoGenerate {
+                idl_file,
+                rpc,
+                program_address,
+                queries,
+                output_dir,
+                dry_run,
+            } => {
+                cmd_solana_auto_generate(
+                    &idl_file,
+                    &rpc,
+                    &program_address,
+                    &queries,
+                    &output_dir,
                     dry_run,
                 )
                 .await

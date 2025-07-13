@@ -55,7 +55,7 @@ alloy-provider = { version = ">=0.9.0,<2.0", default-features = false, optional 
 alloy-transport-http = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
 
 # Optional valence-domain-clients integration
-valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", branch = "main", optional = true }
+valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", rev = "0b75856", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

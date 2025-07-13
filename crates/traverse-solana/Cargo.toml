@@ -1,0 +1,61 @@
+# Solana-specific implementation for ZK storage path generation
+[package]
+name = "traverse-solana"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Solana-specific implementation for ZK storage path generation"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = ["traverse-core/std", "dep:tokio", "dep:reqwest"]
+no-std = ["traverse-core/no-std"]
+minimal = ["traverse-core/minimal"]
+
+# Solana SDK integration (optional due to dependency conflicts with Alloy ecosystem)
+solana = ["dep:solana-sdk", "dep:spl-token"]
+
+# Anchor framework integration for IDL parsing (requires solana feature)
+anchor = ["solana", "dep:anchor-lang", "dep:anchor-syn"]
+
+# Client integration with enhanced account proof support  
+client = ["std", "dep:reqwest", "dep:tokio"]
+
+[dependencies]
+traverse-core = { path = "../traverse-core" }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+sha2 = { version = ">=0.10.0,<1.0", default-features = false }
+base58 = { version = ">=0.2.0,<1.0", default-features = false }
+base64 = { version = ">=0.21.0,<1.0", default-features = false }
+
+# Solana-specific dependencies (optional - may conflict with Alloy ecosystem)
+solana-sdk = { version = ">=1.17.0,<2.0", default-features = false, optional = true }
+anchor-lang = { version = ">=0.30.0,<1.0", default-features = false, optional = true }
+anchor-syn = { version = ">=0.30.0,<1.0", default-features = false, optional = true }
+spl-token = { version = ">=4.0.0,<5.0", default-features = false, optional = true }
+
+# Optional HTTP client for live account queries
+reqwest = { version = ">=0.12.0,<1.0", features = ["json"], optional = true }
+tokio = { workspace = true, optional = true }
+
+# Optional valence-domain-clients integration (commented out due to k256 version conflicts)
+# valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", rev = "0b75856", optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+
+# Integration tests will be added later
+# [[test]]
+# name = "integration"
+# required-features = ["std", "solana"] 
