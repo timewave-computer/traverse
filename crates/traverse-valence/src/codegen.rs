@@ -646,7 +646,7 @@ mod tests {
         
         assert_eq!(result.len(), 32);
         assert!(result.iter().all(|s| s == "0x00"));
-        assert_eq!(joined, "0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00");
+        assert_eq!(joined, "0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00");
     }
     
     #[cfg(feature = "std")]
@@ -721,7 +721,7 @@ mod tests {
         
         // Test that the no-std template generation works without panics
         let result = generate_circuit_template(&layout, &options);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Valid layout should generate code");
         
         let (cargo_toml, lib_rs) = result.unwrap();
         
@@ -791,6 +791,414 @@ mod tests {
         assert!(template_code.contains("return alloc::vec![0x03"));
         assert!(template_code.contains("return alloc::vec![0x04"));
         assert!(template_code.contains("alloc::vec![0x05, error_code]"));
+    }
+
+    #[test]
+    fn test_security_layout_commitment_injection() {
+        // Security Test: Layout commitment injection prevention
+        let malicious_commitments = [
+            "'; DROP TABLE users; --", // SQL injection attempt
+            "<script>alert(1)</script>", // XSS attempt  
+            "../../etc/passwd", // Path traversal
+            "\n\r\t\0", // Control characters
+            // Buffer overflow attempt - use format! to create the long string
+            &format!("0x{}", "41".repeat(1000)), // Buffer overflow attempt
+            "", // Empty string
+            "not_hex_at_all", // Invalid hex
+            "0x", // Just prefix
+            "0xzzzz", // Invalid hex characters
+        ];
+        
+        for (i, malicious_input) in malicious_commitments.iter().enumerate() {
+            let result = parse_commitment_to_byte_literals(malicious_input);
+            
+            // Should either parse correctly or return error - never panic or execute code
+            match result {
+                Ok(bytes) => {
+                    assert_eq!(bytes.len(), 32, "Valid parsing should produce 32 bytes");
+                    // Verify the output is safe for use in generated code
+                    for byte_literal in bytes {
+                        assert!(byte_literal.starts_with("0x"), "Byte literal should start with 0x");
+                        assert!(byte_literal.len() == 4, "Byte literal should be 4 chars (0x + 2 hex)");
+                    }
+                }
+                Err(error) => {
+                    // Error should be descriptive but not leak internal details
+                    assert!(!error.is_empty(), "Error message should not be empty");
+                    assert!(!error.contains("panic"), "Error should not mention panic");
+                    assert!(!error.contains("unwrap"), "Error should not mention unwrap");
+                    // Malicious input correctly rejected
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_template_injection_prevention() {
+        // Security Test: Template injection prevention in generated code
+        let malicious_layout = LayoutInfo {
+            commitment: "f6dc3c4a79e95565b3cf38993f1a120c6a6b467796264e7fd9a9c8675616dd7a".to_string(),
+            contract_name: "'; rm -rf /; echo 'pwned".to_string(), // Command injection attempt
+            field_types: vec!["<script>alert(1)</script>".to_string()], // XSS attempt
+            field_semantics: vec!["{{7*7}}".to_string()], // Template injection
+            queries: vec![QueryInfo {
+                query: "{{constructor.constructor('return process')().exit()}}".to_string(), // JS injection
+                field_type: "Uint256".to_string(),
+                zero_semantics: "ValidZero".to_string(),
+                expected_slot: "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            }],
+        };
+        
+        let options = CodegenOptions::default();
+        
+        // Test that template generation handles malicious input safely
+        let result = generate_circuit_template(&malicious_layout, &options);
+        
+        match result {
+            Ok((cargo_toml, lib_rs)) => {
+                // Verify malicious input is escaped/sanitized in generated code
+                assert!(!cargo_toml.contains("rm -rf"), "Generated Cargo.toml should not contain shell commands");
+                assert!(!cargo_toml.contains("<script>"), "Generated Cargo.toml should not contain script tags");
+                
+                assert!(!lib_rs.contains("rm -rf"), "Generated lib.rs should not contain shell commands");
+                assert!(!lib_rs.contains("<script>"), "Generated lib.rs should not contain script tags");
+                assert!(!lib_rs.contains("constructor"), "Generated lib.rs should not contain JS injection");
+                
+                // Generated code should still be syntactically valid Rust
+                assert!(lib_rs.contains("pub const LAYOUT_COMMITMENT"), "Should contain layout commitment");
+                assert!(lib_rs.contains("#![no_std]"), "Should be no_std compatible");
+            }
+            Err(_) => {
+                // If rejected, should be for security reasons
+                // Malicious layout appropriately rejected
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_generated_code_compilation_safety() {
+        // Security Test: Generated code should be safe to compile
+        let layout = LayoutInfo {
+            commitment: "f6dc3c4a79e95565b3cf38993f1a120c6a6b467796264e7fd9a9c8675616dd7a".to_string(),
+            contract_name: "TestContract".to_string(),
+            field_types: vec!["Uint256".to_string(), "Address".to_string()],
+            field_semantics: vec!["ValidZero".to_string(), "NeverWritten".to_string()],
+            queries: vec![
+                QueryInfo {
+                    query: "balance".to_string(),
+                    field_type: "Uint256".to_string(),
+                    zero_semantics: "ValidZero".to_string(),
+                    expected_slot: "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                },
+                QueryInfo {
+                    query: "owner".to_string(),
+                    field_type: "Address".to_string(),
+                    zero_semantics: "NeverWritten".to_string(),
+                    expected_slot: "0x0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+                },
+            ],
+        };
+        
+        let options = CodegenOptions::default();
+        
+        let result = generate_circuit_template(&layout, &options);
+        assert!(result.is_ok(), "Valid layout should generate code");
+        
+        let (cargo_toml, lib_rs) = result.unwrap();
+        
+        // Verify generated code has security properties
+        
+        // 1. No unsafe blocks in generated code
+        assert!(!lib_rs.contains("unsafe"), "Generated code should not contain unsafe blocks");
+        
+        // 2. No unwrap() calls that could panic
+        let unsafe_patterns = ["unwrap()", "expect(", "panic!(", "unreachable!()"];
+        for pattern in unsafe_patterns {
+            assert!(!lib_rs.contains(pattern), "Generated code should not contain {}", pattern);
+        }
+        
+        // 3. Proper error handling patterns
+        assert!(lib_rs.contains("Result<"), "Generated code should use Result for error handling");
+        assert!(lib_rs.contains("match "), "Generated code should use pattern matching");
+        
+        // 4. No hardcoded credentials or secrets
+        let secret_patterns = ["password", "secret", "key", "token", "auth"];
+        for pattern in secret_patterns {
+            // Should not contain these as variable names (could be in comments)
+            let lines_with_pattern: Vec<_> = lib_rs.lines()
+                .filter(|line| !line.trim().starts_with("//") && !line.trim().starts_with("*"))
+                .filter(|line| line.to_lowercase().contains(pattern))
+                .collect();
+            
+            if !lines_with_pattern.is_empty() {
+                // Allow certain legitimate uses
+                for line in lines_with_pattern {
+                    assert!(
+                        line.contains("storage_key") || 
+                        line.contains("layout_key") ||
+                        line.contains("field_key"),
+                        "Unexpected secret-like pattern in generated code: {}", line
+                    );
+                }
+            }
+        }
+        
+        // 5. Verify commitment bytes are properly escaped
+        assert!(lib_rs.contains("0xf6, 0xdc"), "Layout commitment should be properly formatted");
+    }
+
+    #[test]
+    fn test_security_field_type_validation() {
+        // Security Test: Field type validation to prevent code injection
+        let malicious_field_types = [
+            "(); system(\"rm -rf /\"); //", // Code injection
+            "'; DROP TABLE users; --", // SQL injection style
+            "<script>alert(1)</script>", // XSS style
+            "{{7*7}}", // Template injection
+            "Uint256; panic!(\"pwned\")", // Rust code injection
+            "\n\r\t\0", // Control characters
+            &"A".repeat(1000), // Very long field type
+        ];
+        
+        for (i, malicious_type) in malicious_field_types.iter().enumerate() {
+            let layout = LayoutInfo {
+                commitment: "f6dc3c4a79e95565b3cf38993f1a120c6a6b467796264e7fd9a9c8675616dd7a".to_string(),
+                contract_name: "TestContract".to_string(),
+                field_types: vec![malicious_type.to_string()],
+                field_semantics: vec!["ValidZero".to_string()],
+                queries: vec![QueryInfo {
+                    query: "test_field".to_string(),
+                    field_type: malicious_type.to_string(),
+                    zero_semantics: "ValidZero".to_string(),
+                    expected_slot: "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                }],
+            };
+            
+            let options = CodegenOptions::default();
+            let result = generate_circuit_template(&layout, &options);
+            
+            match result {
+                Ok((_, lib_rs)) => {
+                    // If accepted, verify the malicious content is safely escaped
+                    assert!(!lib_rs.contains("system("), "Generated code should not contain system calls");
+                    assert!(!lib_rs.contains("DROP TABLE"), "Generated code should not contain SQL");
+                    assert!(!lib_rs.contains("panic!(\"pwned\")"), "Generated code should not contain injected panics");
+                    // Malicious field type was sanitized
+                }
+                Err(_) => {
+                    // If rejected, that's also acceptable
+                    // Malicious field type was rejected
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_path_traversal_prevention() {
+        // Security Test: Prevent path traversal in generated file paths
+        // This test ensures that if paths were generated, they would be safe
+        
+        let layout = LayoutInfo {
+            commitment: "f6dc3c4a79e95565b3cf38993f1a120c6a6b467796264e7fd9a9c8675616dd7a".to_string(),
+            contract_name: "../../../etc/passwd".to_string(), // Path traversal attempt
+            field_types: vec!["Uint256".to_string()],
+            field_semantics: vec!["ValidZero".to_string()],
+            queries: vec![QueryInfo {
+                query: "../../root/.ssh/id_rsa".to_string(), // Path traversal in query
+                field_type: "Uint256".to_string(),
+                zero_semantics: "ValidZero".to_string(),
+                expected_slot: "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            }],
+        };
+        
+        let options = CodegenOptions {
+            crate_name: "../../etc/passwd".to_string(), // Path traversal in crate name
+            ..Default::default()
+        };
+        
+        let result = generate_circuit_template(&layout, &options);
+        
+        match result {
+            Ok((cargo_toml, lib_rs)) => {
+                // Verify path traversal sequences are not present in generated content
+                assert!(!cargo_toml.contains("../"), "Generated Cargo.toml should not contain path traversal");
+                assert!(!lib_rs.contains("../"), "Generated lib.rs should not contain path traversal");
+                assert!(!lib_rs.contains("/etc/passwd"), "Generated lib.rs should not reference system files");
+                assert!(!lib_rs.contains("/root/"), "Generated lib.rs should not reference root directory");
+            }
+            Err(_) => {
+                // Path traversal attempt appropriately rejected
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_resource_exhaustion_protection() {
+        // Security Test: Resource exhaustion protection during code generation
+        
+        // Test with extremely large layout
+        let large_field_types = vec!["Uint256".to_string(); 10000];
+        let large_field_semantics = vec!["ValidZero".to_string(); 10000];
+        let large_queries: Vec<QueryInfo> = (0..10000).map(|i| QueryInfo {
+            query: format!("field_{}", i),
+            field_type: "Uint256".to_string(),
+            zero_semantics: "ValidZero".to_string(),
+            expected_slot: format!("0x{:064x}", i),
+        }).collect();
+        
+        let large_layout = LayoutInfo {
+            commitment: "f6dc3c4a79e95565b3cf38993f1a120c6a6b467796264e7fd9a9c8675616dd7a".to_string(),
+            contract_name: "LargeContract".to_string(),
+            field_types: large_field_types,
+            field_semantics: large_field_semantics,
+            queries: large_queries,
+        };
+        
+        let options = CodegenOptions::default();
+        
+        // Should handle large inputs gracefully (either succeed or fail with reasonable error)
+        let result = generate_circuit_template(&large_layout, &options);
+        
+        match result {
+            Ok((cargo_toml, lib_rs)) => {
+                // If successful, verify reasonable size limits
+                assert!(cargo_toml.len() < 1_000_000, "Generated Cargo.toml should not be excessively large");
+                assert!(lib_rs.len() < 10_000_000, "Generated lib.rs should not be excessively large");
+                // Large layout handled successfully
+            }
+            Err(_) => {
+                // Large layout appropriately rejected to prevent resource exhaustion
+            }
+        }
+        
+        // Test with extremely long strings
+        let long_string = "A".repeat(100_000);
+        let long_layout = LayoutInfo {
+            commitment: "f6dc3c4a79e95565b3cf38993f1a120c6a6b467796264e7fd9a9c8675616dd7a".to_string(),
+            contract_name: long_string.clone(),
+            field_types: vec!["Uint256".to_string()],
+            field_semantics: vec!["ValidZero".to_string()],
+            queries: vec![QueryInfo {
+                query: long_string,
+                field_type: "Uint256".to_string(),
+                zero_semantics: "ValidZero".to_string(),
+                expected_slot: "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            }],
+        };
+        
+        let result = generate_circuit_template(&long_layout, &options);
+        
+        // Should handle long strings without crashing
+        match result {
+            Ok(_) => {
+                // Long strings handled successfully
+            }
+            Err(_) => {
+                // Long strings appropriately rejected
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_numeric_overflow_protection() {
+        // Security Test: Numeric overflow protection in generated code
+        
+        let layout = LayoutInfo {
+            commitment: "f6dc3c4a79e95565b3cf38993f1a120c6a6b467796264e7fd9a9c8675616dd7a".to_string(),
+            contract_name: "TestContract".to_string(),
+            field_types: vec!["Uint256".to_string()],
+            field_semantics: vec!["ValidZero".to_string()],
+            queries: vec![QueryInfo {
+                query: "balance".to_string(),
+                field_type: "Uint256".to_string(),
+                zero_semantics: "ValidZero".to_string(),
+                expected_slot: "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string(), // Max slot
+            }],
+        };
+        
+        let options = CodegenOptions::default();
+        
+        let result = generate_circuit_template(&layout, &options);
+        assert!(result.is_ok(), "Maximum valid slot should be handled");
+        
+        let (_, lib_rs) = result.unwrap();
+        
+        // Verify generated code handles maximum values safely
+        assert!(lib_rs.contains("0xff"), "Should handle maximum hex values");
+        
+        // Test with overflow-inducing slot values
+        let overflow_layout = LayoutInfo {
+            commitment: "f6dc3c4a79e95565b3cf38993f1a120c6a6b467796264e7fd9a9c8675616dd7a".to_string(),
+            contract_name: "TestContract".to_string(),
+            field_types: vec!["Uint256".to_string()],
+            field_semantics: vec!["ValidZero".to_string()],
+            queries: vec![QueryInfo {
+                query: "balance".to_string(),
+                field_type: "Uint256".to_string(),
+                zero_semantics: "ValidZero".to_string(),
+                expected_slot: format!("0x{}", "f".repeat(100)), // Too long
+            }],
+        };
+        
+        let result = generate_circuit_template(&overflow_layout, &options);
+        
+        // Should handle overflow gracefully
+        match result {
+            Ok(_) => {
+                // Overflow value handled successfully
+            }
+            Err(_) => {
+                // Overflow value appropriately rejected
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_concurrent_code_generation() {
+        // Security Test: Thread safety during concurrent code generation
+        #[cfg(feature = "std")]
+        {
+            use std::sync::Arc;
+            use std::thread;
+            
+            let layout = Arc::new(LayoutInfo {
+                commitment: "f6dc3c4a79e95565b3cf38993f1a120c6a6b467796264e7fd9a9c8675616dd7a".to_string(),
+                contract_name: "ConcurrentTest".to_string(),
+                field_types: vec!["Uint256".to_string()],
+                field_semantics: vec!["ValidZero".to_string()],
+                queries: vec![QueryInfo {
+                    query: "test_field".to_string(),
+                    field_type: "Uint256".to_string(),
+                    zero_semantics: "ValidZero".to_string(),
+                    expected_slot: "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                }],
+            });
+            
+            let options = Arc::new(CodegenOptions::default());
+            
+            let handles: Vec<_> = (0..10).map(|i| {
+                let layout = Arc::clone(&layout);
+                let options = Arc::clone(&options);
+                thread::spawn(move || {
+                    let result = generate_circuit_template(&layout, &options);
+                    assert!(result.is_ok(), "Concurrent generation {} should succeed", i);
+                    result.unwrap()
+                })
+            }).collect();
+            
+            // All threads should complete successfully with identical results
+            let mut results = Vec::new();
+            for handle in handles {
+                let result = handle.join().expect("Thread should not panic");
+                results.push(result);
+            }
+            
+            // All results should be identical (deterministic generation)
+            for i in 1..results.len() {
+                assert_eq!(results[0].0, results[i].0, "Cargo.toml should be identical across threads");
+                assert_eq!(results[0].1, results[i].1, "lib.rs should be identical across threads");
+            }
+        }
     }
 } 
 

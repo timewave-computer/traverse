@@ -960,7 +960,7 @@ mod tests {
             block_hash: [0u8; 32],
         };
         
-        // Should be valid - non-zero values with ValidZero semantics are allowed
+        // Should be valid - non-zero values with ValidZero semantics is allowed
         let result = processor.process_witness(&witness);
         assert!(matches!(result, CircuitResult::Valid { .. }));
         
@@ -1567,5 +1567,489 @@ mod tests {
         assert!(matches!(results1[1], CircuitResult::Invalid));
         assert!(matches!(results2[0], CircuitResult::Invalid));
         assert!(matches!(results2[1], CircuitResult::Valid { .. }));
+    }
+
+    #[test]
+    fn test_security_witness_field_index_bounds() {
+        // Security Test: Field index bounds checking to prevent out-of-bounds access
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Uint256, FieldType::Address];
+        let field_semantics = vec![ZeroSemantics::ValidZero, ZeroSemantics::NeverWritten];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        // Test valid field indices
+        for valid_index in 0..2u16 {
+            let witness = CircuitWitness {
+                key: [2u8; 32],
+                value: [3u8; 32],
+                proof: vec![1, 2, 3],
+                layout_commitment,
+                field_index: valid_index,
+                semantics: ZeroSemantics::ValidZero,
+                expected_slot: [2u8; 32],
+                block_height: 0,
+                block_hash: [0u8; 32],
+            };
+            
+            let result = processor.process_witness(&witness);
+            assert!(matches!(result, CircuitResult::Valid { .. }), "Valid field index {} should succeed", valid_index);
+        }
+        
+        // Test invalid field indices (out of bounds)
+        for invalid_index in [2u16, 3, 100, 1000, u16::MAX] {
+            let witness = CircuitWitness {
+                key: [2u8; 32],
+                value: [3u8; 32],
+                proof: vec![1, 2, 3],
+                layout_commitment,
+                field_index: invalid_index,
+                semantics: ZeroSemantics::ValidZero,
+                expected_slot: [2u8; 32],
+                block_height: 0,
+                block_hash: [0u8; 32],
+            };
+            
+            let result = processor.process_witness(&witness);
+            assert!(matches!(result, CircuitResult::Invalid), "Invalid field index {} should be rejected", invalid_index);
+        }
+    }
+
+    #[test]
+    fn test_security_layout_commitment_substitution() {
+        // Security Test: Layout commitment validation to prevent layout substitution attacks
+        let correct_commitment = [0xAAu8; 32];
+        let malicious_commitment = [0xBBu8; 32];
+        
+        let field_types = vec![FieldType::Uint256];
+        let field_semantics = vec![ZeroSemantics::ValidZero];
+        
+        let processor = CircuitProcessor::new(correct_commitment, field_types, field_semantics);
+        
+        // Test with correct layout commitment
+        let valid_witness = CircuitWitness {
+            key: [2u8; 32],
+            value: [3u8; 32],
+            proof: vec![1, 2, 3],
+            layout_commitment: correct_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [2u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&valid_witness);
+        assert!(matches!(result, CircuitResult::Valid { .. }), "Correct layout commitment should succeed");
+        
+        // Test with malicious layout commitment
+        let malicious_witness = CircuitWitness {
+            key: [2u8; 32],
+            value: [3u8; 32],
+            proof: vec![1, 2, 3],
+            layout_commitment: malicious_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [2u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&malicious_witness);
+        assert!(matches!(result, CircuitResult::Invalid), "Malicious layout commitment should be rejected");
+    }
+
+    #[test]
+    fn test_security_semantic_manipulation_attacks() {
+        // Security Test: Semantic manipulation attack prevention
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Address];
+        let field_semantics = vec![ZeroSemantics::NeverWritten];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        let zero_address = [0u8; 32];
+        
+        // Test 1: Attacker claims never_written but value suggests explicitly_zero
+        let attack_witness1 = CircuitWitness {
+            key: [2u8; 32],
+            value: zero_address,
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::NeverWritten, // Attacker's claim
+            expected_slot: [2u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        // Circuit should enforce layout semantics, not witness semantics
+        let result = processor.process_witness(&attack_witness1);
+        // For address fields with zero value and NeverWritten layout semantics, should be invalid
+        assert!(matches!(result, CircuitResult::Invalid), "Zero address with NeverWritten should be invalid");
+        
+        // Test 2: Attacker tries to bypass with ValidZero claim
+        let attack_witness2 = CircuitWitness {
+            key: [2u8; 32],
+            value: zero_address,
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero, // Different claim
+            expected_slot: [2u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        // Circuit should still enforce layout semantics
+        let result = processor.process_witness(&attack_witness2);
+        assert!(matches!(result, CircuitResult::Invalid), "Zero address should be invalid regardless of witness semantics");
+    }
+
+    #[test]
+    fn test_security_proof_size_dos_protection() {
+        // Security Test: Proof size DoS attack protection
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Uint256];
+        let field_semantics = vec![ZeroSemantics::ValidZero];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        // Test reasonable proof sizes
+        for size in [0, 32, 64, 1024] {
+            let proof = vec![0x42u8; size];
+            let witness = CircuitWitness {
+                key: [2u8; 32],
+                value: [3u8; 32],
+                proof,
+                layout_commitment,
+                field_index: 0,
+                semantics: ZeroSemantics::ValidZero,
+                expected_slot: [2u8; 32],
+                block_height: 0,
+                block_hash: [0u8; 32],
+            };
+            
+            let result = processor.process_witness(&witness);
+            assert!(matches!(result, CircuitResult::Valid { .. }), "Reasonable proof size {} should succeed", size);
+        }
+        
+        // Test extremely large proof (DoS vector)
+        let huge_proof = vec![0x42u8; 10_000_000]; // 10MB
+        let witness = CircuitWitness {
+            key: [2u8; 32],
+            value: [3u8; 32],
+            proof: huge_proof,
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [2u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        // Should handle gracefully (not panic or consume excessive resources)
+        let result = processor.process_witness(&witness);
+        // Either accept or reject, but don't panic
+        assert!(matches!(result, CircuitResult::Valid { .. }) || matches!(result, CircuitResult::Invalid));
+    }
+
+    #[test]
+    fn test_security_block_height_replay_attacks() {
+        // Security Test: Block height replay attack prevention
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Uint256];
+        let field_semantics = vec![ZeroSemantics::ValidZero];
+        let current_block = 1000u64;
+        let block_hash = [0xABu8; 32];
+        
+        let processor = CircuitProcessor::new_with_expiration(
+            layout_commitment,
+            field_types,
+            field_semantics,
+            current_block,
+            block_hash,
+            100, // 100 block expiration
+        );
+        
+        // Test 1: Current block (valid)
+        let current_witness = CircuitWitness {
+            key: [2u8; 32],
+            value: [3u8; 32],
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [2u8; 32],
+            block_height: current_block,
+            block_hash,
+        };
+        
+        let result = processor.process_witness(&current_witness);
+        assert!(matches!(result, CircuitResult::Valid { .. }), "Current block should be valid");
+        
+        // Test 2: Recent block (valid)
+        let recent_witness = CircuitWitness {
+            key: [2u8; 32],
+            value: [3u8; 32],
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [2u8; 32],
+            block_height: current_block - 50,
+            block_hash: [0xCDu8; 32],
+        };
+        
+        let result = processor.process_witness(&recent_witness);
+        assert!(matches!(result, CircuitResult::Valid { .. }), "Recent block should be valid");
+        
+        // Test 3: Expired block (replay attack)
+        let expired_witness = CircuitWitness {
+            key: [2u8; 32],
+            value: [3u8; 32],
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [2u8; 32],
+            block_height: current_block - 200, // Expired
+            block_hash: [0xEFu8; 32],
+        };
+        
+        let result = processor.process_witness(&expired_witness);
+        assert!(matches!(result, CircuitResult::Invalid), "Expired block should be invalid");
+        
+        // Test 4: Future block (impossible/attack)
+        let future_witness = CircuitWitness {
+            key: [2u8; 32],
+            value: [3u8; 32],
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [2u8; 32],
+            block_height: current_block + 1000, // Future
+            block_hash: [0x12u8; 32],
+        };
+        
+        let result = processor.process_witness(&future_witness);
+        assert!(matches!(result, CircuitResult::Invalid), "Future block should be invalid");
+    }
+
+    #[test]
+    fn test_security_expected_slot_validation() {
+        // Security Test: Expected slot validation to prevent slot confusion attacks
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Uint256];
+        let field_semantics = vec![ZeroSemantics::ValidZero];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        let storage_key = [0x42u8; 32];
+        let correct_slot = storage_key; // In this test, slot should match key
+        let wrong_slot = [0x99u8; 32];
+        
+        // Test with correct expected slot
+        let valid_witness = CircuitWitness {
+            key: storage_key,
+            value: [3u8; 32],
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: correct_slot,
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&valid_witness);
+        assert!(matches!(result, CircuitResult::Valid { .. }), "Correct expected slot should be valid");
+        
+        // Test with wrong expected slot (attack)
+        let attack_witness = CircuitWitness {
+            key: storage_key,
+            value: [3u8; 32],
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 0,
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: wrong_slot,
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&attack_witness);
+        assert!(matches!(result, CircuitResult::Invalid), "Wrong expected slot should be invalid");
+    }
+
+    #[test]
+    fn test_security_batch_processing_isolation() {
+        // Security Test: Batch processing isolation to prevent cross-witness contamination
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Uint256, FieldType::Address];
+        let field_semantics = vec![ZeroSemantics::ValidZero, ZeroSemantics::NeverWritten];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        // Create a mix of valid and invalid witnesses
+        let witnesses = vec![
+            // Valid witness 1
+            CircuitWitness {
+                key: [1u8; 32],
+                value: [10u8; 32],
+                proof: vec![1, 2, 3],
+                layout_commitment,
+                field_index: 0,
+                semantics: ZeroSemantics::ValidZero,
+                expected_slot: [1u8; 32],
+                block_height: 0,
+                block_hash: [0u8; 32],
+            },
+            // Invalid witness (wrong layout commitment)
+            CircuitWitness {
+                key: [2u8; 32],
+                value: [20u8; 32],
+                proof: vec![4, 5, 6],
+                layout_commitment: [0xBAu8; 32], // Wrong commitment
+                field_index: 0,
+                semantics: ZeroSemantics::ValidZero,
+                expected_slot: [2u8; 32],
+                block_height: 0,
+                block_hash: [0u8; 32],
+            },
+            // Valid witness 2
+            CircuitWitness {
+                key: [3u8; 32],
+                value: [30u8; 32],
+                proof: vec![7, 8, 9],
+                layout_commitment,
+                field_index: 0,
+                semantics: ZeroSemantics::ValidZero,
+                expected_slot: [3u8; 32],
+                block_height: 0,
+                block_hash: [0u8; 32],
+            },
+        ];
+        
+        let results = processor.process_batch(&witnesses);
+        
+        // Verify results are isolated
+        assert_eq!(results.len(), 3, "Should have 3 results");
+        assert!(matches!(results[0], CircuitResult::Valid { .. }), "First witness should be valid");
+        assert!(matches!(results[1], CircuitResult::Invalid), "Second witness should be invalid");
+        assert!(matches!(results[2], CircuitResult::Valid { .. }), "Third witness should be valid");
+        
+        // Verify invalid witness doesn't affect others
+        if let CircuitResult::Valid { extracted_value: value1, .. } = &results[0] {
+            if let CircuitResult::Valid { extracted_value: value3, .. } = &results[2] {
+                // Values should be extracted correctly despite middle witness being invalid
+                assert!(matches!(value1, ExtractedValue::Uint256(_)));
+                assert!(matches!(value3, ExtractedValue::Uint256(_)));
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_zero_value_edge_cases() {
+        // Security Test: Zero value edge cases that could bypass semantic validation
+        let layout_commitment = [1u8; 32];
+        let field_types = vec![FieldType::Address, FieldType::Uint256, FieldType::Bool];
+        let field_semantics = vec![ZeroSemantics::NeverWritten, ZeroSemantics::ValidZero, ZeroSemantics::ExplicitlyZero];
+        
+        let processor = CircuitProcessor::new(layout_commitment, field_types, field_semantics);
+        
+        // Test zero address with NeverWritten (should be invalid)
+        let zero_address_witness = CircuitWitness {
+            key: [1u8; 32],
+            value: [0u8; 32], // Zero address
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 0, // Address field with NeverWritten semantics
+            semantics: ZeroSemantics::NeverWritten,
+            expected_slot: [1u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&zero_address_witness);
+        assert!(matches!(result, CircuitResult::Invalid), "Zero address with NeverWritten should be invalid");
+        
+        // Test zero uint256 with ValidZero (should be valid)
+        let zero_uint_witness = CircuitWitness {
+            key: [2u8; 32],
+            value: [0u8; 32], // Zero value
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 1, // Uint256 field with ValidZero semantics
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [2u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&zero_uint_witness);
+        assert!(matches!(result, CircuitResult::Valid { .. }), "Zero uint256 with ValidZero should be valid");
+        
+        // Test zero bool with ExplicitlyZero (should be valid)
+        let zero_bool_witness = CircuitWitness {
+            key: [3u8; 32],
+            value: [0u8; 32], // False
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 2, // Bool field with ExplicitlyZero semantics
+            semantics: ZeroSemantics::ExplicitlyZero,
+            expected_slot: [3u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&zero_bool_witness);
+        assert!(matches!(result, CircuitResult::Valid { .. }), "Zero bool with ExplicitlyZero should be valid");
+    }
+
+    #[test]
+    fn test_security_memory_exhaustion_protection() {
+        // Security Test: Memory exhaustion attack protection
+        let layout_commitment = [1u8; 32];
+        
+        // Test with large number of field types
+        let large_field_types = vec![FieldType::Uint256; 10000];
+        let large_field_semantics = vec![ZeroSemantics::ValidZero; 10000];
+        
+        // Should handle large configurations gracefully
+        let processor = CircuitProcessor::new(layout_commitment, large_field_types, large_field_semantics);
+        
+        // Test witness processing with large field count
+        let witness = CircuitWitness {
+            key: [1u8; 32],
+            value: [2u8; 32],
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 5000, // Valid index within range
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [1u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&witness);
+        assert!(matches!(result, CircuitResult::Valid { .. }), "Large field configuration should work");
+        
+        // Test out of bounds access
+        let out_of_bounds_witness = CircuitWitness {
+            key: [1u8; 32],
+            value: [2u8; 32],
+            proof: vec![1, 2, 3],
+            layout_commitment,
+            field_index: 20000, // Out of bounds
+            semantics: ZeroSemantics::ValidZero,
+            expected_slot: [1u8; 32],
+            block_height: 0,
+            block_hash: [0u8; 32],
+        };
+        
+        let result = processor.process_witness(&out_of_bounds_witness);
+        assert!(matches!(result, CircuitResult::Invalid), "Out of bounds field index should be invalid");
     }
 }

@@ -37,42 +37,60 @@ fn main() {
 }
 
 fn constrained_example_main() {
-    println!("Constrained Environment Example");
-    println!("==============================");
-    println!();
+    #[cfg(feature = "std")]
+    {
+        println!("Constrained Environment Example");
+        println!("==============================");
+        println!();
+    }
 
     #[cfg(feature = "constrained")]
     {
         // Example 1: Constrained Layout Info
-        println!("Example 1: Constrained Layout Info");
-        println!("----------------------------------");
+        #[cfg(feature = "std")]
+        {
+            println!("Example 1: Constrained Layout Info");
+            println!("----------------------------------");
+        }
         
         // Note: ConstrainedMemoryPool is an internal type not exposed in the public API
         // This example shows how to work with constrained layout information instead
         
         let layout_info = create_test_layout();
-        println!("✓ Created constrained layout with {} entries", layout_info.entry_count);
-        println!("✓ Layout commitment: {:?}", &layout_info.commitment[0..4]);
-        println!();
+        #[cfg(feature = "std")]
+        {
+            println!("✓ Created constrained layout with {} entries", layout_info.entry_count);
+            println!("✓ Layout commitment: {:?}", &layout_info.commitment[0..4]);
+            println!();
+        }
 
         // Example 2: Constrained Layout Creation
-        println!("Example 2: Constrained Layout Creation");
-        println!("--------------------------------------");
+        #[cfg(feature = "std")]
+        {
+            println!("Example 2: Constrained Layout Creation");
+            println!("--------------------------------------");
+        }
         
         let constrained_layout = create_test_layout();
-        println!("✓ Created constrained layout with {} storage entries", 
-                constrained_layout.entry_count);
-        println!("Layout commitment: 0x{}", hex::encode(&constrained_layout.commitment));
-        
-        for (i, entry) in constrained_layout.storage.iter().enumerate() {
-            println!("  Entry {}: {:?} (size: {} bytes, semantics: {:?})", 
-                    i, entry.field_type, entry.size, entry.zero_semantics);
+        #[cfg(feature = "std")]
+        {
+            println!("✓ Created constrained layout with {} storage entries", 
+                    constrained_layout.entry_count);
+            println!("Layout commitment: 0x{}", hex::encode(&constrained_layout.commitment));
+            
+            for (i, entry) in constrained_layout.storage.iter().enumerate() {
+                println!("  Entry {}: {:?} (size: {} bytes, semantics: {:?})", 
+                        i, entry.field_type, entry.size, entry.zero_semantics);
+            }
+            println!();
         }
-        println!();
 
         // Example 3: Constrained Key Resolution
-        println!("Example 3: Constrained Key Resolution");
-        println!("-------------------------------------");
+        #[cfg(feature = "std")]
+        {
+            println!("Example 3: Constrained Key Resolution");
+            println!("-------------------------------------");
+        }
         
         let mut resolver = ConstrainedKeyResolver::new();
         
@@ -80,22 +98,29 @@ fn constrained_example_main() {
         for field_index in 0..constrained_layout.entry_count {
             match resolver.resolve_constrained(&constrained_layout, field_index) {
                 Ok(key) => {
+                    #[cfg(feature = "std")]
                     println!("  Field {}: 0x{}", field_index, hex::encode(&key[..4]));
                 }
                 Err(e) => {
+                    #[cfg(feature = "std")]
                     println!("  Field {}: Error - {:?}", field_index, e);
                 }
             }
         }
         
         if let Some(usage) = resolver.memory_usage() {
+            #[cfg(feature = "std")]
             println!("Resolver memory usage: {} bytes", usage.used);
         }
+        #[cfg(feature = "std")]
         println!();
 
         // Example 4: Circuit Processing (using minimal circuit)
-        println!("Example 4: Circuit Processing");
-        println!("-----------------------------");
+        #[cfg(feature = "std")]
+        {
+            println!("Example 4: Circuit Processing");
+            println!("-----------------------------");
+        }
         
         // Create processor with field types and semantics
         let field_types = vec![
@@ -118,6 +143,7 @@ fn constrained_example_main() {
         
         // Create test witnesses
         let witnesses = create_test_witnesses();
+        #[cfg(feature = "std")]
         println!("✓ Created {} test witnesses", witnesses.len());
         
         // Process witnesses
@@ -127,19 +153,25 @@ fn constrained_example_main() {
         for (i, result) in results.iter().enumerate() {
             match result {
                 CircuitResult::Valid { field_index, extracted_value: _ } => {
+                    #[cfg(feature = "std")]
                     println!("  Witness {}: VALID (field {})", i, field_index);
                 }
                 CircuitResult::Invalid => {
+                    #[cfg(feature = "std")]
                     println!("  Witness {}: INVALID", i);
                 }
             }
         }
         
+        #[cfg(feature = "std")]
         println!();
 
         // Example 5: Memory Constrained Validation
-        println!("Example 5: Memory Constrained Validation");
-        println!("----------------------------------------");
+        #[cfg(feature = "std")]
+        {
+            println!("Example 5: Memory Constrained Validation");
+            println!("----------------------------------------");
+        }
         
         // Test with different memory limits
         let memory_limits = vec![100, 500, 1000, 5000];
@@ -147,43 +179,60 @@ fn constrained_example_main() {
         for limit in memory_limits {
             match validate_with_memory_limit(&witnesses, limit) {
                 Ok(()) => {
+                    #[cfg(feature = "std")]
                     println!("✓ Validation passed with {} byte memory limit", limit);
                 }
                 Err(e) => {
+                    #[cfg(feature = "std")]
                     println!("✗ Validation failed with {} byte memory limit: {:?}", limit, e);
                 }
             }
         }
+        #[cfg(feature = "std")]
         println!();
 
         // Example 6: Stack-based Operations (no heap allocation)
-        println!("Example 6: Stack-based Operations");
-        println!("---------------------------------");
+        #[cfg(feature = "std")]
+        {
+            println!("Example 6: Stack-based Operations");
+            println!("---------------------------------");
+        }
         
         demonstrate_stack_operations();
+        #[cfg(feature = "std")]
         println!();
 
         // Example 7: Error Handling in Constrained Environments
-        println!("Example 7: Error Handling");
-        println!("-------------------------");
+        #[cfg(feature = "std")]
+        {
+            println!("Example 7: Error Handling");
+            println!("-------------------------");
+        }
         
         demonstrate_error_handling();
+        #[cfg(feature = "std")]
         println!();
     }
 
     #[cfg(not(feature = "constrained"))]
     {
-        println!("Note: This example requires the 'constrained' feature to be enabled");
-        println!("Run with: cargo run --example constrained_environment_example --features constrained --no-default-features");
+        #[cfg(feature = "std")]
+        {
+            println!("Note: This example requires the 'constrained' feature to be enabled");
+            println!("Run with: cargo run --example constrained_environment_example --features constrained --no-default-features");
+        }
     }
 
-    println!("Constrained Environment Benefits:");
-    println!("• Predictable memory usage with memory pools");
-    println!("• Compact data structures optimized for size");
-    println!("• Stack-based operations where possible");
-    println!("• Graceful degradation under memory pressure");
-    println!("• no_std compatibility for embedded systems");
-    println!("• WASM-friendly with minimal dependencies");
+    #[cfg(feature = "std")]
+    {
+        println!("Constrained Environment Benefits:");
+        println!("• Predictable memory usage with memory pools");
+        println!("• Compact data structures optimized for size");
+        println!("• Stack-based operations where possible");
+        println!("• Graceful degradation under memory pressure");
+        println!("• no_std compatibility for embedded systems");
+        println!("• WASM-friendly with minimal dependencies");
+    }
 }
 
 #[cfg(feature = "constrained")]
@@ -307,11 +356,15 @@ fn demonstrate_stack_operations() {
     
     match traverse_core::constrained::utils::bytes_to_hex_stack(&bytes, &mut hex_output) {
         Ok(len) => {
-            println!("✓ Stack-based hex conversion: {} bytes", len);
-            println!("  Input: {:?}", bytes);
-            println!("  Output: {:?}", core::str::from_utf8(&hex_output).unwrap_or("invalid"));
+            #[cfg(feature = "std")]
+            {
+                println!("✓ Stack-based hex conversion: {} bytes", len);
+                println!("  Input: {:?}", bytes);
+                println!("  Output: {:?}", core::str::from_utf8(&hex_output).unwrap_or("invalid"));
+            }
         }
         Err(_) => {
+            #[cfg(feature = "std")]
             println!("✗ Stack-based hex conversion failed");
         }
     }
@@ -320,10 +373,14 @@ fn demonstrate_stack_operations() {
     let mut bytes_output = [0u8; 4];
     match traverse_core::constrained::utils::hex_to_bytes_stack("1234abcd", &mut bytes_output) {
         Ok(len) => {
-            println!("✓ Stack-based hex parsing: {} bytes", len);
-            println!("  Result: {:?}", bytes_output);
+            #[cfg(feature = "std")]
+            {
+                println!("✓ Stack-based hex parsing: {} bytes", len);
+                println!("  Result: {:?}", bytes_output);
+            }
         }
         Err(_) => {
+            #[cfg(feature = "std")]
             println!("✗ Stack-based hex parsing failed");
         }
     }
@@ -358,9 +415,11 @@ fn demonstrate_error_handling() {
     for (name, test) in test_cases {
         match test() {
             Ok(_) => {
+                #[cfg(feature = "std")]
                 println!("✗ Expected error for '{}' but got success", name);
             }
             Err(e) => {
+                #[cfg(feature = "std")]
                 println!("✓ Expected error for '{}': {:?}", name, e);
             }
         }
