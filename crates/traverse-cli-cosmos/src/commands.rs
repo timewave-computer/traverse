@@ -3,17 +3,19 @@
 //! This module provides CosmWasm-specific CLI commands for contract analysis,
 //! storage layout compilation, and query generation.
 
-use crate::cli::OutputFormat;
-use crate::formatters::write_output;
+use traverse_cli_core::{formatters::write_output, OutputFormat};
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use std::path::Path;
 use tracing::{info, warn};
 use traverse_core::{KeyResolver, LayoutCompiler};
+
+#[cfg(feature = "cosmos")]
 use traverse_cosmos::{CosmosKeyResolver, CosmosLayoutCompiler};
 
 /// Execute cosmos analyze-contract command
+#[cfg(feature = "cosmos")]
 pub async fn cmd_cosmos_analyze_contract(
     schema_file: &Path,
     output: Option<&Path>,
@@ -106,7 +108,19 @@ pub async fn cmd_cosmos_analyze_contract(
     Ok(())
 }
 
+#[cfg(not(feature = "cosmos"))]
+pub async fn cmd_cosmos_analyze_contract(
+    _schema_file: &Path,
+    _output: Option<&Path>,
+    _validate_storage: bool,
+    _contract_address: Option<&str>,
+    _rpc: Option<&str>,
+) -> Result<()> {
+    Err(anyhow::anyhow!("Cosmos support not enabled. Build with --features cosmos"))
+}
+
 /// Execute cosmos compile-layout command
+#[cfg(feature = "cosmos")]
 pub fn cmd_cosmos_compile_layout(
     msg_file: &Path,
     output: Option<&Path>,
@@ -201,7 +215,17 @@ compiler = "traverse-cosmos"
     Ok(())
 }
 
+#[cfg(not(feature = "cosmos"))]
+pub fn cmd_cosmos_compile_layout(
+    _msg_file: &Path,
+    _output: Option<&Path>,
+    _format: &OutputFormat,
+) -> Result<()> {
+    Err(anyhow::anyhow!("Cosmos support not enabled. Build with --features cosmos"))
+}
+
 /// Execute cosmos resolve-query command
+#[cfg(feature = "cosmos")]
 pub fn cmd_cosmos_resolve_query(
     query: &str,
     layout_file: &Path,
@@ -216,7 +240,7 @@ pub fn cmd_cosmos_resolve_query(
     let resolver = CosmosKeyResolver;
     let path = resolver.resolve(&layout, query)?;
 
-    let formatted_output = crate::formatters::format_storage_path(&path, query, format)?;
+    let formatted_output = traverse_cli_core::formatters::format_storage_path(&path, query, format)?;
     write_output(&formatted_output, output)?;
 
     println!("CosmWasm storage query resolved successfully:");
@@ -232,7 +256,18 @@ pub fn cmd_cosmos_resolve_query(
     Ok(())
 }
 
+#[cfg(not(feature = "cosmos"))]
+pub fn cmd_cosmos_resolve_query(
+    _query: &str,
+    _layout_file: &Path,
+    _format: &OutputFormat,
+    _output: Option<&Path>,
+) -> Result<()> {
+    Err(anyhow::anyhow!("Cosmos support not enabled. Build with --features cosmos"))
+}
+
 /// Execute cosmos generate-queries command
+#[cfg(feature = "cosmos")]
 pub fn cmd_cosmos_generate_queries(
     layout_file: &Path,
     state_keys: &str,
@@ -322,7 +357,18 @@ pub fn cmd_cosmos_generate_queries(
     Ok(())
 }
 
+#[cfg(not(feature = "cosmos"))]
+pub fn cmd_cosmos_generate_queries(
+    _layout_file: &Path,
+    _state_keys: &str,
+    _output: Option<&Path>,
+    _include_examples: bool,
+) -> Result<()> {
+    Err(anyhow::anyhow!("Cosmos support not enabled. Build with --features cosmos"))
+}
+
 /// Execute cosmos auto-generate command (end-to-end automation)
+#[cfg(feature = "cosmos")]
 pub async fn cmd_cosmos_auto_generate(
     schema_file: &Path,
     rpc: &str,
@@ -474,7 +520,21 @@ pub async fn cmd_cosmos_auto_generate(
     Ok(())
 }
 
+#[cfg(not(feature = "cosmos"))]
+pub async fn cmd_cosmos_auto_generate(
+    _schema_file: &Path,
+    _rpc: &str,
+    _contract: &str,
+    _queries: &str,
+    _output_dir: &Path,
+    _cache: bool,
+    _dry_run: bool,
+) -> Result<()> {
+    Err(anyhow::anyhow!("Cosmos support not enabled. Build with --features cosmos"))
+}
+
 /// Perform live analysis of a CosmWasm contract
+#[cfg(feature = "cosmos")]
 async fn perform_live_cosmos_analysis(contract_address: &str, rpc_url: &str) -> Result<Value> {
     info!(
         "Fetching live contract info for {} from {}",
@@ -558,3 +618,8 @@ async fn perform_live_cosmos_analysis(contract_address: &str, rpc_url: &str) -> 
 
     Ok(live_data)
 }
+
+#[cfg(not(feature = "cosmos"))]
+async fn perform_live_cosmos_analysis(_contract_address: &str, _rpc_url: &str) -> Result<Value> {
+    Err(anyhow::anyhow!("Cosmos support not enabled"))
+} 

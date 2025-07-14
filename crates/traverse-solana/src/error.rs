@@ -12,6 +12,10 @@ pub enum SolanaError {
     #[error("Invalid IDL: {0}")]
     InvalidIdl(String),
     
+    /// IDL parsing failed (legacy variant)
+    #[error("IDL parsing error: {0}")]
+    IdlParsingError(String),
+    
     /// Account not found on-chain
     #[error("Account not found: {0}")]
     AccountNotFound(String),
@@ -47,6 +51,10 @@ pub enum SolanaError {
     /// Address parsing/validation error
     #[error("Address parsing error: {0}")]
     AddressParsingError(String),
+    
+    /// Invalid query format or parameters
+    #[error("Invalid query: {0}")]
+    InvalidQuery(String),
     
     /// Account parsing error
     #[error("Account parsing error: {0}")]
@@ -117,7 +125,6 @@ impl SolanaError {
         Self::HttpError(error.to_string())
     }
     
-    /// Create a Solana SDK error from any error type (requires solana feature)
     // #[cfg(feature = "solana")] // Disabled temporarily
     // pub fn solana<E: std::fmt::Display>(error: E) -> Self {
     //     Self::SolanaError(error.to_string())
@@ -130,4 +137,10 @@ impl From<reqwest::Error> for SolanaError {
     fn from(error: reqwest::Error) -> Self {
         Self::HttpError(error.to_string())
     }
-} 
+}
+
+/// Result type alias for Solana operations
+pub type SolanaResult<T> = std::result::Result<T, SolanaError>;
+
+/// Standard Result type alias
+pub type Result<T> = std::result::Result<T, SolanaError>;

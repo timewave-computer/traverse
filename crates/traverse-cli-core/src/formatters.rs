@@ -3,7 +3,7 @@
 //! This module provides functions for converting between different data formats
 //! and handling output to files or stdout.
 
-use crate::cli::OutputFormat;
+use crate::OutputFormat;
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
@@ -180,4 +180,4 @@ pub fn format_storage_paths(paths: &[StaticKeyPath], format: &OutputFormat) -> R
             ))
         }
     }
-}
+} 

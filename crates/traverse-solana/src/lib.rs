@@ -53,7 +53,7 @@ pub mod proof;
 pub mod anchor;
 
 // Always export error types
-pub use error::{SolanaError, SolanaResult};
+pub use error::{SolanaError, SolanaResult, Result};
 
 // Always export account types (for basic data structures)
 pub use account::{

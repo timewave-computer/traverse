@@ -181,8 +181,14 @@ pub enum FieldType {
     /// Solana Pubkey (32 bytes)
     Pubkey,
     
+    /// Solana PublicKey (alias for Pubkey)
+    PublicKey,
+    
     /// Fixed-size byte arrays
     Bytes(u32),
+    
+    /// 8-byte array
+    Bytes8,
     
     /// Variable-length strings
     String,
@@ -190,11 +196,17 @@ pub enum FieldType {
     /// Vec of elements
     Vec(Box<FieldType>),
     
+    /// Fixed-size array
+    Array(Box<FieldType>),
+    
     /// Option type
     Option(Box<FieldType>),
     
     /// Custom struct/enum types
     Custom(String),
+    
+    /// User-defined types (structs, enums)
+    Defined(String),
 }
 
 impl FieldType {
@@ -207,8 +219,11 @@ impl FieldType {
             FieldType::U32 | FieldType::I32 => Some(4),
             FieldType::U64 | FieldType::I64 => Some(8),
             FieldType::U128 | FieldType::I128 => Some(16),
-            FieldType::Pubkey => Some(32),
+            FieldType::Pubkey | FieldType::PublicKey => Some(32),
             FieldType::Bytes(size) => Some(*size),
+            FieldType::Bytes8 => Some(8),
+            FieldType::Array(_) => None, // Variable-size arrays
+            FieldType::Defined(_) => None, // User-defined types are variable
             _ => None, // Variable-size types
         }
     }
@@ -219,12 +234,15 @@ impl FieldType {
             FieldType::Bool => true, // false = 0
             FieldType::U8 | FieldType::U16 | FieldType::U32 | FieldType::U64 | FieldType::U128 => true,
             FieldType::I8 | FieldType::I16 | FieldType::I32 | FieldType::I64 | FieldType::I128 => true,
-            FieldType::Pubkey => false, // Zero pubkey is suspicious
+            FieldType::Pubkey | FieldType::PublicKey => false, // Zero pubkey is suspicious
             FieldType::Bytes(_) => true,
+            FieldType::Bytes8 => true,
             FieldType::String => true,
             FieldType::Vec(_) => true, // Empty vec
+            FieldType::Array(_) => true, // Empty array
             FieldType::Option(_) => true, // None = zero
             FieldType::Custom(_) => true, // Depends on implementation
+            FieldType::Defined(_) => true, // Depends on implementation
         }
     }
 }
@@ -234,6 +252,9 @@ impl FieldType {
 pub enum ZeroSemantics {
     /// Account was never initialized
     NeverInitialized,
+    
+    /// Field was never written to
+    NeverWritten,
     
     /// Field was explicitly set to zero
     ExplicitlyZero,
@@ -340,4 +361,7 @@ impl ProgramAccount {
             Ok(vec![0u8; field.size as usize])
         // }
     }
-} 
+}
+
+/// Type alias for Solana account (backwards compatibility)
+pub type SolanaAccount = ProgramAccount;

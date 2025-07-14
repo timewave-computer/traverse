@@ -1,0 +1,46 @@
+# Cosmos-specific CLI for traverse ZK storage path generation
+[package]
+name = "traverse-cli-cosmos"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Cosmos-specific CLI for traverse ZK storage path generation"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std", "cosmos"]
+std = ["traverse-cli-core/std", "traverse-cosmos?/std"]
+cosmos = ["dep:traverse-cosmos", "traverse-cosmos?/cosmos"]
+client = ["traverse-cosmos?/client"]
+
+[dependencies]
+# Shared CLI core
+traverse-cli-core = { path = "../traverse-cli-core" }
+
+# Cosmos ecosystem crates only
+traverse-core = { path = "../traverse-core" }
+traverse-cosmos = { path = "../traverse-cosmos", optional = true }
+
+# CLI dependencies
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+base64 = "0.22"
+bincode = "1.3"
+hex = { workspace = true }
+toml = "0.8"
+
+[[bin]]
+name = "traverse-cosmos"
+path = "src/main.rs"
+required-features = ["std", "cosmos"]
+
+[dev-dependencies]
+tempfile = { workspace = true } 

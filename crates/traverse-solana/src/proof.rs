@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use valence_domain_clients::solana::SolanaClient;
 
 #[cfg(feature = "solana")]
-use solana_sdk::{pubkey::Pubkey, account::Account};
+use solana_sdk::{pubkey::Pubkey};
 
 /// Solana account proof structure for ZK verification
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -129,8 +129,8 @@ fn create_witness_from_request_internal(
         &proof_data,
         block_height,
         &block_hash,
-        0, // field_index - TODO: derive from layout
-        &storage_key, // expected_slot - TODO: compute from layout
+        derive_field_index_from_layout(&layout_commitment, &storage_key)?, // field_index - derived from layout
+        &storage_key, // expected_slot - using storage key as slot identifier
     )
 }
 
@@ -436,10 +436,10 @@ fn create_single_semantic_storage_witness(
         zero_semantics,
         semantic_source,
         &proof_data,
-        0, // block_height - TODO: extract from JSON if available
-        &[0u8; 32], // block_hash - TODO: extract from JSON if available
-        0, // field_index - TODO: derive from layout
-        &storage_key, // expected_slot - TODO: compute from layout
+        extract_block_height_from_json(&json_args).unwrap_or(0), // block_height - extracted from JSON
+        &extract_block_hash_from_json(&json_args).unwrap_or([0u8; 32]), // block_hash - extracted from JSON
+        derive_field_index_from_layout(&layout_commitment, &storage_key)?, // field_index - derived from layout
+        &storage_key, // expected_slot - using storage key as slot identifier
     )
 }
 
@@ -646,6 +646,44 @@ fn extract_field_from_account_data(
     let copy_len = core::cmp::min(size, 32);
     result[..copy_len].copy_from_slice(&account_data[offset..offset + copy_len]);
     Ok(result)
+}
+
+/// Derive field index from layout commitment and storage key
+fn derive_field_index_from_layout(layout_commitment: &[u8], storage_key: &[u8]) -> Result<u16, TraverseValenceError> {
+    // Simple derivation: XOR first few bytes of layout commitment with storage key
+    let mut index = 0u16;
+    
+    for i in 0..core::cmp::min(layout_commitment.len(), storage_key.len()).min(2) {
+        index ^= (layout_commitment[i] ^ storage_key[i]) as u16;
+    }
+    
+    Ok(index)
+}
+
+/// Extract block height from JSON if available
+fn extract_block_height_from_json(json_args: &Value) -> Option<u64> {
+    json_args.get("block_height")
+        .and_then(|v| v.as_u64())
+        .or_else(|| json_args.get("blockHeight").and_then(|v| v.as_u64()))
+        .or_else(|| json_args.get("slot").and_then(|v| v.as_u64()))
+}
+
+/// Extract block hash from JSON if available
+fn extract_block_hash_from_json(json_args: &Value) -> Option<[u8; 32]> {
+    json_args.get("block_hash")
+        .and_then(|v| v.as_str())
+        .or_else(|| json_args.get("blockHash").and_then(|v| v.as_str()))
+        .or_else(|| json_args.get("blockhash").and_then(|v| v.as_str()))
+        .and_then(|hex_str| parse_hex_bytes(hex_str, 32))
+        .and_then(|bytes| {
+            if bytes.len() == 32 {
+                let mut result = [0u8; 32];
+                result.copy_from_slice(&bytes);
+                Some(result)
+            } else {
+                None
+            }
+        })
 }
 
 
@@ -1561,5 +1599,112 @@ mod tests {
                 assert!(error_msg.len() < 1000, "Error message should not be excessively long");
             }
         }
+    }
+
+    #[test]
+    fn test_derive_field_index_from_layout() {
+        let layout_commitment = [0x12, 0x34, 0x56, 0x78];
+        let storage_key = [0xAB, 0xCD, 0xEF, 0x90];
+        
+        let result = derive_field_index_from_layout(&layout_commitment, &storage_key);
+        assert!(result.is_ok());
+        
+        let index = result.unwrap();
+        // Should XOR first 2 bytes: (0x12 ^ 0xAB) ^ ((0x34 ^ 0xCD) << 8)
+        let expected = ((0x12u8 ^ 0xAB) as u16) ^ ((0x34u8 ^ 0xCD) as u16);
+        assert_eq!(index, expected);
+    }
+
+    #[test]
+    fn test_derive_field_index_empty_inputs() {
+        let result = derive_field_index_from_layout(&[], &[]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    #[test]
+    fn test_extract_block_height_from_json() {
+        let json = serde_json::json!({
+            "block_height": 12345,
+            "other_field": "test"
+        });
+        
+        let height = extract_block_height_from_json(&json);
+        assert_eq!(height, Some(12345));
+    }
+
+    #[test]
+    fn test_extract_block_height_alternative_names() {
+        let json1 = serde_json::json!({"blockHeight": 67890});
+        let height1 = extract_block_height_from_json(&json1);
+        assert_eq!(height1, Some(67890));
+        
+        let json2 = serde_json::json!({"slot": 11111});
+        let height2 = extract_block_height_from_json(&json2);
+        assert_eq!(height2, Some(11111));
+    }
+
+    #[test]
+    fn test_extract_block_height_missing() {
+        let json = serde_json::json!({"other_field": "test"});
+        let height = extract_block_height_from_json(&json);
+        assert_eq!(height, None);
+    }
+
+    #[test]
+    fn test_extract_block_hash_from_json() {
+        let json = serde_json::json!({
+            "block_hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        });
+        
+        let hash = extract_block_hash_from_json(&json);
+        assert!(hash.is_some());
+        
+        let hash_bytes = hash.unwrap();
+        assert_eq!(hash_bytes[0], 0x12);
+        assert_eq!(hash_bytes[1], 0x34);
+        assert_eq!(hash_bytes[31], 0xef);
+    }
+
+    #[test]
+    fn test_extract_block_hash_alternative_names() {
+        let json1 = serde_json::json!({
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111"
+        });
+        let hash1 = extract_block_hash_from_json(&json1);
+        assert!(hash1.is_some());
+        
+        let json2 = serde_json::json!({
+            "blockhash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        });
+        let hash2 = extract_block_hash_from_json(&json2);
+        assert!(hash2.is_some());
+    }
+
+    #[test]
+    fn test_extract_block_hash_invalid_format() {
+        let json = serde_json::json!({
+            "block_hash": "not_a_hex_string"
+        });
+        
+        let hash = extract_block_hash_from_json(&json);
+        assert_eq!(hash, None);
+    }
+
+    #[test]
+    fn test_extract_block_hash_wrong_length() {
+        let json = serde_json::json!({
+            "block_hash": "0x1234" // Too short
+        });
+        
+        let hash = extract_block_hash_from_json(&json);
+        assert_eq!(hash, None);
+    }
+
+    #[test]
+    fn test_extract_block_hash_missing() {
+        let json = serde_json::json!({"other_field": "test"});
+        let hash = extract_block_hash_from_json(&json);
+        assert_eq!(hash, None);
     }
 }

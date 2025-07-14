@@ -4,13 +4,13 @@
 //! and Associated Token Accounts (ATA) for Solana programs.
 
 use crate::{SolanaError, SolanaResult};
-use alloc::{format, string::String, vec::Vec};
+use std::{format, string::String, vec::Vec};
 
 // Conditional Solana SDK imports
 #[cfg(feature = "solana")]
 use solana_sdk::{
     pubkey::Pubkey,
-    program_pack::Pack,
+    // program_pack::Pack,
 };
 
 #[cfg(all(feature = "solana", feature = "spl-token"))]

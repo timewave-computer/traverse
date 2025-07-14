@@ -4,8 +4,12 @@ members = [
     "crates/traverse-core",
     "crates/traverse-ethereum", 
     "crates/traverse-solana",
-    "crates/traverse-cli",
-    "crates/traverse-valence", "crates/traverse-cosmos",
+    "crates/traverse-cosmos",
+    "crates/traverse-valence",
+    "crates/traverse-cli-core",
+    "crates/traverse-cli-ethereum",
+    "crates/traverse-cli-solana",
+    "crates/traverse-cli-cosmos",
     "e2e",
 ]
 resolver = "2"

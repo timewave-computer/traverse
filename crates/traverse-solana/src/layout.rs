@@ -3,13 +3,13 @@
 //! This module implements layout compilation for Solana programs using
 //! Anchor IDL files and program introspection.
 
-use crate::{AccountLayout, FieldLayout, FieldType, SolanaError, SolanaResult};
+use crate::{AccountLayout, FieldLayout, FieldType, SolanaError, SolanaResult, AccountType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // Conditional Solana SDK imports
 #[cfg(feature = "solana")]
-use solana_sdk::{pubkey::Pubkey, account::Account};
+use solana_sdk::account::Account;
 
 #[cfg(feature = "anchor")]
 use crate::anchor::{SolanaIdl, IdlAccount, IdlType};
@@ -84,9 +84,12 @@ impl SolanaLayoutCompiler {
         let _ = account; // Suppress unused warning
         
         Ok(AccountLayout {
-            commitment: self.compute_layout_commitment(&[]),
-            fields: vec![],
-            total_size: 0,
+            account_type: AccountType::System { owner: "11111111111111111111111111111111".to_string() },
+            address: "unknown".to_string(),
+            data_layout: vec![],
+            size: 0,
+            initialized: false,
+            discriminator: None,
         })
     }
 
@@ -254,14 +257,16 @@ impl FieldType {
             FieldType::I64 => 8,
             FieldType::U128 => 9,
             FieldType::I128 => 10,
-            FieldType::PublicKey => 11,
-            FieldType::String => 12,
-            FieldType::Bytes => 13,
-            FieldType::Bytes8 => 14,
-            FieldType::Array(_) => 15,
-            FieldType::Vec => 16,
-            FieldType::Option(_) => 17,
-            FieldType::Defined(_) => 18,
+            FieldType::Pubkey => 11,
+            FieldType::PublicKey => 12,
+            FieldType::String => 13,
+            FieldType::Bytes(_) => 14,
+            FieldType::Bytes8 => 15,
+            FieldType::Array(_) => 16,
+            FieldType::Vec(_) => 17,
+            FieldType::Option(_) => 18,
+            FieldType::Custom(_) => 19,
+            FieldType::Defined(_) => 20,
         }
     }
 }

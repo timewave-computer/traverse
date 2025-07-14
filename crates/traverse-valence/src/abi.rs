@@ -8,6 +8,11 @@
 use alloc::{boxed::Box, format, string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
+// Import for serialization
+#[cfg(feature = "alloy")]
+use bincode;
+use hex;
+
 // === COMPREHENSIVE ALLOY TYPE IMPORTS ===
 
 #[cfg(feature = "alloy")]
@@ -62,9 +67,60 @@ pub struct AlloyAbiTypes;
 impl AlloyAbiTypes {
     /// Encode a ZkMessage using comprehensive alloy ABI types
     #[cfg(feature = "alloy")]
-    pub fn encode_zk_message(_msg: &ZkMessage) -> Result<Vec<u8>, TraverseValenceError> {
-        // TODO: Implement when sol! macro types are properly integrated
-        Err(TraverseValenceError::AbiError("ZkMessage encoding not implemented".into()))
+    pub fn encode_zk_message(msg: &ZkMessage) -> Result<Vec<u8>, TraverseValenceError> {
+        // Basic ABI encoding implementation without sol! macro
+        let mut encoded = Vec::new();
+        
+        // Encode message type as uint8
+        let msg_type = match msg {
+            ZkMessage::Pause => 0u8,
+            ZkMessage::Resume => 1u8,
+            ZkMessage::EvictMsgs(_) => 2u8,
+            ZkMessage::SendMsgs(_) => 3u8,
+            ZkMessage::InsertMsgs(_) => 4u8,
+        };
+        
+        // ABI encode uint8 (padded to 32 bytes)
+        let mut type_bytes = [0u8; 32];
+        type_bytes[31] = msg_type;
+        encoded.extend_from_slice(&type_bytes);
+        
+        // Encode message data based on type
+        match msg {
+            ZkMessage::Pause | ZkMessage::Resume => {
+                // No additional data - just encode empty bytes
+                let mut offset = [0u8; 32];
+                offset[31] = 32; // offset to data (after type)
+                encoded.extend_from_slice(&offset);
+                
+                let mut length = [0u8; 32];
+                // length = 0
+                encoded.extend_from_slice(&length);
+            },
+            ZkMessage::EvictMsgs(msgs) | ZkMessage::SendMsgs(msgs) | ZkMessage::InsertMsgs(msgs) => {
+                // Encode as dynamic bytes array
+                let serialized = bincode::serialize(msgs)
+                    .map_err(|e| TraverseValenceError::AbiError(format!("Serialization failed: {}", e)))?;
+                
+                // Offset to data
+                let mut offset = [0u8; 32];
+                offset[31] = 32;
+                encoded.extend_from_slice(&offset);
+                
+                // Length of data
+                let mut length = [0u8; 32];
+                let len_bytes = (serialized.len() as u64).to_be_bytes();
+                length[24..].copy_from_slice(&len_bytes);
+                encoded.extend_from_slice(&length);
+                
+                // Pad data to 32-byte boundary
+                encoded.extend_from_slice(&serialized);
+                let padding = (32 - (serialized.len() % 32)) % 32;
+                encoded.extend(vec![0u8; padding]);
+            }
+        }
+        
+        Ok(encoded)
         /*
         sol! {
             enum ProcessorMessageType {
@@ -124,9 +180,57 @@ impl AlloyAbiTypes {
 
     /// Encode any ABI value using comprehensive type support
     #[cfg(feature = "alloy")]
-    pub fn encode_abi_value(_value: &AbiValue) -> Result<Vec<u8>, TraverseValenceError> {
-        // TODO: Implement proper ABI encoding when sol types are available
-        Err(TraverseValenceError::AbiError("ABI encoding not implemented".into()))
+    pub fn encode_abi_value(value: &AbiValue) -> Result<Vec<u8>, TraverseValenceError> {
+        // Basic ABI encoding implementation
+        let mut encoded = [0u8; 32];
+        
+        match value {
+            AbiValue::Bool(b) => {
+                encoded[31] = if *b { 1 } else { 0 };
+            },
+            AbiValue::Uint8(n) => {
+                encoded[31] = *n;
+            },
+            AbiValue::Uint16(n) => {
+                encoded[30..32].copy_from_slice(&n.to_be_bytes());
+            },
+            AbiValue::Uint32(n) => {
+                encoded[28..32].copy_from_slice(&n.to_be_bytes());
+            },
+            AbiValue::Uint64(n) => {
+                encoded[24..32].copy_from_slice(&n.to_be_bytes());
+            },
+            AbiValue::Uint128(n) => {
+                encoded[16..32].copy_from_slice(&n.to_be_bytes());
+            },
+            AbiValue::Uint256(parts) => {
+                // Convert [u64; 4] to big endian bytes
+                for (i, part) in parts.iter().enumerate() {
+                    let start = i * 8;
+                    encoded[start..start + 8].copy_from_slice(&part.to_be_bytes());
+                }
+            },
+            AbiValue::Address(addr) => {
+                // Parse hex address and pad to 32 bytes (20 bytes address + 12 zeros)
+                if let Ok(addr_bytes) = hex::decode(addr.trim_start_matches("0x")) {
+                    if addr_bytes.len() == 20 {
+                        encoded[12..32].copy_from_slice(&addr_bytes);
+                    } else {
+                        return Err(TraverseValenceError::AbiError("Invalid address length".into()));
+                    }
+                } else {
+                    return Err(TraverseValenceError::AbiError("Invalid address format".into()));
+                }
+            },
+            AbiValue::FixedBytes(bytes) => {
+                encoded.copy_from_slice(bytes);
+            },
+            _ => {
+                return Err(TraverseValenceError::AbiError("Complex ABI types not yet implemented".into()));
+            }
+        }
+        
+        Ok(encoded.to_vec())
         /*
         match value {
             AbiValue::Bool(_b) => Err(TraverseValenceError::AbiError("ABI encoding not implemented".into())),
@@ -590,5 +694,142 @@ mod tests {
             let encoded = result.unwrap();
             assert!(!encoded.is_empty());
         }
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn test_encode_zk_message_pause() {
+        use crate::messages::ZkMessage;
+        
+        let msg = ZkMessage::Pause;
+        let result = AlloyAbiTypes::encode_zk_message(&msg);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        // Should have encoded message type (32 bytes) + offset (32 bytes) + length (32 bytes)
+        assert_eq!(encoded.len(), 96);
+        
+        // First 32 bytes should be message type (0 for Pause)
+        let mut expected_type = [0u8; 32];
+        expected_type[31] = 0; // Pause = 0
+        assert_eq!(&encoded[0..32], &expected_type);
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn test_encode_zk_message_resume() {
+        use crate::messages::ZkMessage;
+        
+        let msg = ZkMessage::Resume;
+        let result = AlloyAbiTypes::encode_zk_message(&msg);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        // First 32 bytes should be message type (1 for Resume)
+        let mut expected_type = [0u8; 32];
+        expected_type[31] = 1; // Resume = 1
+        assert_eq!(&encoded[0..32], &expected_type);
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn test_encode_abi_value_bool() {
+        let value = AbiValue::Bool(true);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        assert_eq!(encoded.len(), 32);
+        let mut expected = [0u8; 32];
+        expected[31] = 1;
+        assert_eq!(encoded, expected);
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn test_encode_abi_value_uint8() {
+        let value = AbiValue::Uint8(255);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        assert_eq!(encoded.len(), 32);
+        let mut expected = [0u8; 32];
+        expected[31] = 255;
+        assert_eq!(encoded, expected);
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn test_encode_abi_value_uint256() {
+        let value = AbiValue::Uint256([1, 2, 3, 4]);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        assert_eq!(encoded.len(), 32);
+        // First 8 bytes should be big-endian representation of 1
+        assert_eq!(encoded[0..8], [0, 0, 0, 0, 0, 0, 0, 1]);
+        assert_eq!(encoded[8..16], [0, 0, 0, 0, 0, 0, 0, 2]);
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn test_encode_abi_value_address() {
+        let value = AbiValue::Address("0x1234567890123456789012345678901234567890".to_string());
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        assert_eq!(encoded.len(), 32);
+        // First 12 bytes should be zero (padding)
+        assert_eq!(&encoded[0..12], &[0u8; 12]);
+        // Last 20 bytes should be the address
+        assert_eq!(encoded[12], 0x12);
+        assert_eq!(encoded[13], 0x34);
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn test_encode_abi_value_fixed_bytes() {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 0xAB;
+        bytes[31] = 0xCD;
+        
+        let value = AbiValue::FixedBytes(bytes);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        assert_eq!(encoded.len(), 32);
+        assert_eq!(encoded[0], 0xAB);
+        assert_eq!(encoded[31], 0xCD);
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn test_encode_abi_value_complex_unsupported() {
+        let value = AbiValue::Array(vec![AbiValue::Uint8(1), AbiValue::Uint8(2)]);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Complex ABI types not yet implemented"));
+    }
+
+    #[cfg(not(feature = "alloy"))]
+    #[test]
+    fn test_encode_abi_value_without_alloy() {
+        let value = AbiValue::Bool(true);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Alloy ABI types not available"));
     }
 } 

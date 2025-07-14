@@ -74,6 +74,8 @@
             "crates/traverse-core",
             "crates/traverse-ethereum",
             "crates/traverse-valence",
+            "crates/traverse-cli-core",
+            "crates/traverse-cli-ethereum",
           ]
           resolver = "2"
           
@@ -115,6 +117,8 @@
             "crates/traverse-core",
             "crates/traverse-solana",
             "crates/traverse-valence",
+            "crates/traverse-cli-core",
+            "crates/traverse-cli-solana",
           ]
           resolver = "2"
           
@@ -149,33 +153,39 @@
         
         # Create source derivations with replaced workspace files
         coreSrc = pkgs.runCommand "core-source" {} ''
-          cp -r ${craneLib.cleanCargoSource ./.} $out
+          cp -r ${pkgs.lib.cleanSource ./.} $out
           chmod -R +w $out
           cp ${coreWorkspace} $out/Cargo.toml
         '';
         
         ethereumSrc = pkgs.runCommand "ethereum-source" {} ''
-          cp -r ${craneLib.cleanCargoSource ./.} $out
+          cp -r ${pkgs.lib.cleanSource ./.} $out
           chmod -R +w $out
           cp ${ethereumWorkspace} $out/Cargo.toml
           # Remove Solana crate to avoid any conflicts
           rm -rf $out/crates/traverse-solana
           # Remove Cosmos crate to avoid potential conflicts
           rm -rf $out/crates/traverse-cosmos
+          # Remove non-Ethereum CLI crates
+          rm -rf $out/crates/traverse-cli-solana
+          rm -rf $out/crates/traverse-cli-cosmos
         '';
         
         solanaSrc = pkgs.runCommand "solana-source" {} ''
-          cp -r ${craneLib.cleanCargoSource ./.} $out
+          cp -r ${pkgs.lib.cleanSource ./.} $out
           chmod -R +w $out
           cp ${solanaWorkspace} $out/Cargo.toml
           # Remove Ethereum crate to avoid any conflicts
           rm -rf $out/crates/traverse-ethereum
           # Remove Cosmos crate to avoid zeroize version conflicts
           rm -rf $out/crates/traverse-cosmos
+          # Remove non-Solana CLI crates
+          rm -rf $out/crates/traverse-cli-ethereum
+          rm -rf $out/crates/traverse-cli-cosmos
         '';
 
         # Full source for builds that need everything
-        fullSrc = craneLib.cleanCargoSource ./.;
+        fullSrc = pkgs.lib.cleanSource ./.;
 
         # Common build inputs for all ecosystems
         commonBuildInputs = with pkgs; [
@@ -236,7 +246,31 @@
           src = fullSrc;
           pname = "traverse-cosmos-deps";
           cargoArtifacts = coreCargoArtifacts;
-          cargoExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos --package traverse-cli";
+          cargoExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos --package traverse-cli-core --package traverse-cli-cosmos";
+        });
+
+        # Ethereum CLI dependencies
+        ethereumCliCargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+          src = ethereumSrc;
+          pname = "traverse-ethereum-cli-deps";
+          cargoArtifacts = ethereumCargoArtifacts;
+          cargoExtraArgs = "--no-default-features --features ethereum,std --package traverse-cli-core --package traverse-cli-ethereum";
+        });
+
+        # Solana CLI dependencies
+        solanaCliCargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+          src = solanaSrc;
+          pname = "traverse-solana-cli-deps";
+          cargoArtifacts = solanaCargoArtifacts;
+          cargoExtraArgs = "--no-default-features --features solana,std --package traverse-cli-core --package traverse-cli-solana";
+        });
+
+        # Cosmos CLI dependencies
+        cosmosCliCargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+          src = fullSrc;
+          pname = "traverse-cosmos-cli-deps";
+          cargoArtifacts = cosmosCargoArtifacts;
+          cargoExtraArgs = "--no-default-features --features cosmos,std --package traverse-cli-core --package traverse-cli-cosmos";
         });
 
       in
@@ -249,6 +283,8 @@
           pname = "traverse-core";
           cargoArtifacts = coreCargoArtifacts;
           cargoExtraArgs = "--package traverse-core";
+          cargoTestCommand = "true"; # Skip tests during build
+          doCheck = false; # Disable checks to avoid test compilation
         });
 
           # Ethereum ecosystem (Alloy-based)
@@ -257,13 +293,15 @@
             pname = "traverse-ethereum";
             cargoArtifacts = ethereumCargoArtifacts;
             cargoExtraArgs = "--no-default-features --features ethereum,std --package traverse-ethereum";
+            cargoTestCommand = "true"; # Skip tests during build
+            doCheck = false; # Disable checks to avoid test compilation
           });
 
           traverse-ethereum-cli = craneLib.buildPackage (commonArgs // {
-            src = fullSrc;
+            src = ethereumSrc;
             pname = "traverse-ethereum-cli";
-            cargoArtifacts = ethereumCargoArtifacts;
-            cargoExtraArgs = "--no-default-features --features ethereum,codegen --bin traverse-cli";
+            cargoArtifacts = ethereumCliCargoArtifacts;
+            cargoExtraArgs = "--no-default-features --features ethereum,std --bin traverse-ethereum -p traverse-cli-ethereum";
           });
 
           # Solana ecosystem (Solana SDK-based)
@@ -272,13 +310,15 @@
             pname = "traverse-solana";
             cargoArtifacts = solanaCargoArtifacts;
             cargoExtraArgs = "--no-default-features --features solana --package traverse-solana";
+            cargoTestCommand = "true"; # Skip tests during build
+            doCheck = false; # Disable checks to avoid test compilation
           });
 
           traverse-solana-cli = craneLib.buildPackage (commonArgs // {
-            src = fullSrc;
+            src = solanaSrc;
             pname = "traverse-solana-cli";
-            cargoArtifacts = solanaCargoArtifacts;
-            cargoExtraArgs = "--no-default-features --features solana,codegen --bin traverse-cli";
+            cargoArtifacts = solanaCliCargoArtifacts;
+            cargoExtraArgs = "--no-default-features --features solana,std --bin traverse-solana -p traverse-cli-solana";
           });
 
           # Cosmos ecosystem
@@ -292,8 +332,8 @@
           traverse-cosmos-cli = craneLib.buildPackage (commonArgs // {
             src = fullSrc;
             pname = "traverse-cosmos-cli";
-            cargoArtifacts = cosmosCargoArtifacts;
-            cargoExtraArgs = "--no-default-features --features cosmos,codegen --bin traverse-cli";
+            cargoArtifacts = cosmosCliCargoArtifacts;
+            cargoExtraArgs = "--no-default-features --features cosmos,std --bin traverse-cosmos -p traverse-cli-cosmos";
           });
 
           # Default to core

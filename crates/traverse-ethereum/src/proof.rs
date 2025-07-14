@@ -7,6 +7,13 @@ use traverse_core::{
     ProofFetcher, SemanticStorageProof, StorageSemantics, TraverseError, ZeroSemantics,
 };
 
+#[cfg(feature = "ethereum")]
+use {
+    reqwest,
+    serde_json,
+    hex,
+};
+
 /// Ethereum proof fetcher using eth_getProof RPC via selective alloy imports
 ///
 /// This implementation fetches storage proofs from Ethereum nodes using
@@ -115,20 +122,123 @@ impl EthereumProofFetcher {
         key: [u8; 32],
         zero_semantics: ZeroSemantics,
     ) -> Result<SemanticStorageProof, TraverseError> {
-        // For now, this is a placeholder implementation
-        // In a real implementation, this would make actual RPC calls
-        // to fetch storage proofs using the configured RPC URL
+        // Make actual RPC call to fetch storage value
+        let client = reqwest::Client::new();
+        let key_hex = format!("0x{}", hex::encode(key));
         
-        // Create storage semantics
+        let rpc_request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "eth_getStorageAt",
+            "params": [self.contract_address, key_hex, "latest"],
+            "id": 1
+        });
+        
+        let response = client
+            .post(&self.rpc_url)
+            .json(&rpc_request)
+            .send()
+            .await
+            .map_err(|e| TraverseError::external_service(format!("RPC request failed: {}", e)))?;
+        
+        let rpc_response: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| TraverseError::external_service(format!("Failed to parse RPC response: {}", e)))?;
+        
+        // Extract storage value from response
+        let value_str = rpc_response
+            .get("result")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| TraverseError::external_service("No result in RPC response".to_string()))?;
+        
+        // Parse hex value to bytes
+        let value_bytes = if value_str.starts_with("0x") {
+            hex::decode(&value_str[2..])
+        } else {
+            hex::decode(value_str)
+        }
+        .map_err(|e| TraverseError::external_service(format!("Invalid hex in storage value: {}", e)))?;
+        
+        // Pad to 32 bytes if needed
+        let mut value = [0u8; 32];
+        let copy_len = std::cmp::min(value_bytes.len(), 32);
+        value[32 - copy_len..].copy_from_slice(&value_bytes[value_bytes.len() - copy_len..]);
+        
+        // Create storage semantics - in a real implementation, we might validate against events
         let semantics = StorageSemantics::new(zero_semantics);
         
-        // Return a placeholder proof for now
-        // In practice, this would make actual RPC calls
+        // TODO: In a full implementation, we would also fetch merkle proofs
+        // For now, return proof without merkle path
         Ok(SemanticStorageProof {
             key,
-            value: [0u8; 32], // Placeholder value
-            proof: Vec::new(), // Placeholder proof
+            value,
+            proof: Vec::new(), // Would contain merkle proof in full implementation
             semantics,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio;
+
+    #[test]
+    fn test_ethereum_proof_fetcher_creation() {
+        let fetcher = EthereumProofFetcher {
+            rpc_url: "http://localhost:8545".to_string(),
+            contract_address: "0x1234567890123456789012345678901234567890".to_string(),
+        };
+
+        assert_eq!(fetcher.rpc_url, "http://localhost:8545");
+        assert_eq!(fetcher.contract_address, "0x1234567890123456789012345678901234567890");
+    }
+
+    #[cfg(feature = "ethereum")]
+    #[tokio::test]
+    async fn test_fetch_async_error_handling() {
+        let fetcher = EthereumProofFetcher {
+            rpc_url: "http://localhost:8545".to_string(), // This will fail
+            contract_address: "0x1234567890123456789012345678901234567890".to_string(),
+        };
+
+        let key = [1u8; 32];
+        let result = fetcher.fetch_async(key, ZeroSemantics::ValidZero).await;
+
+        // Should fail with external service error since localhost:8545 likely not running
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("RPC request failed"));
+    }
+
+    #[cfg(feature = "ethereum")]
+    #[test]
+    fn test_fetch_sync_not_implemented() {
+        let fetcher = EthereumProofFetcher {
+            rpc_url: "http://localhost:8545".to_string(),
+            contract_address: "0x1234567890123456789012345678901234567890".to_string(),
+        };
+
+        let key = [1u8; 32];
+        let result = fetcher.fetch(&key, ZeroSemantics::ValidZero);
+
+        // Should fail because async fetch is not implemented in sync context
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Async fetch not implemented"));
+    }
+
+    #[cfg(not(feature = "ethereum"))]
+    #[test]
+    fn test_fetch_disabled_feature() {
+        let fetcher = EthereumProofFetcher {
+            rpc_url: "http://localhost:8545".to_string(),
+            contract_address: "0x1234567890123456789012345678901234567890".to_string(),
+        };
+
+        let key = [1u8; 32];
+        let result = fetcher.fetch(&key, ZeroSemantics::ValidZero);
+
+        // Should fail because ethereum feature is not enabled
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Ethereum support not enabled"));
     }
 }

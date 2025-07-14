@@ -18,7 +18,10 @@ no-std = ["traverse-core/no-std"]
 minimal = ["traverse-core/minimal"]
 
 # Solana SDK integration (optional due to dependency conflicts with Alloy ecosystem)
-solana = ["dep:solana-sdk", "dep:spl-token"]
+solana = ["dep:solana-sdk"]
+
+# SPL Token integration for token account operations
+spl-token = ["solana", "dep:spl-token"]
 
 # Anchor framework integration for IDL parsing (requires solana feature)
 anchor = ["solana", "dep:anchor-lang", "dep:anchor-syn"]
