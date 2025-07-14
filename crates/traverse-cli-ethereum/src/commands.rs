@@ -167,8 +167,9 @@ pub async fn cmd_ethereum_analyze_contract(
                     "function" => {
                         complexity_score += 1;
                         if let Some(name) = item.get("name").and_then(|n| n.as_str()) {
-                            let inputs = item.get("inputs").and_then(|i| i.as_array()).unwrap_or(&vec![]);
-                            let outputs = item.get("outputs").and_then(|o| o.as_array()).unwrap_or(&vec![]);
+                            let empty_vec = vec![];
+                            let inputs = item.get("inputs").and_then(|i| i.as_array()).unwrap_or(&empty_vec);
+                            let outputs = item.get("outputs").and_then(|o| o.as_array()).unwrap_or(&empty_vec);
                             
                             function_analysis.push(json!({
                                 "name": name,
@@ -192,7 +193,8 @@ pub async fn cmd_ethereum_analyze_contract(
                     }
                     "event" => {
                         if let Some(name) = item.get("name").and_then(|n| n.as_str()) {
-                            let inputs = item.get("inputs").and_then(|i| i.as_array()).unwrap_or(&vec![]);
+                            let empty_vec = vec![];
+                            let inputs = item.get("inputs").and_then(|i| i.as_array()).unwrap_or(&empty_vec);
                             event_analysis.push(json!({
                                 "name": name,
                                 "inputs": inputs.len(),
