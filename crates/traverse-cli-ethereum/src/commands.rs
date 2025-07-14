@@ -310,7 +310,7 @@ pub fn cmd_ethereum_compile_layout(
     // Read ABI file
     let abi_content = std::fs::read_to_string(abi_file)
         .map_err(|e| anyhow::anyhow!("Failed to read ABI file '{}': {}", abi_file.display(), e))?;
-    let abi: Value = serde_json::from_str(&abi_content)
+    let _abi: Value = serde_json::from_str(&abi_content)
         .map_err(|e| anyhow::anyhow!("Failed to parse ABI file '{}': {}", abi_file.display(), e))?;
 
     // Create compiler and compile layout
@@ -750,7 +750,7 @@ pub async fn cmd_ethereum_auto_generate(
     let resolved_file = output_dir.join("resolved.json");
     
     let mut resolved_queries = Vec::new();
-    for query in query_list {
+    for query in &query_list {
         match cmd_ethereum_resolve_query(
             query, 
             &layout_file, 
