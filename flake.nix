@@ -259,28 +259,28 @@
             cargoTestExtraArgs = "--package traverse-core";
           });
 
-          # Ethereum ecosystem tests
+          # Ethereum ecosystem tests (lib tests only)
           traverse-ethereum-tests = craneLib.cargoTest (commonArgs // {
             src = ethereumSrc;
             pname = "traverse-ethereum-tests";
             cargoArtifacts = ethereumCargoArtifacts;
-            cargoTestExtraArgs = "--no-default-features --features ethereum,std --package traverse-ethereum";
+            cargoTestExtraArgs = "--no-default-features --features ethereum,std --package traverse-ethereum --lib";
           });
 
-          # Solana ecosystem tests (fallback implementation)
+          # Solana ecosystem tests (fallback implementation, lib tests only)
           traverse-solana-tests = craneLib.cargoTest (commonArgs // {
             src = solanaSrc;
             pname = "traverse-solana-tests";
             cargoArtifacts = solanaCargoArtifacts;
-            cargoTestExtraArgs = "--no-default-features --features std --package traverse-solana";
+            cargoTestExtraArgs = "--no-default-features --features std --package traverse-solana --lib";
           });
 
-          # Cosmos ecosystem tests (fallback implementation)
+          # Cosmos ecosystem tests (fallback implementation, lib tests only)
           traverse-cosmos-tests = craneLib.cargoTest (commonArgs // {
             src = cosmosSrc;
             pname = "traverse-cosmos-tests";
             cargoArtifacts = cosmosCargoArtifacts;
-            cargoTestExtraArgs = "--no-default-features --features std --package traverse-cosmos";
+            cargoTestExtraArgs = "--no-default-features --features std --package traverse-cosmos --lib";
           });
 
           # Valence tests (no alloy features)
