@@ -11,8 +11,7 @@ use traverse_cli_core::{CommonArgs, CliResult, CliUtils, OutputFormat};
 
 #[cfg(feature = "ethereum")]
 use traverse_ethereum::{
-    EthereumLayoutCompiler, EthereumKeyResolver, EthereumProofFetcher,
-    EthereumError, abi::AbiInfo
+    EthereumLayoutCompiler
 };
 
 mod commands;
@@ -240,7 +239,7 @@ async fn handle_command(args: EthereumArgs) -> CliResult<()> {
         }
         
         EthereumCommand::AutoGenerate { config, output_dir } => {
-            let config_data = CliUtils::load_config(&config)?;
+            let _config_data = CliUtils::load_config(&config)?;
             CliUtils::ensure_output_dir(&output_dir)?;
             
             let result = json!({
