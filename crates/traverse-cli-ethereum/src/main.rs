@@ -145,7 +145,7 @@ fn compile_layout(input: &str, output: Option<&str>) -> CliResult<()> {
 }
 
 #[cfg(feature = "ethereum")]
-fn resolve_query(query: &str, layout_file: &str, address: Option<&str>) -> CliResult<Value> {
+async fn resolve_query(query: &str, layout_file: &str, address: Option<&str>) -> CliResult<Value> {
     use std::path::Path;
     
     // Call the command implementation
@@ -154,7 +154,9 @@ fn resolve_query(query: &str, layout_file: &str, address: Option<&str>) -> CliRe
         Path::new(layout_file),
         &OutputFormat::CoprocessorJson,
         None, // output handled by caller
-    );
+        address,
+        None, // rpc
+    ).await;
     
     match result {
         Ok(()) => {
@@ -172,7 +174,7 @@ fn resolve_query(query: &str, layout_file: &str, address: Option<&str>) -> CliRe
 }
 
 #[cfg(not(feature = "ethereum"))]
-fn analyze_contract(_abi_file: &str, _address: Option<&str>, _deep: bool) -> CliResult<Value> {
+async fn analyze_contract(_abi_file: &str, _address: Option<&str>, _deep: bool) -> CliResult<Value> {
     Err(traverse_cli_core::CliError::Configuration(
         "Ethereum support not enabled. Build with --features ethereum".to_string()
     ))
@@ -186,7 +188,7 @@ fn compile_layout(_input: &str, _output: Option<&str>) -> CliResult<()> {
 }
 
 #[cfg(not(feature = "ethereum"))]
-fn resolve_query(_query: &str, _layout_file: &str, _address: Option<&str>) -> CliResult<Value> {
+async fn resolve_query(_query: &str, _layout_file: &str, _address: Option<&str>) -> CliResult<Value> {
     Err(traverse_cli_core::CliError::Configuration(
         "Ethereum support not enabled. Build with --features ethereum".to_string()
     ))
@@ -220,7 +222,7 @@ async fn handle_command(args: EthereumArgs) -> CliResult<()> {
         }
         
         EthereumCommand::ResolveQuery { query, layout, address } => {
-            let result = resolve_query(&query, &layout, address.as_deref())?;
+            let result = resolve_query(&query, &layout, address.as_deref()).await?;
             let output = CliUtils::format_json(&result, &args.common.format)?;
             CliUtils::write_output(&output, args.common.output.as_deref())?;
         }

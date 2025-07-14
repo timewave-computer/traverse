@@ -170,21 +170,21 @@ async fn resolve_query(query: &str, layout_file: &str, program_id: Option<&str>)
 }
 
 #[cfg(not(feature = "solana"))]
-fn analyze_program(_idl_file: &str, _program_id: Option<&str>, _deep: bool) -> CliResult<Value> {
+async fn analyze_program(_idl_file: &str, _program_id: Option<&str>, _deep: bool) -> CliResult<Value> {
     Err(traverse_cli_core::CliError::Configuration(
         "Solana support not enabled. Build with --features solana".to_string()
     ))
 }
 
 #[cfg(not(feature = "solana"))]
-fn compile_layout(_input: &str, _output: Option<&str>) -> CliResult<()> {
+async fn compile_layout(_input: &str, _output: Option<&str>) -> CliResult<()> {
     Err(traverse_cli_core::CliError::Configuration(
         "Solana support not enabled. Build with --features solana".to_string()
     ))
 }
 
 #[cfg(not(feature = "solana"))]
-fn resolve_query(_query: &str, _layout_file: &str, _program_id: Option<&str>) -> CliResult<Value> {
+async fn resolve_query(_query: &str, _layout_file: &str, _program_id: Option<&str>) -> CliResult<Value> {
     Err(traverse_cli_core::CliError::Configuration(
         "Solana support not enabled. Build with --features solana".to_string()
     ))

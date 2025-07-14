@@ -1242,7 +1242,10 @@ mod tests {
         // Test with malicious account data
         let malicious_request = SolanaAccountVerificationRequest {
             account_query: SolanaAccountQuery {
-                account_name: "'; DROP TABLE accounts; --".to_string(), // SQL injection attempt
+                query: "'; DROP TABLE accounts; --".to_string(), // SQL injection attempt
+                account_address: "malicious_address".to_string(),
+                program_id: "malicious_program".to_string(),
+                discriminator: None,
                 field_offset: Some(u32::MAX), // Potential overflow
                 field_size: Some(u32::MAX), // Potential overflow
             },
@@ -1255,6 +1258,8 @@ mod tests {
                 slot: u64::MAX, // Maximum value
                 block_hash: "\n\r\t\0".to_string(), // Control characters
             },
+            program_address: Some("malicious_program".to_string()),
+            slot: Some(u64::MAX),
         };
 
         let result = create_witness_from_solana_request(&malicious_request);
@@ -1527,7 +1532,10 @@ mod tests {
         // Create request with Ethereum-style data
         let ethereum_style_request = SolanaAccountVerificationRequest {
             account_query: SolanaAccountQuery {
-                account_name: "ethereum_contract".to_string(),
+                query: "ethereum_contract".to_string(),
+                account_address: "11111111111111111111111111111111".to_string(),
+                program_id: "11111111111111111111111111111111".to_string(),
+                discriminator: None,
                 field_offset: Some(0),
                 field_size: Some(32),
             },
@@ -1540,6 +1548,8 @@ mod tests {
                 slot: 0, // Not applicable for Ethereum
                 block_hash: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(), // Ethereum block hash
             },
+            program_address: Some("11111111111111111111111111111111".to_string()),
+            slot: Some(0),
         };
 
         let result = create_witness_from_solana_request(&ethereum_style_request);
