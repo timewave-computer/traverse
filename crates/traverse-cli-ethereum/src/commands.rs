@@ -315,7 +315,7 @@ pub fn cmd_ethereum_compile_layout(
 
     // Create compiler and compile layout
     let compiler = EthereumLayoutCompiler;
-    let layout = compiler.compile_layout(&abi)?;
+    let layout = compiler.compile_layout(abi_file)?;
 
     if validate {
         info!("Validating layout for conflicts...");
@@ -973,7 +973,7 @@ async fn perform_live_ethereum_verification(
     Ok(json!({
         "contract_address": contract_address,
         "rpc_url": rpc_url,
-        "layout_commitment": hex::encode(&layout.commitment),
+        "layout_commitment": hex::encode(&layout.commitment()),
         "status": if verification_ratio > 0.5 { "verification_passed" } else { "verification_failed" },
         "verified_slots": verified_slots,
         "total_slots": total_slots,
