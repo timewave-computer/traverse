@@ -186,17 +186,17 @@ pub fn cmd_cosmos_generate_queries(
 
     for entry in &layout.storage {
         for pattern in &state_key_patterns {
-            if entry.key.contains(pattern) {
+            if entry.label.contains(pattern) {
                 let query = if include_examples {
-                    format!("{}[example_value]", entry.key)
+                    format!("{}[example_value]", entry.label)
                 } else {
-                    entry.key.clone()
+                    entry.label.clone()
                 };
                 generated_queries.push(serde_json::json!({
                     "query": query,
-                    "key_path": entry.key,
-                    "value_type": entry.value_type,
-                    "description": format!("Query for {}", entry.key)
+                    "key_path": entry.label,
+                    "value_type": entry.type_name,
+                    "description": format!("Query for {}", entry.label)
                 }));
             }
         }
