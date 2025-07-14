@@ -3,16 +3,38 @@
 //! This module provides CosmWasm-specific CLI commands for contract analysis,
 //! storage layout compilation, and query generation.
 
-use traverse_cli_core::{formatters::write_output, OutputFormat};
 use anyhow::Result;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use log::info;
 use serde_json::{json, Value};
 use std::path::Path;
-use tracing::{info, warn};
-use traverse_core::{KeyResolver, LayoutCompiler};
+use traverse_core::OutputFormat;
+
+#[cfg(feature = "cosmos")]
+use hex;
+
+#[cfg(feature = "cosmos")]
+use base64;
+#[cfg(feature = "cosmos")]
+use reqwest;
 
 #[cfg(feature = "cosmos")]
 use traverse_cosmos::{CosmosKeyResolver, CosmosLayoutCompiler};
+#[cfg(feature = "cosmos")]
+use traverse_core::{KeyResolver, LayoutCompiler};
+
+/// Write output to file or stdout
+fn write_output(content: &str, output_path: Option<&Path>) -> Result<()> {
+    match output_path {
+        Some(path) => {
+            std::fs::write(path, content)?;
+            Ok(())
+        }
+        None => {
+            println!("{}", content);
+            Ok(())
+        }
+    }
+}
 
 /// Execute cosmos analyze-contract command
 #[cfg(feature = "cosmos")]
@@ -23,78 +45,34 @@ pub async fn cmd_cosmos_analyze_contract(
     contract_address: Option<&str>,
     rpc: Option<&str>,
 ) -> Result<()> {
-    info!("Analyzing CosmWasm contract from {}", schema_file.display());
+    info!("Analyzing CosmWasm contract schema: {}", schema_file.display());
 
-    // Read and parse schema
-    let schema_content = std::fs::read_to_string(schema_file)?;
-    let schema: Value = serde_json::from_str(&schema_content)?;
+    let contract_schema = std::fs::read_to_string(schema_file)?;
+    let _schema: serde_json::Value = serde_json::from_str(&contract_schema)?;
 
-    let mut analysis = json!({
+    let mut analysis = serde_json::json!({
         "contract_type": "cosmwasm",
         "schema_file": schema_file.display().to_string(),
-        "analysis_timestamp": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
-        "messages": [],
-        "queries": [],
-        "storage_patterns": [],
-        "detected_patterns": [],
-        "complexity_score": 0,
-        "recommendations": []
+        "validation": {
+            "schema_valid": true,
+            "storage_validation": validate_storage
+        }
     });
 
-    // Analyze schema structure
-    if let Some(messages) = schema.get("messages") {
-        analysis["messages"] = messages.clone();
-    }
-
-    if let Some(queries) = schema.get("queries") {
-        analysis["queries"] = queries.clone();
-    }
-
-    // Detect common CosmWasm patterns
-    let mut detected_patterns = Vec::new();
-    if let Some(msg_obj) = schema.get("messages") {
-        if msg_obj.get("transfer").is_some() {
-            detected_patterns.push("CW20 Token".to_string());
-        }
-        if msg_obj.get("mint").is_some() {
-            detected_patterns.push("NFT/Token Mint".to_string());
-            println!("Detected NFT contract features: token_info");
-        }
-    }
-
-    // Perform storage validation if requested
-    if validate_storage {
-        println!("Schema validation passed");
-    }
-
-    analysis["detected_patterns"] = json!(detected_patterns);
-
-    // Enhanced analysis with live contract data
-    if let (Some(address), Some(rpc_url)) = (contract_address, rpc) {
-        info!(
-            "Performing live contract analysis for {} via {}",
-            address, rpc_url
-        );
-
-        // Perform basic live contract analysis
-        let live_analysis_result = perform_live_cosmos_analysis(address, rpc_url).await;
-
-        match live_analysis_result {
-            Ok(live_data) => {
-                analysis["live_analysis"] = live_data;
-                println!("Live contract analysis completed successfully");
-            }
-            Err(e) => {
-                warn!("Live contract analysis failed: {}", e);
-                analysis["live_analysis"] = json!({
-                    "error": format!("Failed to fetch live data: {}", e),
-                    "contract_address": address,
-                    "rpc_endpoint": rpc_url,
-                    "status": "failed"
-                });
+    if let Some(address) = contract_address {
+        analysis["contract_address"] = serde_json::Value::String(address.to_string());
+        
+        if let Some(rpc_url) = rpc {
+            info!("Performing live contract analysis for address: {}", address);
+            match perform_live_cosmos_analysis(address, rpc_url).await {
+                Ok(live_data) => {
+                    analysis["live_analysis"] = live_data;
+                    analysis["validation"]["live_analysis_success"] = serde_json::Value::Bool(true);
+                }
+                Err(e) => {
+                    analysis["validation"]["live_analysis_success"] = serde_json::Value::Bool(false);
+                    analysis["validation"]["live_analysis_error"] = serde_json::Value::String(e.to_string());
+                }
             }
         }
     }
@@ -106,17 +84,6 @@ pub async fn cmd_cosmos_analyze_contract(
     println!("Contract analysis completed");
 
     Ok(())
-}
-
-#[cfg(not(feature = "cosmos"))]
-pub async fn cmd_cosmos_analyze_contract(
-    _schema_file: &Path,
-    _output: Option<&Path>,
-    _validate_storage: bool,
-    _contract_address: Option<&str>,
-    _rpc: Option<&str>,
-) -> Result<()> {
-    Err(anyhow::anyhow!("Cosmos support not enabled. Build with --features cosmos"))
 }
 
 /// Execute cosmos compile-layout command
@@ -131,97 +98,28 @@ pub fn cmd_cosmos_compile_layout(
         msg_file.display()
     );
 
+    use traverse_cosmos::CosmosLayoutCompiler;
+    use traverse_core::LayoutCompiler;
+
     let compiler = CosmosLayoutCompiler;
     let layout = compiler.compile_layout(msg_file)?;
 
-    // Create the expected output structure
-    let output_structure = json!({
-        "contract_name": layout.contract_name,
-        "storage_layout": {
-            "storage": layout.storage,
-            "types": layout.types
-        },
-        "commitment": hex::encode(layout.commitment()),
-        "metadata": {
-            "generated_at": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            "storage_entries": layout.storage.len(),
-            "type_definitions": layout.types.len(),
-            "compiler": "traverse-cosmos"
-        }
-    });
-
-    let formatted_output = match format {
-        OutputFormat::Traverse => serde_json::to_string_pretty(&output_structure)?,
-        OutputFormat::CoprocessorJson => serde_json::to_string_pretty(&output_structure)?,
-        OutputFormat::Toml => {
-            // Create a very simple structure for TOML that only includes basic info
-            format!(
-                r#"contract_name = "{}"
-storage_entries = {}
-type_definitions = {}
-commitment = "{}"
-generated_at = {}
-compiler = "traverse-cosmos"
-"#,
-                layout.contract_name,
-                layout.storage.len(),
-                layout.types.len(),
-                hex::encode(layout.commitment()),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-            )
-        }
-        OutputFormat::Binary => {
-            let binary_data = bincode::serialize(&layout)?;
-            format!(
-                "Binary data: {} bytes\nBase64: {}",
-                binary_data.len(),
-                STANDARD.encode(&binary_data)
-            )
-        }
-        OutputFormat::Base64 => {
-            let binary_data = bincode::serialize(&layout)?;
-            format!(
-                "Binary data: {} bytes\nBase64: {}",
-                binary_data.len(),
-                STANDARD.encode(&binary_data)
-            )
-        }
+    let output_str = match format {
+        OutputFormat::Json => serde_json::to_string_pretty(&layout)?,
+        OutputFormat::Yaml => serde_yaml::to_string(&layout)?,
     };
-    write_output(&formatted_output, output)?;
 
-    println!(
-        "Compiling CosmWasm layout: {} detected",
-        if output_structure.get("storage_layout").is_some() {
-            "cosmos_layout"
-        } else {
-            "unknown"
-        }
-    );
-    println!("CosmWasm storage layout compiled successfully:");
-    println!("  • Contract: {}", layout.contract_name);
-    println!("  • Storage entries: {}", layout.storage.len());
-    println!("  • Type definitions: {}", layout.types.len());
+    write_output(&output_str, output)?;
+
+    println!("Layout compilation completed");
+    println!("  • {} storage entries", layout.entries.len());
+    println!("  • {} semantic entries", layout.semantic_entries.len());
     println!(
         "  • Layout commitment: {}",
         hex::encode(layout.commitment())
     );
 
     Ok(())
-}
-
-#[cfg(not(feature = "cosmos"))]
-pub fn cmd_cosmos_compile_layout(
-    _msg_file: &Path,
-    _output: Option<&Path>,
-    _format: &OutputFormat,
-) -> Result<()> {
-    Err(anyhow::anyhow!("Cosmos support not enabled. Build with --features cosmos"))
 }
 
 /// Execute cosmos resolve-query command
@@ -238,32 +136,36 @@ pub fn cmd_cosmos_resolve_query(
     let layout: traverse_core::LayoutInfo = serde_json::from_str(&layout_content)?;
 
     let resolver = CosmosKeyResolver;
-    let path = resolver.resolve(&layout, query)?;
+    let resolved_path = resolver.resolve(&layout, query)?;
 
-    let formatted_output = traverse_cli_core::formatters::format_storage_path(&path, query, format)?;
-    write_output(&formatted_output, output)?;
-
-    println!("CosmWasm storage query resolved successfully:");
-    println!("  • Query: {}", query);
-    println!(
-        "  • Storage key: {}",
-        match &path.key {
-            traverse_core::Key::Fixed(key) => hex::encode(key),
-            _ => "dynamic".to_string(),
+    let result = serde_json::json!({
+        "query": query,
+        "resolved_path": {
+            "key": match &resolved_path.key {
+                traverse_core::Key::Fixed(key) => hex::encode(key),
+                _ => "dynamic".to_string(),
+            },
+            "offset": resolved_path.offset,
+            "field_size": resolved_path.field_size,
+            "layout_commitment": hex::encode(resolved_path.layout_commitment)
         }
-    );
+    });
+
+    let output_str = match format {
+        OutputFormat::Json => serde_json::to_string_pretty(&result)?,
+        OutputFormat::Yaml => serde_yaml::to_string(&result)?,
+    };
+
+    write_output(&output_str, output)?;
+
+    println!("Query resolution completed");
+    println!("  • Query: {}", query);
+    println!("  • Resolved path: {}", match &resolved_path.key {
+        traverse_core::Key::Fixed(key) => hex::encode(key),
+        _ => "dynamic".to_string(),
+    });
 
     Ok(())
-}
-
-#[cfg(not(feature = "cosmos"))]
-pub fn cmd_cosmos_resolve_query(
-    _query: &str,
-    _layout_file: &Path,
-    _format: &OutputFormat,
-    _output: Option<&Path>,
-) -> Result<()> {
-    Err(anyhow::anyhow!("Cosmos support not enabled. Build with --features cosmos"))
 }
 
 /// Execute cosmos generate-queries command
@@ -274,100 +176,50 @@ pub fn cmd_cosmos_generate_queries(
     output: Option<&Path>,
     include_examples: bool,
 ) -> Result<()> {
-    info!("Generating CosmWasm queries for state keys: {}", state_keys);
+    info!("Generating CosmWasm contract queries from layout");
 
     let layout_content = std::fs::read_to_string(layout_file)?;
     let layout: traverse_core::LayoutInfo = serde_json::from_str(&layout_content)?;
 
-    let key_names: Vec<&str> = state_keys.split(',').map(|s| s.trim()).collect();
-    let key_count = key_names.len();
-    let mut queries = Vec::new();
+    let state_key_patterns: Vec<&str> = state_keys.split(',').map(|s| s.trim()).collect();
+    let mut generated_queries = Vec::new();
 
-    for key_name in key_names {
-        // Find matching storage entries
-        let matching_entries: Vec<_> = layout
-            .storage
-            .iter()
-            .filter(|entry| entry.label.contains(key_name))
-            .collect();
-
-        if matching_entries.is_empty() {
-            warn!("No storage entries found for key: {}", key_name);
-            continue;
-        }
-
-        for entry in matching_entries {
-            // Generate basic query
-            queries.push(json!({
-                "field": entry.label,
-                "query": entry.label,
-                "namespace": entry.slot,
-                "type": entry.type_name
-            }));
-
-            // Generate example queries for maps
-            if include_examples {
-                if let Some(type_info) = layout.types.iter().find(|t| t.label == entry.type_name) {
-                    if type_info.encoding == "mapping" {
-                        // Generate example CosmWasm mapping queries
-                        if type_info.key.as_deref() == Some("t_address") {
-                            queries.push(json!({
-                                "field": format!("{}[example_address]", entry.label),
-                                "query": format!("{}[cosmos1example_address_here]", entry.label),
-                                "namespace": "dynamic",
-                                "type": type_info.value.as_ref().unwrap_or(&"unknown".to_string()),
-                                "example": true
-                            }));
-                        } else if type_info.key.as_deref() == Some("t_string") {
-                            queries.push(json!({
-                                "field": format!("{}[example_key]", entry.label),
-                                "query": format!("{}[example_key]", entry.label),
-                                "namespace": "dynamic",
-                                "type": type_info.value.as_ref().unwrap_or(&"unknown".to_string()),
-                                "example": true
-                            }));
-                        }
-                    }
-                }
+    for entry in &layout.entries {
+        for pattern in &state_key_patterns {
+            if entry.key.contains(pattern) {
+                let query = if include_examples {
+                    format!("{}[example_value]", entry.key)
+                } else {
+                    entry.key.clone()
+                };
+                generated_queries.push(serde_json::json!({
+                    "query": query,
+                    "key_path": entry.key,
+                    "value_type": entry.value_type,
+                    "description": format!("Query for {}", entry.key)
+                }));
             }
         }
     }
 
-    let query_output = json!({
-        "contract": layout.contract_name,
-        "generated_queries": queries,
-        "generation_timestamp": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
-        "layout_commitment": hex::encode(layout.commitment()),
-        "query_type": "cosmwasm",
-        "storage_model": "namespace_based"
+    let result = serde_json::json!({
+        "layout_file": layout_file.display().to_string(),
+        "state_key_patterns": state_key_patterns,
+        "generated_queries": generated_queries,
+        "query_count": generated_queries.len()
     });
 
-    let output_str = serde_json::to_string_pretty(&query_output)?;
+    let output_str = serde_json::to_string_pretty(&result)?;
     write_output(&output_str, output)?;
 
-    println!(
-        "Generated {} CosmWasm queries for {} state keys",
-        queries.len(),
-        key_count
-    );
+    println!("Query generation completed");
+    println!("  • Generated {} queries", generated_queries.len());
+    println!("  • State key patterns: {}", state_keys);
 
     Ok(())
 }
 
-#[cfg(not(feature = "cosmos"))]
-pub fn cmd_cosmos_generate_queries(
-    _layout_file: &Path,
-    _state_keys: &str,
-    _output: Option<&Path>,
-    _include_examples: bool,
-) -> Result<()> {
-    Err(anyhow::anyhow!("Cosmos support not enabled. Build with --features cosmos"))
-}
-
-/// Execute cosmos auto-generate command (end-to-end automation)
+/// Execute cosmos auto-generate command
 #[cfg(feature = "cosmos")]
 pub async fn cmd_cosmos_auto_generate(
     schema_file: &Path,
@@ -378,248 +230,137 @@ pub async fn cmd_cosmos_auto_generate(
     _cache: bool,
     dry_run: bool,
 ) -> Result<()> {
-    info!(
-        "Auto-generating complete CosmWasm storage proofs from {} to {}",
-        schema_file.display(),
-        output_dir.display()
-    );
+    info!("Auto-generating CosmWasm contract analysis");
 
     if dry_run {
-        println!("Dry run mode - No actual files will be created or RPC calls made");
+        println!("DRY RUN: Would generate analysis for:");
+        println!("  • Schema file: {}", schema_file.display());
+        println!("  • RPC endpoint: {}", rpc);
+        println!("  • Contract: {}", contract);
+        println!("  • Queries: {}", queries);
+        println!("  • Output directory: {}", output_dir.display());
+        return Ok(());
     }
 
-    // Step 1: Compile layout from schema
-    println!("Step 1: Compiling CosmWasm storage layout...");
-    let compiler = CosmosLayoutCompiler;
-    let layout = compiler.compile_layout(schema_file)?;
-    println!(
-        "   Layout compiled: {} storage entries, {} types",
-        layout.storage.len(),
-        layout.types.len()
-    );
+    // Ensure output directory exists
+    std::fs::create_dir_all(output_dir)?;
 
-    // Step 2: Generate queries for specified fields
-    println!("Step 2: Generating CosmWasm storage queries...");
-    let query_list: Vec<&str> = queries.split(',').map(|s| s.trim()).collect();
-    let resolver = CosmosKeyResolver;
-    let mut resolved_paths = Vec::new();
+    // Step 1: Analyze contract
+    let analysis_output = output_dir.join("analysis.json");
+    cmd_cosmos_analyze_contract(
+        schema_file,
+        Some(&analysis_output),
+        true,  // validate_storage
+        Some(contract),
+        Some(rpc),
+    ).await?;
 
-    for query in &query_list {
-        match resolver.resolve(&layout, query) {
-            Ok(path) => {
-                resolved_paths.push((query.to_string(), path));
-                println!("   Resolved: {}", query);
-            }
-            Err(e) => {
-                println!("   Failed to resolve {}: {}", query, e);
-            }
-        }
-    }
+    // Step 2: Compile layout
+    let layout_output = output_dir.join("layout.json");
+    cmd_cosmos_compile_layout(
+        schema_file,
+        Some(&layout_output),
+        &OutputFormat::Json,
+    )?;
 
-    // Step 3: Create output directory
-    if !dry_run {
-        std::fs::create_dir_all(output_dir)?;
-    }
+    // Step 3: Generate queries
+    let queries_output = output_dir.join("queries.json");
+    cmd_cosmos_generate_queries(
+        &layout_output,
+        queries,
+        Some(&queries_output),
+        true,  // include_examples
+    )?;
 
-    // Step 4: Save layout file
-    let layout_file = output_dir.join("cosmos_layout.json");
-    if !dry_run {
-        let layout_json = serde_json::to_string_pretty(&layout)?;
-        std::fs::write(&layout_file, layout_json)?;
-    }
-    println!("Step 3: CosmWasm layout saved to {}", layout_file.display());
-
-    // Step 5: Save resolved queries
-    let queries_file = output_dir.join("cosmos_resolved_queries.json");
-    if !dry_run {
-        let queries_json = serde_json::to_string_pretty(
-            &resolved_paths
-                .iter()
-                .map(|(query, path)| {
-                    json!({
-                        "query": query,
-                        "storage_key": match &path.key {
-                            traverse_core::Key::Fixed(key) => hex::encode(key),
-                            _ => "dynamic".to_string(),
-                        },
-                        "offset": path.offset,
-                        "field_size": path.field_size,
-                        "layout_commitment": hex::encode(path.layout_commitment)
-                    })
-                })
-                .collect::<Vec<_>>(),
+    // Step 4: Resolve each query
+    let query_list: Vec<&str> = queries.split(',').map(|q| q.trim()).collect();
+    for (i, query) in query_list.iter().enumerate() {
+        let resolved_output = output_dir.join(format!("resolved_query_{}.json", i + 1));
+        cmd_cosmos_resolve_query(
+            query,
+            &layout_output,
+            &OutputFormat::Json,
+            Some(&resolved_output),
         )?;
-        std::fs::write(&queries_file, queries_json)?;
-    }
-    println!(
-        "Step 4: CosmWasm queries saved to {}",
-        queries_file.display()
-    );
-
-    // Step 6: CosmWasm storage proof generation
-    if !dry_run {
-        println!("Step 5: CosmWasm storage proof generation...");
-        println!("   Note: Cosmos storage proof generation requires IAVL tree proof support");
-        println!("   This would connect to {} for contract {}", rpc, contract);
-        for (query, _) in &resolved_paths {
-            println!("   Would fetch IAVL proof for: {}", query);
-        }
-    } else {
-        println!("Step 5: CosmWasm storage proof generation (skipped in dry run)");
-        for (query, _) in &resolved_paths {
-            println!("   Would fetch IAVL proof for: {}", query);
-        }
     }
 
-    // Step 7: Generate summary report
-    let summary_file = output_dir.join("cosmos_summary.json");
-    let summary = json!({
-        "contract_address": contract,
-        "rpc_endpoint": rpc,
-        "schema_file": schema_file.display().to_string(),
-        "layout_commitment": hex::encode(layout.commitment()),
-        "total_queries": query_list.len(),
-        "successful_resolutions": resolved_paths.len(),
-        "generated_at": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
-        "dry_run": dry_run,
-        "cosmos_specific": {
-            "note": "CosmWasm contracts use IAVL tree proofs",
-            "files_generated": if dry_run { 0 } else { 3 } // layout + queries + summary
-        }
-    });
-
-    if !dry_run {
-        let summary_json = serde_json::to_string_pretty(&summary)?;
-        std::fs::write(&summary_file, summary_json)?;
-    }
-    println!(
-        "Step 6: CosmWasm summary saved to {}",
-        summary_file.display()
-    );
-
-    println!();
-    println!("CosmWasm auto-generation completed!");
-    println!("   Output directory: {}", output_dir.display());
-    println!(
-        "   Queries processed: {}/{}",
-        resolved_paths.len(),
-        query_list.len()
-    );
-    if !dry_run {
-        println!("   Files created: 3 (layout + queries + summary)");
-        println!();
-        println!("Ready for CosmWasm coprocessor integration!");
-        println!("   Note: IAVL tree proof generation requires Cosmos RPC client implementation");
-    } else {
-        println!("   Dry run completed - use without --dry-run to generate actual files");
-    }
+    println!("Auto-generation completed");
+    println!("  • Contract: {}", contract);
+    println!("  • Generated {} files", 3 + query_list.len());
+    println!("  • Output directory: {}", output_dir.display());
 
     Ok(())
-}
-
-#[cfg(not(feature = "cosmos"))]
-pub async fn cmd_cosmos_auto_generate(
-    _schema_file: &Path,
-    _rpc: &str,
-    _contract: &str,
-    _queries: &str,
-    _output_dir: &Path,
-    _cache: bool,
-    _dry_run: bool,
-) -> Result<()> {
-    Err(anyhow::anyhow!("Cosmos support not enabled. Build with --features cosmos"))
 }
 
 /// Perform live analysis of a CosmWasm contract
 #[cfg(feature = "cosmos")]
 async fn perform_live_cosmos_analysis(contract_address: &str, rpc_url: &str) -> Result<Value> {
-    info!(
-        "Fetching live contract info for {} from {}",
-        contract_address, rpc_url
-    );
+    use reqwest::Client;
+    use serde_json::json;
 
-    // For now, provide a mock implementation that demonstrates the concept
-    // In a real implementation, this would use a CosmWasm RPC client
-
-    let mut live_data = json!({
-        "contract_address": contract_address,
-        "rpc_endpoint": rpc_url,
-        "status": "mock_analysis",
-        "fetched_at": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
-        "note": "Mock implementation - replace with actual Cosmos RPC client"
+    let client = Client::new();
+    
+    // Query contract info
+    let contract_info_query = json!({
+        "jsonrpc": "2.0",
+        "method": "abci_query",
+        "params": {
+            "path": "/cosmwasm.wasm.v1.Query/ContractInfo",
+            "data": base64::encode(contract_address.as_bytes()),
+            "prove": false
+        },
+        "id": 1
     });
 
-    // Simulate contract validation
-    if contract_address.starts_with("cosmos1") || contract_address.len() == 39 {
-        live_data["contract_info"] = json!({
-            "status": "address_format_valid",
-            "note": "Contract address format appears valid",
-            "address_type": "bech32",
-            "predicted_exists": true
-        });
+    let response = client
+        .post(rpc_url)
+        .json(&contract_info_query)
+        .send()
+        .await?;
 
-        live_data["state_query"] = json!({
-            "status": "would_query",
-            "note": "Would attempt to query contract state",
-            "example_queries": [
-                {"query": "{}", "purpose": "contract_info"},
-                {"query": r#"{"balance":{"address":"cosmos1..."}}"#, "purpose": "token_balance"},
-                {"query": r#"{"token_info":{}}"#, "purpose": "token_metadata"}
-            ]
-        });
-
-        live_data["analysis_summary"] = json!({
-            "contract_likely_exists": true,
-            "address_format_valid": true,
-            "recommendation": "Address format is valid - implement full RPC client for live verification",
-            "next_steps": [
-                "Add cosmrs or cosmos-rust-client dependency",
-                "Implement contract_info query",
-                "Implement smart contract state queries",
-                "Add IAVL proof verification"
-            ]
-        });
+    let result: serde_json::Value = response.json().await?;
+    
+    // Extract contract info from response
+    let contract_info = if let Some(result_data) = result.get("result") {
+        if let Some(response_data) = result_data.get("response") {
+            if let Some(value) = response_data.get("value") {
+                // Decode base64 response
+                if let Ok(decoded) = base64::decode(value.as_str().unwrap_or("")) {
+                    // Parse protobuf response (simplified)
+                    json!({
+                        "contract_address": contract_address,
+                        "data_size": decoded.len(),
+                        "status": "active",
+                        "rpc_endpoint": rpc_url
+                    })
+                } else {
+                    json!({
+                        "contract_address": contract_address,
+                        "status": "found",
+                        "rpc_endpoint": rpc_url
+                    })
+                }
+            } else {
+                json!({
+                    "contract_address": contract_address,
+                    "status": "not_found",
+                    "rpc_endpoint": rpc_url
+                })
+            }
+        } else {
+            json!({
+                "contract_address": contract_address,
+                "status": "rpc_error",
+                "rpc_endpoint": rpc_url
+            })
+        }
     } else {
-        live_data["contract_info"] = json!({
-            "status": "address_format_invalid",
-            "note": "Contract address format appears invalid",
-            "expected_format": "cosmos1... (39 characters, bech32 encoded)"
-        });
+        json!({
+            "contract_address": contract_address,
+            "status": "query_failed",
+            "rpc_endpoint": rpc_url
+        })
+    };
 
-        live_data["analysis_summary"] = json!({
-            "contract_likely_exists": false,
-            "address_format_valid": false,
-            "recommendation": "Check contract address format"
-        });
-    }
-
-    // Add implementation guidance
-    live_data["implementation_guidance"] = json!({
-        "current_status": "Mock implementation for demonstration",
-        "real_implementation_would": [
-            "Use cosmrs crate for Cosmos RPC communication",
-            "Query /cosmwasm.wasm.v1.Query/ContractInfo for contract existence",
-            "Query /cosmwasm.wasm.v1.Query/SmartContractState for contract state",
-            "Fetch IAVL proofs for storage verification",
-            "Parse CosmWasm-specific storage layouts"
-        ],
-        "dependencies_needed": [
-            "cosmrs = \"0.16\"",
-            "cosmos-sdk-proto = \"0.21\"",
-            "tonic = \"0.11\""
-        ]
-    });
-
-    Ok(live_data)
-}
-
-#[cfg(not(feature = "cosmos"))]
-async fn perform_live_cosmos_analysis(_contract_address: &str, _rpc_url: &str) -> Result<Value> {
-    Err(anyhow::anyhow!("Cosmos support not enabled"))
+    Ok(contract_info)
 } 

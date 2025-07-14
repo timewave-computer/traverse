@@ -17,8 +17,17 @@ pub async fn cmd_solana_analyze_program(
 ) -> Result<()> {
     println!("Analyzing Solana program from IDL: {}", idl_file.display());
     
+    // Check if the IDL file exists before attempting to read it
+    if !idl_file.exists() {
+        return Err(anyhow::anyhow!(
+            "IDL file does not exist: {}",
+            idl_file.display()
+        ));
+    }
+    
     // Read IDL file
-    let idl_content = std::fs::read_to_string(idl_file)?;
+    let idl_content = std::fs::read_to_string(idl_file)
+        .map_err(|e| anyhow::anyhow!("Failed to read IDL file '{}': {}", idl_file.display(), e))?;
     
     use traverse_solana::anchor::{IdlParser, SolanaIdl};
     
@@ -99,8 +108,17 @@ pub async fn cmd_solana_compile_layout(
 ) -> Result<()> {
     println!("Compiling Solana storage layout from IDL: {}", idl_file.display());
     
+    // Check if the IDL file exists before attempting to read it
+    if !idl_file.exists() {
+        return Err(anyhow::anyhow!(
+            "IDL file does not exist: {}",
+            idl_file.display()
+        ));
+    }
+    
     // Read IDL file
-    let idl_content = std::fs::read_to_string(idl_file)?;
+    let idl_content = std::fs::read_to_string(idl_file)
+        .map_err(|e| anyhow::anyhow!("Failed to read IDL file '{}': {}", idl_file.display(), e))?;
     
     use traverse_solana::{SolanaLayoutCompiler, anchor::IdlParser};
     use traverse_core::LayoutCompiler;
@@ -177,9 +195,19 @@ pub async fn cmd_solana_generate_queries(
 ) -> Result<()> {
     println!("Generating Solana storage queries for keys: {}", state_keys);
     
+    // Check if the layout file exists before attempting to read it
+    if !layout_file.exists() {
+        return Err(anyhow::anyhow!(
+            "Layout file does not exist: {}",
+            layout_file.display()
+        ));
+    }
+    
     // Load layout
-    let layout_content = std::fs::read_to_string(layout_file)?;
-    let layout: traverse_core::LayoutInfo = serde_json::from_str(&layout_content)?;
+    let layout_content = std::fs::read_to_string(layout_file)
+        .map_err(|e| anyhow::anyhow!("Failed to read layout file '{}': {}", layout_file.display(), e))?;
+    let layout: traverse_core::LayoutInfo = serde_json::from_str(&layout_content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse layout file '{}': {}", layout_file.display(), e))?;
     
     // Parse key list
     let key_list: Vec<&str> = state_keys.split(',').map(|k| k.trim()).collect();
@@ -253,9 +281,19 @@ pub async fn cmd_solana_resolve_query(
 ) -> Result<()> {
     println!("Resolving Solana storage query: {}", query);
     
+    // Check if the layout file exists before attempting to read it
+    if !layout_file.exists() {
+        return Err(anyhow::anyhow!(
+            "Layout file does not exist: {}",
+            layout_file.display()
+        ));
+    }
+    
     // Load layout
-    let layout_content = std::fs::read_to_string(layout_file)?;
-    let layout: traverse_core::LayoutInfo = serde_json::from_str(&layout_content)?;
+    let layout_content = std::fs::read_to_string(layout_file)
+        .map_err(|e| anyhow::anyhow!("Failed to read layout file '{}': {}", layout_file.display(), e))?;
+    let layout: traverse_core::LayoutInfo = serde_json::from_str(&layout_content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse layout file '{}': {}", layout_file.display(), e))?;
     
     // Create resolver
     use traverse_solana::SolanaKeyResolver;
@@ -324,6 +362,33 @@ pub async fn cmd_solana_auto_generate(
     dry_run: bool,
 ) -> Result<()> {
     println!("Running Solana auto-generation for program: {}", program_address);
+    
+    // Check if the IDL file exists before attempting to process it
+    if !idl_file.exists() {
+        return Err(anyhow::anyhow!(
+            "IDL file does not exist: {}",
+            idl_file.display()
+        ));
+    }
+    
+    // Validate basic parameters
+    if rpc.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "RPC URL cannot be empty. Please provide a valid Solana RPC endpoint."
+        ));
+    }
+    
+    if program_address.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "Program address cannot be empty. Please provide a valid Solana program address."
+        ));
+    }
+    
+    if queries.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "Queries cannot be empty. Please provide comma-separated query patterns."
+        ));
+    }
     
     // Create output directory
     std::fs::create_dir_all(output_dir)?;
@@ -611,5 +676,191 @@ mod tests {
         let result = validate_idl_schema(&());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Solana support not enabled"));
+    }
+
+    #[cfg(feature = "solana")]
+    #[tokio::test]
+    async fn test_file_existence_checks() {
+        use std::path::Path;
+        use tempfile::{NamedTempFile, TempDir};
+        
+        // Test missing IDL file in analyze_program
+        let result = cmd_solana_analyze_program(
+            Path::new("nonexistent.idl.json"),
+            None,
+            false,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("IDL file does not exist"));
+
+        // Test missing IDL file in compile_layout
+        let result = cmd_solana_compile_layout(
+            Path::new("nonexistent.idl.json"),
+            None,
+            &traverse_core::OutputFormat::Json,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("IDL file does not exist"));
+
+        // Test missing layout file in generate_queries
+        let result = cmd_solana_generate_queries(
+            Path::new("nonexistent_layout.json"),
+            "balance",
+            None,
+            false,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Layout file does not exist"));
+
+        // Test missing layout file in resolve_query
+        let result = cmd_solana_resolve_query(
+            "balance",
+            Path::new("nonexistent_layout.json"),
+            &traverse_core::OutputFormat::Json,
+            None,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Layout file does not exist"));
+
+        // Test with valid temporary files (should not crash, though may fail for other reasons)
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        
+        // Create a minimal valid IDL file
+        let idl = serde_json::json!({
+            "version": "0.1.0",
+            "name": "test_program",
+            "programId": "11111111111111111111111111111111",
+            "instructions": [],
+            "accounts": [],
+            "types": [],
+            "events": [],
+            "errors": [],
+            "constants": []
+        });
+        
+        let mut temp_idl = NamedTempFile::new().expect("Failed to create temp IDL file");
+        std::fs::write(temp_idl.path(), serde_json::to_string_pretty(&idl).unwrap())
+            .expect("Failed to write temp IDL file");
+
+        // Test analyze_program with valid file (should not crash)
+        let result = cmd_solana_analyze_program(
+            temp_idl.path(),
+            None,
+            false, // Don't validate schema to avoid other validation errors
+        ).await;
+        // Should not fail due to file existence issues
+        assert!(result.is_ok() || !result.unwrap_err().to_string().contains("IDL file does not exist"));
+
+        // Create a minimal valid layout file for other tests
+        let layout = serde_json::json!({
+            "contract_name": "test_program",
+            "entries": [],
+            "types": [],
+            "semantic_entries": []
+        });
+        
+        let mut temp_layout = NamedTempFile::new().expect("Failed to create temp layout file");
+        std::fs::write(temp_layout.path(), serde_json::to_string_pretty(&layout).unwrap())
+            .expect("Failed to write temp layout file");
+
+        // Test generate_queries with valid file (should not crash)
+        let result = cmd_solana_generate_queries(
+            temp_layout.path(),
+            "balance",
+            None,
+            false,
+        ).await;
+        // Should not fail due to file existence issues
+        assert!(result.is_ok() || !result.unwrap_err().to_string().contains("Layout file does not exist"));
+    }
+
+    #[cfg(feature = "solana")]
+    #[tokio::test]
+    async fn test_auto_generate_parameter_validation() {
+        use std::path::Path;
+        use tempfile::{NamedTempFile, TempDir};
+        
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let output_dir = temp_dir.path().join("output");
+        
+        // Create a minimal valid IDL file
+        let idl = serde_json::json!({
+            "version": "0.1.0",
+            "name": "test_program",
+            "programId": "11111111111111111111111111111111",
+            "instructions": [],
+            "accounts": [],
+            "types": [],
+            "events": [],
+            "errors": [],
+            "constants": []
+        });
+        let mut temp_idl = NamedTempFile::new().expect("Failed to create temp IDL file");
+        std::fs::write(temp_idl.path(), serde_json::to_string_pretty(&idl).unwrap())
+            .expect("Failed to write temp IDL file");
+
+        // Test missing IDL file
+        let result = cmd_solana_auto_generate(
+            Path::new("nonexistent.idl.json"),
+            "https://api.mainnet-beta.solana.com",
+            "11111111111111111111111111111111",
+            "balance",
+            &output_dir,
+            true, // dry run
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("IDL file does not exist"));
+
+        // Test empty RPC
+        let result = cmd_solana_auto_generate(
+            temp_idl.path(),
+            "",
+            "11111111111111111111111111111111",
+            "balance",
+            &output_dir,
+            true,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("RPC URL cannot be empty"));
+
+        // Test empty program address
+        let result = cmd_solana_auto_generate(
+            temp_idl.path(),
+            "https://api.mainnet-beta.solana.com",
+            "",
+            "balance",
+            &output_dir,
+            true,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Program address cannot be empty"));
+
+        // Test empty queries
+        let result = cmd_solana_auto_generate(
+            temp_idl.path(),
+            "https://api.mainnet-beta.solana.com",
+            "11111111111111111111111111111111",
+            "",
+            &output_dir,
+            true,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Queries cannot be empty"));
+
+        // Test valid parameters (dry run should succeed)
+        let result = cmd_solana_auto_generate(
+            temp_idl.path(),
+            "https://api.mainnet-beta.solana.com",
+            "11111111111111111111111111111111",
+            "balance",
+            &output_dir,
+            true, // dry run
+        ).await;
+        // Should succeed in dry run mode (or fail for other reasons, not parameter validation)
+        assert!(
+            result.is_ok() || 
+            (!result.as_ref().unwrap_err().to_string().contains("IDL file does not exist") &&
+             !result.as_ref().unwrap_err().to_string().contains("cannot be empty"))
+        );
     }
 }

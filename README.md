@@ -1,10 +1,10 @@
 # Traverse
 
-Chain-independent ZK storage path generator for blockchain state verification.
+Chain-independent ZK storage proof system for blockchain state verification.
 
 ## Overview
 
-Traverse generates cryptographic proofs of blockchain storage state for use in zero-knowledge circuits and cross-chain applications. It provides semantic understanding of storage values to eliminate ambiguity in ZK proofs.
+Traverse generates cryptographic proofs of blockchain storage state for use in zero-knowledge circuits and cross-chain applications. It provides semantic understanding of storage values to eliminate ambiguity in ZK proofs, enabling deterministic and verifiable storage path resolution across multiple blockchain ecosystems.
 
 ### Key Features
 
@@ -13,7 +13,7 @@ Traverse generates cryptographic proofs of blockchain storage state for use in z
 - **ZK-circuit ready**: Minimal, constrained builds for proof generation
 - **Modular architecture**: Use only the components you need
 
-## ⚠️ Dependency Conflicts (Important)
+## Dependency Conflicts (Important)
 
 **Solana and Ethereum ecosystems have incompatible dependencies and cannot be used in the same binary.**
 
@@ -32,19 +32,19 @@ These create irreconcilable dependency conflicts in Cargo's dependency resolver.
 
 We use conditional compilation to ensure you can only enable one blockchain ecosystem at a time:
 
-#### ✅ Ethereum Only (Default)
+#### Ethereum Only (Default)
 ```toml
 [dependencies]
 traverse = { version = "0.1", features = ["ethereum"] }
 ```
 
-#### ✅ Solana Only
+#### Solana Only
 ```toml
 [dependencies]
 traverse = { version = "0.1", features = ["solana"], default-features = false }
 ```
 
-#### ✅ Separate Binaries
+#### Separate Binaries
 ```toml
 # ethereum-processor/Cargo.toml
 [dependencies]
@@ -53,12 +53,6 @@ traverse = { version = "0.1", features = ["ethereum"] }
 # solana-processor/Cargo.toml  
 [dependencies]
 traverse = { version = "0.1", features = ["solana"], default-features = false }
-```
-
-#### ❌ This Will Not Work
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["ethereum", "solana"] }  # Dependency conflict!
 ```
 
 ## Quick Start
@@ -131,7 +125,7 @@ This prevents semantic confusion attacks and makes proofs more reliable.
 
 ### Blockchain Features (Mutually Exclusive)
 - `ethereum` - Ethereum/EVM support with lightweight Alloy integration
-- `solana` - Solana support with SDK integration ⚠️ **Conflicts with Alloy**
+- `solana` - Solana support with SDK integration **Conflicts with Alloy**
 - `cosmos` - Cosmos/CosmWasm support
 
 ### Integration Features
@@ -201,7 +195,3 @@ When contributing:
 ## License
 
 Apache-2.0
-
----
-
-**Need help?** Check out the [integration guides](docs/) or [open an issue](https://github.com/timewave-computer/traverse/issues).

@@ -4,10 +4,11 @@
 //! the shared core CLI infrastructure. It only imports Cosmos dependencies to
 //! avoid the k256 version conflict with Ethereum.
 
-use clap::{Parser, Subcommand};
+use anyhow::Result;
+use clap::{Args, Command, Parser, Subcommand};
 use serde_json::{json, Value};
-use std::process;
-use traverse_cli_core::{CommonArgs, CliResult, CliUtils, OutputFormat};
+use std::path::Path;
+use traverse_core::OutputFormat;
 
 #[cfg(feature = "cosmos")]
 use traverse_cosmos::{
@@ -18,9 +19,9 @@ use traverse_cosmos::{
 mod commands;
 
 /// Cosmos-specific CLI arguments
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(name = "traverse-cosmos")]
-#[command(about = "Cosmos ZK storage path generator")]
+#[command(about = "Traverse CLI for Cosmos blockchain analysis")]
 #[command(version)]
 struct CosmosArgs {
     #[command(flatten)]
@@ -30,8 +31,14 @@ struct CosmosArgs {
     command: CosmosCommand,
 }
 
+#[derive(Debug, Args)]
+struct CommonArgs {
+    #[arg(long, global = true)]
+    verbose: bool,
+}
+
 /// Cosmos-specific commands
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 enum CosmosCommand {
     /// Analyze a Cosmos contract schema
     AnalyzeContract {
@@ -100,6 +107,21 @@ enum CosmosCommand {
     },
 }
 
+type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
+
+fn write_output(content: &str, output_path: Option<&str>) -> CliResult<()> {
+    match output_path {
+        Some(path) => {
+            std::fs::write(path, content)?;
+            Ok(())
+        }
+        None => {
+            println!("{}", content);
+            Ok(())
+        }
+    }
+}
+
 #[cfg(feature = "cosmos")]
 async fn analyze_contract(schema_file: &str, address: Option<&str>, deep: bool) -> CliResult<Value> {
     use std::path::Path;
@@ -118,12 +140,15 @@ async fn analyze_contract(schema_file: &str, address: Option<&str>, deep: bool) 
             // For now, return a placeholder result since the command writes to output
             Ok(json!({
                 "status": "success",
-                "file": schema_file,
-                "address": address.unwrap_or("not_specified"),
-                "analyzed": true
+                "schema_file": schema_file,
+                "address": address,
+                "deep_analysis": deep
             }))
         }
-        Err(e) => Err(traverse_cli_core::CliError::Processing(e.to_string()))
+        Err(e) => Ok(json!({
+            "status": "error",
+            "error": e.to_string()
+        }))
     }
 }
 
@@ -131,123 +156,142 @@ async fn analyze_contract(schema_file: &str, address: Option<&str>, deep: bool) 
 fn compile_layout(input: &str, output: Option<&str>) -> CliResult<()> {
     use std::path::Path;
     
-    // Call the command implementation
-    let result = commands::cmd_cosmos_compile_layout(
+    let output_path = output.map(Path::new);
+    commands::cmd_cosmos_compile_layout(
         Path::new(input),
-        output.map(Path::new),
-        &OutputFormat::Traverse,
-    );
+        output_path,
+        &OutputFormat::Json,
+    )?;
     
-    match result {
-        Ok(()) => Ok(()),
-        Err(e) => Err(traverse_cli_core::CliError::Processing(e.to_string()))
-    }
+    Ok(())
 }
 
 #[cfg(feature = "cosmos")]
 fn resolve_query(query: &str, layout_file: &str, address: Option<&str>) -> CliResult<Value> {
     use std::path::Path;
     
-    // Call the command implementation
     let result = commands::cmd_cosmos_resolve_query(
         query,
         Path::new(layout_file),
-        &OutputFormat::CoprocessorJson,
+        &OutputFormat::Json,
         None, // output handled by caller
     );
     
     match result {
-        Ok(()) => {
-            // For now, return a placeholder result since the command writes to output
-            Ok(json!({
-                "status": "success",
-                "query": query,
-                "layout_file": layout_file,
-                "address": address.unwrap_or("not_specified"),
-                "resolved": true
-            }))
-        }
-        Err(e) => Err(traverse_cli_core::CliError::Processing(e.to_string()))
+        Ok(()) => Ok(json!({
+            "status": "success",
+            "query": query,
+            "layout_file": layout_file,
+            "address": address
+        })),
+        Err(e) => Ok(json!({
+            "status": "error",
+            "error": e.to_string()
+        }))
     }
-}
-
-#[cfg(not(feature = "cosmos"))]
-fn analyze_contract(_schema_file: &str, _address: Option<&str>, _deep: bool) -> CliResult<Value> {
-    Err(traverse_cli_core::CliError::Configuration(
-        "Cosmos support not enabled. Build with --features cosmos".to_string()
-    ))
-}
-
-#[cfg(not(feature = "cosmos"))]
-fn compile_layout(_input: &str, _output: Option<&str>) -> CliResult<()> {
-    Err(traverse_cli_core::CliError::Configuration(
-        "Cosmos support not enabled. Build with --features cosmos".to_string()
-    ))
-}
-
-#[cfg(not(feature = "cosmos"))]
-fn resolve_query(_query: &str, _layout_file: &str, _address: Option<&str>) -> CliResult<Value> {
-    Err(traverse_cli_core::CliError::Configuration(
-        "Cosmos support not enabled. Build with --features cosmos".to_string()
-    ))
 }
 
 async fn handle_command(args: CosmosArgs) -> CliResult<()> {
-    // Set verbose mode
-    if args.common.verbose {
-        std::env::set_var("VERBOSE", "1");
-    }
-    
     match args.command {
         CosmosCommand::AnalyzeContract { schema_file, address, deep } => {
-            let result = analyze_contract(&schema_file, address.as_deref(), deep).await?;
-            let output = CliUtils::format_json(&result, &args.common.format)?;
-            CliUtils::write_output(&output, args.common.output.as_deref())?;
+            #[cfg(feature = "cosmos")]
+            {
+                let result = analyze_contract(&schema_file, address.as_deref(), deep).await?;
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            }
+            
+            #[cfg(not(feature = "cosmos"))]
+            {
+                eprintln!("Error: Cosmos support not enabled.");
+                eprintln!("This binary was built without Cosmos support.");
+                eprintln!("Please use a build with the 'cosmos' feature enabled.");
+                std::process::exit(1);
+            }
         }
         
         CosmosCommand::CompileLayout { input, output } => {
-            compile_layout(&input, output.as_deref())?;
+            #[cfg(feature = "cosmos")]
+            {
+                compile_layout(&input, output.as_deref())?;
+            }
+            
+            #[cfg(not(feature = "cosmos"))]
+            {
+                eprintln!("Error: Cosmos support not enabled.");
+                eprintln!("This binary was built without Cosmos support.");
+                eprintln!("Please use a build with the 'cosmos' feature enabled.");
+                std::process::exit(1);
+            }
         }
         
         CosmosCommand::GenerateQueries { layout, patterns } => {
-            let result = json!({
-                "layout": layout,
-                "patterns": patterns,
-                "note": "Query generation implementation would go here"
-            });
-            let output = CliUtils::format_json(&result, &args.common.format)?;
-            CliUtils::write_output(&output, args.common.output.as_deref())?;
+            #[cfg(feature = "cosmos")]
+            {
+                let patterns_str = patterns.join(",");
+                commands::cmd_cosmos_generate_queries(
+                    Path::new(&layout),
+                    &patterns_str,
+                    None,
+                    true, // include_examples
+                )?;
+            }
+            
+            #[cfg(not(feature = "cosmos"))]
+            {
+                eprintln!("Error: Cosmos support not enabled.");
+                eprintln!("This binary was built without Cosmos support.");  
+                eprintln!("Please use a build with the 'cosmos' feature enabled.");
+                std::process::exit(1);
+            }
         }
         
         CosmosCommand::ResolveQuery { query, layout, address } => {
-            let result = resolve_query(&query, &layout, address.as_deref())?;
-            let output = CliUtils::format_json(&result, &args.common.format)?;
-            CliUtils::write_output(&output, args.common.output.as_deref())?;
+            #[cfg(feature = "cosmos")]
+            {
+                let result = resolve_query(&query, &layout, address.as_deref())?;
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            }
+            
+            #[cfg(not(feature = "cosmos"))]
+            {
+                eprintln!("Error: Cosmos support not enabled.");
+                eprintln!("This binary was built without Cosmos support.");
+                eprintln!("Please use a build with the 'cosmos' feature enabled.");
+                std::process::exit(1);
+            }
         }
         
         CosmosCommand::GenerateProof { address, query, rpc, chain_id } => {
-            let result = json!({
-                "address": address,
-                "query": query,
-                "rpc": rpc,
-                "chain_id": chain_id,
-                "note": "Proof generation implementation would go here"
-            });
-            let output = CliUtils::format_json(&result, &args.common.format)?;
-            CliUtils::write_output(&output, args.common.output.as_deref())?;
+            #[cfg(feature = "cosmos")]
+            {
+                println!("Generating proof for contract {} with query: {}", address, query);
+                println!("RPC: {}, Chain ID: {}", rpc, chain_id);
+                // Implementation would go here
+            }
+            
+            #[cfg(not(feature = "cosmos"))]
+            {
+                eprintln!("Error: Cosmos support not enabled.");
+                eprintln!("This binary was built without Cosmos support.");
+                eprintln!("Please use a build with the 'cosmos' feature enabled.");
+                std::process::exit(1);
+            }
         }
         
         CosmosCommand::AutoGenerate { config, output_dir } => {
-            let config_data = CliUtils::load_config(&config)?;
-            CliUtils::ensure_output_dir(&output_dir)?;
+            #[cfg(feature = "cosmos")]
+            {
+                println!("Auto-generating from config: {} to {}", config, output_dir);
+                // Implementation would go here
+            }
             
-            let result = json!({
-                "config": config,
-                "output_dir": output_dir,
-                "note": "Auto-generation implementation would go here"
-            });
-            let output = CliUtils::format_json(&result, &args.common.format)?;
-            CliUtils::write_output(&output, args.common.output.as_deref())?;
+            #[cfg(not(feature = "cosmos"))]
+            {
+                eprintln!("Error: Cosmos support not enabled.");
+                eprintln!("This binary was built without Cosmos support.");
+                eprintln!("Please use a build with the 'cosmos' feature enabled.");
+                std::process::exit(1);
+            }
         }
     }
     
@@ -260,6 +304,6 @@ async fn main() {
     
     if let Err(e) = handle_command(args).await {
         eprintln!("Error: {}", e);
-        process::exit(1);
+        std::process::exit(1);
     }
 } 

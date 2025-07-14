@@ -22,8 +22,8 @@ pub struct CommonArgs {
     #[arg(short, long)]
     pub verbose: bool,
     
-    /// Output format (json, pretty, compact)
-    #[arg(short, long, default_value = "pretty")]
+    /// Output format (traverse, coprocessor-json, toml, binary, base64)
+    #[arg(short, long, default_value = "traverse")]
     pub format: OutputFormat,
     
     /// Output file (stdout if not specified)
