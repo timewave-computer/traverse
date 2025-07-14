@@ -104,6 +104,8 @@
           strictDeps = true;
           cargoVendorDir = null; # Skip vendoring to avoid Cargo.lock conflicts
           cargoLock = null; # Don't use locked dependencies
+          # Override test command to avoid --locked flag
+          cargoTestCommand = "cargo test --release";
           # SSL certificate configuration
           SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
           CARGO_NET_GIT_FETCH_WITH_CLI = "true";
