@@ -35,12 +35,14 @@
           cp -r ${pkgs.lib.cleanSource ./.} $out
           chmod -R +w $out
           cp $out/workspace-configs/Cargo.toml.core $out/Cargo.toml
+          cp $out/workspace-configs/Cargo.lock.core $out/Cargo.lock
         '';
         
         ethereumSrc = pkgs.runCommand "ethereum-source" {} ''
           cp -r ${pkgs.lib.cleanSource ./.} $out
           chmod -R +w $out
           cp $out/workspace-configs/Cargo.toml.ethereum $out/Cargo.toml
+          cp $out/workspace-configs/Cargo.lock.ethereum $out/Cargo.lock
           # Remove Solana crate to avoid any conflicts
           rm -rf $out/crates/traverse-solana
           # Remove Cosmos crate to avoid potential conflicts
@@ -54,6 +56,7 @@
           cp -r ${pkgs.lib.cleanSource ./.} $out
           chmod -R +w $out
           cp $out/workspace-configs/Cargo.toml.solana $out/Cargo.toml
+          cp $out/workspace-configs/Cargo.lock.solana $out/Cargo.lock
           # Remove Ethereum crate to avoid any conflicts
           rm -rf $out/crates/traverse-ethereum
           # Remove Cosmos crate to avoid potential conflicts
@@ -68,6 +71,7 @@
           cp -r ${pkgs.lib.cleanSource ./.} $out
           chmod -R +w $out
           cp $out/workspace-configs/Cargo.toml.cosmos $out/Cargo.toml
+          cp $out/workspace-configs/Cargo.lock.cosmos $out/Cargo.lock
           # Remove other ecosystem crates to avoid conflicts
           rm -rf $out/crates/traverse-ethereum
           rm -rf $out/crates/traverse-solana
