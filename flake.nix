@@ -356,6 +356,7 @@
             cargoArtifacts = coreCargoArtifacts;
             cargoTestExtraArgs = "--package traverse-core";
             cargoLock = null; # Don't use locked dependencies
+            cargoTestCommand = "cargo test --release --package traverse-core";
           });
 
           # Ethereum ecosystem tests
@@ -365,6 +366,7 @@
             cargoArtifacts = ethereumCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features ethereum,std --package traverse-ethereum";
             cargoLock = null; # Don't use locked dependencies
+            cargoTestCommand = "cargo test --release --no-default-features --features ethereum,std --package traverse-ethereum";
           });
 
           # Solana ecosystem tests  
@@ -374,6 +376,7 @@
             cargoArtifacts = solanaCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features solana --package traverse-solana";
             cargoLock = null; # Don't use locked dependencies
+            cargoTestCommand = "cargo test --release --no-default-features --features solana --package traverse-solana";
           });
 
           # Cosmos ecosystem tests
@@ -383,6 +386,7 @@
             cargoArtifacts = cosmosCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos";
             cargoLock = null; # Don't use locked dependencies
+            cargoTestCommand = "cargo test --release --no-default-features --features cosmos --package traverse-cosmos";
           });
 
           # Valence tests (no alloy features)
@@ -392,6 +396,7 @@
             cargoArtifacts = coreCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features std,controller,circuit --package traverse-valence";
             cargoLock = null; # Don't use locked dependencies
+            cargoTestCommand = "cargo test --release --no-default-features --features std,controller,circuit --package traverse-valence";
           });
         };
 
