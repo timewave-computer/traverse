@@ -409,7 +409,7 @@ pub async fn cmd_solana_auto_generate(
     let resolved_file = output_dir.join("resolved.json");
     
     let mut resolved_queries = Vec::new();
-    for query in query_list {
+    for query in &query_list {
         match cmd_solana_resolve_query(query, &layout_file, &OutputFormat::CoprocessorJson, None).await {
             Ok(()) => {
                 resolved_queries.push(serde_json::json!({

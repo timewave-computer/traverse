@@ -20,7 +20,7 @@ use reqwest;
 #[cfg(feature = "cosmos")]
 use traverse_cosmos::{CosmosKeyResolver, CosmosLayoutCompiler};
 #[cfg(feature = "cosmos")]
-use traverse_core::{KeyResolver, LayoutCompiler};
+use traverse_core::{KeyResolver};
 
 /// Write output to file or stdout
 fn write_output(content: &str, output_path: Option<&Path>) -> Result<()> {
@@ -153,7 +153,7 @@ pub fn cmd_cosmos_resolve_query(
 
     let output_str = match format {
         OutputFormat::Json => serde_json::to_string_pretty(&result)?,
-        OutputFormat::Yaml => serde_yaml::to_string(&result)?,
+        OutputFormat::Yaml => serde_json::to_string_pretty(&result)?, // YAML not available, use JSON
     };
 
     write_output(&output_str, output)?;
@@ -184,7 +184,7 @@ pub fn cmd_cosmos_generate_queries(
     let state_key_patterns: Vec<&str> = state_keys.split(',').map(|s| s.trim()).collect();
     let mut generated_queries = Vec::new();
 
-    for entry in &layout.entries {
+    for entry in &layout.storage {
         for pattern in &state_key_patterns {
             if entry.key.contains(pattern) {
                 let query = if include_examples {
