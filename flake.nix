@@ -223,6 +223,7 @@
           src = coreSrc;
           pname = "traverse-core-deps";
           cargoExtraArgs = "--package traverse-core";
+          cargoLock = null; # Don't use locked dependencies
         });
 
         # Ethereum ecosystem build (with Alloy dependencies) - use ethereum source filter
@@ -231,6 +232,7 @@
           pname = "traverse-ethereum-deps";
           cargoArtifacts = coreCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features ethereum,std --package traverse-ethereum --package traverse-valence";
+          cargoLock = null; # Don't use locked dependencies
         });
 
         # Solana ecosystem build (with Solana SDK dependencies) - use solana source filter
@@ -239,6 +241,7 @@
           pname = "traverse-solana-deps";
           cargoArtifacts = coreCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features solana --package traverse-solana";
+          cargoLock = null; # Don't use locked dependencies
         });
 
         # Cosmos ecosystem build
@@ -247,6 +250,7 @@
           pname = "traverse-cosmos-deps";
           cargoArtifacts = coreCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos --package traverse-cli-core --package traverse-cli-cosmos";
+          cargoLock = null; # Don't use locked dependencies
         });
 
         # Ethereum CLI dependencies
@@ -255,6 +259,7 @@
           pname = "traverse-ethereum-cli-deps";
           cargoArtifacts = ethereumCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features ethereum,std --package traverse-cli-core --package traverse-cli-ethereum";
+          cargoLock = null; # Don't use locked dependencies
         });
 
         # Solana CLI dependencies
@@ -263,6 +268,7 @@
           pname = "traverse-solana-cli-deps";
           cargoArtifacts = solanaCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features solana,std --package traverse-cli-core --package traverse-cli-solana";
+          cargoLock = null; # Don't use locked dependencies
         });
 
         # Cosmos CLI dependencies
@@ -271,6 +277,7 @@
           pname = "traverse-cosmos-cli-deps";
           cargoArtifacts = cosmosCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features cosmos,std --package traverse-cli-core --package traverse-cli-cosmos";
+          cargoLock = null; # Don't use locked dependencies
         });
 
       in
@@ -348,6 +355,7 @@
             pname = "traverse-core-tests";
             cargoArtifacts = coreCargoArtifacts;
             cargoTestExtraArgs = "--package traverse-core";
+            cargoLock = null; # Don't use locked dependencies
           });
 
           # Ethereum ecosystem tests
@@ -356,6 +364,7 @@
             pname = "traverse-ethereum-tests";
             cargoArtifacts = ethereumCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features ethereum,std --package traverse-ethereum";
+            cargoLock = null; # Don't use locked dependencies
           });
 
           # Solana ecosystem tests  
@@ -364,6 +373,7 @@
             pname = "traverse-solana-tests";
             cargoArtifacts = solanaCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features solana --package traverse-solana";
+            cargoLock = null; # Don't use locked dependencies
           });
 
           # Cosmos ecosystem tests
@@ -372,6 +382,7 @@
             pname = "traverse-cosmos-tests";
             cargoArtifacts = cosmosCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos";
+            cargoLock = null; # Don't use locked dependencies
           });
 
           # Valence tests (no alloy features)
@@ -380,6 +391,7 @@
             pname = "traverse-valence-tests";
             cargoArtifacts = coreCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features std,controller,circuit --package traverse-valence";
+            cargoLock = null; # Don't use locked dependencies
           });
         };
 
