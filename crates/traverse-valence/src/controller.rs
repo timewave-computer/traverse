@@ -1470,7 +1470,10 @@ mod tests {
                 // Valid request
                 SolanaAccountVerificationRequest {
                     account_query: SolanaAccountQuery {
-                        account_name: "valid_account".to_string(),
+                        query: "valid_account".to_string(),
+                        account_address: "ValidAddress111111111111111111111111".to_string(),
+                        program_id: "ValidProgram111111111111111111111111".to_string(),
+                        discriminator: None,
                         field_offset: Some(0),
                         field_size: Some(8),
                     },
@@ -1483,11 +1486,16 @@ mod tests {
                         slot: 12345,
                         block_hash: "ValidHash111111111111111111111111111".to_string(),
                     },
+                    program_address: Some("ValidProgram111111111111111111111111".to_string()),
+                    slot: Some(12345),
                 },
                 // Malicious request
                 SolanaAccountVerificationRequest {
                     account_query: SolanaAccountQuery {
-                        account_name: "'; DROP TABLE accounts; --".to_string(),
+                        query: "'; DROP TABLE accounts; --".to_string(),
+                        account_address: "MaliciousAddress111111111111111111111".to_string(),
+                        program_id: "MaliciousProgram111111111111111111111".to_string(),
+                        discriminator: None,
                         field_offset: Some(u32::MAX),
                         field_size: Some(u32::MAX),
                     },
@@ -1500,8 +1508,12 @@ mod tests {
                         slot: u64::MAX,
                         block_hash: "\n\r\t\0".to_string(),
                     },
+                    program_address: Some("MaliciousProgram111111111111111111111".to_string()),
+                    slot: Some(u64::MAX),
                 },
             ],
+            program_address: Some("BatchProgram1111111111111111111111111".to_string()),
+            slot: Some(12345),
         };
 
         let results = create_witnesses_from_batch_solana_request(&malicious_batch);
@@ -1578,7 +1590,10 @@ mod tests {
         // Create request with extremely large data
         let large_data_request = SolanaAccountVerificationRequest {
             account_query: SolanaAccountQuery {
-                account_name: "memory_bomb".to_string(),
+                query: "memory_bomb".to_string(),
+                account_address: "ValidAddress111111111111111111111111".to_string(),
+                program_id: "ValidProgram111111111111111111111111".to_string(),
+                discriminator: None,
                 field_offset: Some(0),
                 field_size: Some(u32::MAX), // Attempt to extract entire u32::MAX bytes
             },
@@ -1591,6 +1606,8 @@ mod tests {
                 slot: 12345,
                 block_hash: "ValidHash111111111111111111111111111".to_string(),
             },
+            program_address: Some("ValidProgram111111111111111111111111".to_string()),
+            slot: Some(12345),
         };
 
         let result = create_witness_from_solana_request(&large_data_request);
