@@ -28,140 +28,19 @@
         # Import Solana tools from zero.nix for e2e testing
         solanaTools = {}; # zero-nix.packages.${system} or {};
 
-        # Create ecosystem-specific workspace configurations
-        # Core workspace (no blockchain-specific crates)
-        coreWorkspace = pkgs.writeText "Cargo.toml" ''
-          [workspace]
-          members = [
-            "crates/traverse-core",
-            "crates/traverse-valence",
-          ]
-          resolver = "2"
-          
-          [workspace.package]
-          version = "0.1.0"
-          edition = "2021"
-          authors = ["Timewave Labs"]
-          license = "Apache-2.0"
-          repository = "https://github.com/timewave-computer/traverse"
-          homepage = "https://github.com/timewave-computer/traverse"
-          description = "Chain-independent ZK storage path generator for blockchain state verification"
-          keywords = ["zk", "blockchain", "ethereum", "storage", "proof"]
-          categories = ["cryptography", "development-tools"]
-          
-          [workspace.dependencies]
-          serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
-          serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
-          hex = { version = "0.4", default-features = false, features = ["alloc"] }
-          sha2 = { version = "0.10", default-features = false }
-          keccak = { version = "0.1", default-features = false }
-          tiny-keccak = { version = "2.0", features = ["keccak"] }
-          clap = { version = "4.0", features = ["derive"] }
-          tracing = "0.1"
-          tracing-subscriber = "0.3"
-          thiserror = "1.0"
-          tokio = { version = "1.0", features = ["full"] }
-          proptest = "1.0"
-          tempfile = "3.0"
-          anyhow = "1.0"
-          dotenv = "0.15"
-        '';
+
         
-        # Ethereum workspace
-        ethereumWorkspace = pkgs.writeText "Cargo.toml" ''
-          [workspace]
-          members = [
-            "crates/traverse-core",
-            "crates/traverse-ethereum",
-            "crates/traverse-valence",
-            "crates/traverse-cli-core",
-            "crates/traverse-cli-ethereum",
-          ]
-          resolver = "2"
-          
-          [workspace.package]
-          version = "0.1.0"
-          edition = "2021"
-          authors = ["Timewave Labs"]
-          license = "Apache-2.0"
-          repository = "https://github.com/timewave-computer/traverse"
-          homepage = "https://github.com/timewave-computer/traverse"
-          description = "Chain-independent ZK storage path generator for blockchain state verification"
-          keywords = ["zk", "blockchain", "ethereum", "storage", "proof"]
-          categories = ["cryptography", "development-tools"]
-          
-          [workspace.dependencies]
-          serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
-          serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
-          hex = { version = "0.4", default-features = false, features = ["alloc"] }
-          sha2 = { version = "0.10", default-features = false }
-          keccak = { version = "0.1", default-features = false }
-          clap = { version = "4.0", features = ["derive"] }
-          tracing = "0.1"
-          tracing-subscriber = "0.3"
-          thiserror = "1.0"
-          tiny-keccak = { version = "2.0", features = ["keccak"] }
-          rlp = "0.5"
-          tokio = { version = "1.0", features = ["full"] }
-          reqwest = { version = "0.12", features = ["json"] }
-          proptest = "1.0"
-          tempfile = "3.0"
-          anyhow = "1.0"
-          dotenv = "0.15"
-        '';
-        
-        # Solana workspace
-        solanaWorkspace = pkgs.writeText "Cargo.toml" ''
-          [workspace]
-          members = [
-            "crates/traverse-core",
-            "crates/traverse-solana",
-            "crates/traverse-valence",
-            "crates/traverse-cli-core",
-            "crates/traverse-cli-solana",
-          ]
-          resolver = "2"
-          
-          [workspace.package]
-          version = "0.1.0"
-          edition = "2021"
-          authors = ["Timewave Labs"]
-          license = "Apache-2.0"
-          repository = "https://github.com/timewave-computer/traverse"
-          homepage = "https://github.com/timewave-computer/traverse"
-          description = "Chain-independent ZK storage path generator for blockchain state verification"
-          keywords = ["zk", "blockchain", "solana", "storage", "proof"]
-          categories = ["cryptography", "development-tools"]
-          
-          [workspace.dependencies]
-          serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
-          serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
-          hex = { version = "0.4", default-features = false, features = ["alloc"] }
-          sha2 = { version = "0.10", default-features = false }
-          keccak = { version = "0.1", default-features = false }
-          tiny-keccak = { version = "2.0", features = ["keccak"] }
-          clap = { version = "4.0", features = ["derive"] }
-          tracing = "0.1"
-          tracing-subscriber = "0.3"
-          thiserror = "1.0"
-          tokio = { version = "1.0", features = ["full"] }
-          proptest = "1.0"
-          tempfile = "3.0"
-          anyhow = "1.0"
-          dotenv = "0.15"
-        '';
-        
-        # Create source derivations with replaced workspace files
+        # Create source derivations with ecosystem-specific workspace files
         coreSrc = pkgs.runCommand "core-source" {} ''
           cp -r ${pkgs.lib.cleanSource ./.} $out
           chmod -R +w $out
-          cp ${coreWorkspace} $out/Cargo.toml
+          cp $out/workspace-configs/Cargo.toml.core $out/Cargo.toml
         '';
         
         ethereumSrc = pkgs.runCommand "ethereum-source" {} ''
           cp -r ${pkgs.lib.cleanSource ./.} $out
           chmod -R +w $out
-          cp ${ethereumWorkspace} $out/Cargo.toml
+          cp $out/workspace-configs/Cargo.toml.ethereum $out/Cargo.toml
           # Remove Solana crate to avoid any conflicts
           rm -rf $out/crates/traverse-solana
           # Remove Cosmos crate to avoid potential conflicts
@@ -174,14 +53,27 @@
         solanaSrc = pkgs.runCommand "solana-source" {} ''
           cp -r ${pkgs.lib.cleanSource ./.} $out
           chmod -R +w $out
-          cp ${solanaWorkspace} $out/Cargo.toml
+          cp $out/workspace-configs/Cargo.toml.solana $out/Cargo.toml
           # Remove Ethereum crate to avoid any conflicts
           rm -rf $out/crates/traverse-ethereum
-          # Remove Cosmos crate to avoid zeroize version conflicts
+          # Remove Cosmos crate to avoid potential conflicts
           rm -rf $out/crates/traverse-cosmos
           # Remove non-Solana CLI crates
           rm -rf $out/crates/traverse-cli-ethereum
           rm -rf $out/crates/traverse-cli-cosmos
+        '';
+
+        # Cosmos source with cosmos workspace
+        cosmosSrc = pkgs.runCommand "cosmos-source" {} ''
+          cp -r ${pkgs.lib.cleanSource ./.} $out
+          chmod -R +w $out
+          cp $out/workspace-configs/Cargo.toml.cosmos $out/Cargo.toml
+          # Remove other ecosystem crates to avoid conflicts
+          rm -rf $out/crates/traverse-ethereum
+          rm -rf $out/crates/traverse-solana
+          # Remove non-Cosmos CLI crates
+          rm -rf $out/crates/traverse-cli-ethereum
+          rm -rf $out/crates/traverse-cli-solana
         '';
 
         # Full source for builds that need everything
@@ -211,6 +103,7 @@
           nativeBuildInputs = commonNativeBuildInputs;
           strictDeps = true;
           cargoVendorDir = null; # Skip vendoring to avoid Cargo.lock conflicts
+          cargoLock = null; # Don't use locked dependencies
           # SSL certificate configuration
           SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
           CARGO_NET_GIT_FETCH_WITH_CLI = "true";
@@ -223,7 +116,6 @@
           src = coreSrc;
           pname = "traverse-core-deps";
           cargoExtraArgs = "--package traverse-core";
-          cargoLock = null; # Don't use locked dependencies
         });
 
         # Ethereum ecosystem build (with Alloy dependencies) - use ethereum source filter
@@ -232,7 +124,6 @@
           pname = "traverse-ethereum-deps";
           cargoArtifacts = coreCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features ethereum,std --package traverse-ethereum --package traverse-valence";
-          cargoLock = null; # Don't use locked dependencies
         });
 
         # Solana ecosystem build (with Solana SDK dependencies) - use solana source filter
@@ -241,16 +132,14 @@
           pname = "traverse-solana-deps";
           cargoArtifacts = coreCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features solana --package traverse-solana";
-          cargoLock = null; # Don't use locked dependencies
         });
 
         # Cosmos ecosystem build
         cosmosCargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
-          src = fullSrc;
+          src = cosmosSrc;
           pname = "traverse-cosmos-deps";
           cargoArtifacts = coreCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos --package traverse-cli-core --package traverse-cli-cosmos";
-          cargoLock = null; # Don't use locked dependencies
         });
 
         # Ethereum CLI dependencies
@@ -259,7 +148,6 @@
           pname = "traverse-ethereum-cli-deps";
           cargoArtifacts = ethereumCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features ethereum,std --package traverse-cli-core --package traverse-cli-ethereum";
-          cargoLock = null; # Don't use locked dependencies
         });
 
         # Solana CLI dependencies
@@ -268,16 +156,14 @@
           pname = "traverse-solana-cli-deps";
           cargoArtifacts = solanaCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features solana,std --package traverse-cli-core --package traverse-cli-solana";
-          cargoLock = null; # Don't use locked dependencies
         });
 
         # Cosmos CLI dependencies
         cosmosCliCargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
-          src = fullSrc;
+          src = cosmosSrc;
           pname = "traverse-cosmos-cli-deps";
           cargoArtifacts = cosmosCargoArtifacts;
           cargoExtraArgs = "--no-default-features --features cosmos,std --package traverse-cli-core --package traverse-cli-cosmos";
-          cargoLock = null; # Don't use locked dependencies
         });
 
       in
@@ -330,14 +216,16 @@
 
           # Cosmos ecosystem
           traverse-cosmos = craneLib.buildPackage (commonArgs // {
-            src = fullSrc;
+            src = cosmosSrc;
             pname = "traverse-cosmos";
             cargoArtifacts = cosmosCargoArtifacts;
             cargoExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos";
+            cargoTestCommand = "true"; # Skip tests during build
+            doCheck = false; # Disable checks to avoid test compilation
           });
 
           traverse-cosmos-cli = craneLib.buildPackage (commonArgs // {
-            src = fullSrc;
+            src = cosmosSrc;
             pname = "traverse-cosmos-cli";
             cargoArtifacts = cosmosCliCargoArtifacts;
             cargoExtraArgs = "--no-default-features --features cosmos,std --bin traverse-cosmos -p traverse-cli-cosmos";
@@ -355,8 +243,6 @@
             pname = "traverse-core-tests";
             cargoArtifacts = coreCargoArtifacts;
             cargoTestExtraArgs = "--package traverse-core";
-            cargoLock = null; # Don't use locked dependencies
-            cargoTestCommand = "cargo test --release --package traverse-core";
           });
 
           # Ethereum ecosystem tests
@@ -365,8 +251,6 @@
             pname = "traverse-ethereum-tests";
             cargoArtifacts = ethereumCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features ethereum,std --package traverse-ethereum";
-            cargoLock = null; # Don't use locked dependencies
-            cargoTestCommand = "cargo test --release --no-default-features --features ethereum,std --package traverse-ethereum";
           });
 
           # Solana ecosystem tests  
@@ -375,18 +259,14 @@
             pname = "traverse-solana-tests";
             cargoArtifacts = solanaCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features solana --package traverse-solana";
-            cargoLock = null; # Don't use locked dependencies
-            cargoTestCommand = "cargo test --release --no-default-features --features solana --package traverse-solana";
           });
 
           # Cosmos ecosystem tests
           traverse-cosmos-tests = craneLib.cargoTest (commonArgs // {
-            src = fullSrc;
+            src = cosmosSrc;
             pname = "traverse-cosmos-tests";
             cargoArtifacts = cosmosCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos";
-            cargoLock = null; # Don't use locked dependencies
-            cargoTestCommand = "cargo test --release --no-default-features --features cosmos --package traverse-cosmos";
           });
 
           # Valence tests (no alloy features)
@@ -395,8 +275,6 @@
             pname = "traverse-valence-tests";
             cargoArtifacts = coreCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features std,controller,circuit --package traverse-valence";
-            cargoLock = null; # Don't use locked dependencies
-            cargoTestCommand = "cargo test --release --no-default-features --features std,controller,circuit --package traverse-valence";
           });
         };
 
