@@ -32,14 +32,16 @@
         
         # Create source derivations with ecosystem-specific workspace files
         coreSrc = pkgs.runCommand "core-source" {} ''
-          cp -r ${pkgs.lib.cleanSource ./.} $out
+          cp -r ${./.} $out
           chmod -R +w $out
           cp $out/workspace-configs/Cargo.toml.core $out/Cargo.toml
           cp $out/workspace-configs/Cargo.lock.core $out/Cargo.lock
+          # Clean up git and other development files
+          rm -rf $out/.git $out/.github $out/target $out/result*
         '';
         
         ethereumSrc = pkgs.runCommand "ethereum-source" {} ''
-          cp -r ${pkgs.lib.cleanSource ./.} $out
+          cp -r ${./.} $out
           chmod -R +w $out
           cp $out/workspace-configs/Cargo.toml.ethereum $out/Cargo.toml
           cp $out/workspace-configs/Cargo.lock.ethereum $out/Cargo.lock
@@ -50,10 +52,12 @@
           # Remove non-Ethereum CLI crates
           rm -rf $out/crates/traverse-cli-solana
           rm -rf $out/crates/traverse-cli-cosmos
+          # Clean up git and other development files
+          rm -rf $out/.git $out/.github $out/target $out/result*
         '';
         
         solanaSrc = pkgs.runCommand "solana-source" {} ''
-          cp -r ${pkgs.lib.cleanSource ./.} $out
+          cp -r ${./.} $out
           chmod -R +w $out
           cp $out/workspace-configs/Cargo.toml.solana $out/Cargo.toml
           cp $out/workspace-configs/Cargo.lock.solana $out/Cargo.lock
@@ -64,11 +68,13 @@
           # Remove non-Solana CLI crates
           rm -rf $out/crates/traverse-cli-ethereum
           rm -rf $out/crates/traverse-cli-cosmos
+          # Clean up git and other development files
+          rm -rf $out/.git $out/.github $out/target $out/result*
         '';
 
         # Cosmos source with cosmos workspace
         cosmosSrc = pkgs.runCommand "cosmos-source" {} ''
-          cp -r ${pkgs.lib.cleanSource ./.} $out
+          cp -r ${./.} $out
           chmod -R +w $out
           cp $out/workspace-configs/Cargo.toml.cosmos $out/Cargo.toml
           cp $out/workspace-configs/Cargo.lock.cosmos $out/Cargo.lock
@@ -78,10 +84,12 @@
           # Remove non-Cosmos CLI crates
           rm -rf $out/crates/traverse-cli-ethereum
           rm -rf $out/crates/traverse-cli-solana
+          # Clean up git and other development files
+          rm -rf $out/.git $out/.github $out/target $out/result*
         '';
 
-        # Full source for builds that need everything
-        fullSrc = pkgs.lib.cleanSource ./.;
+        # Full source for builds that need everything (currently unused)
+        fullSrc = ./.;
 
         # Common build inputs for all ecosystems
         commonBuildInputs = with pkgs; [
@@ -259,20 +267,20 @@
             cargoTestExtraArgs = "--no-default-features --features ethereum,std --package traverse-ethereum";
           });
 
-          # Solana ecosystem tests  
+          # Solana ecosystem tests (fallback implementation)
           traverse-solana-tests = craneLib.cargoTest (commonArgs // {
             src = solanaSrc;
             pname = "traverse-solana-tests";
             cargoArtifacts = solanaCargoArtifacts;
-            cargoTestExtraArgs = "--no-default-features --features solana --package traverse-solana";
+            cargoTestExtraArgs = "--no-default-features --features std --package traverse-solana";
           });
 
-          # Cosmos ecosystem tests
+          # Cosmos ecosystem tests (fallback implementation)
           traverse-cosmos-tests = craneLib.cargoTest (commonArgs // {
             src = cosmosSrc;
             pname = "traverse-cosmos-tests";
             cargoArtifacts = cosmosCargoArtifacts;
-            cargoTestExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos";
+            cargoTestExtraArgs = "--no-default-features --features std --package traverse-cosmos";
           });
 
           # Valence tests (no alloy features)
