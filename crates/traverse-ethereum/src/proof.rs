@@ -212,18 +212,20 @@ mod tests {
 
     #[cfg(feature = "ethereum")]
     #[test]
-    fn test_fetch_sync_not_implemented() {
+    fn test_fetch_sync_with_invalid_rpc() {
         let fetcher = EthereumProofFetcher {
-            rpc_url: "http://localhost:8545".to_string(),
+            rpc_url: "http://invalid-rpc-url.test".to_string(),
             contract_address: "0x1234567890123456789012345678901234567890".to_string(),
         };
 
         let key = [1u8; 32];
         let result = fetcher.fetch(&key, ZeroSemantics::ValidZero);
 
-        // Should fail because async fetch is not implemented in sync context
+        // Should fail because the RPC URL is invalid
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Async fetch not implemented"));
+        // Just verify that we get some error - the exact message depends on the network stack
+        let _error = result.unwrap_err();
+        // Test passes if we get any error (network unreachable, DNS failure, etc.)
     }
 
     #[cfg(not(feature = "ethereum"))]
