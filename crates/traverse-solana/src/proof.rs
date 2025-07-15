@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 
 // Conditional imports for client functionality
 #[cfg(feature = "client")]
-use valence_domain_clients::solana::SolanaClient;
+use valence_domain_clients::{
+    clients::solana::SolanaClient,
+    solana::SolanaRpcClient,
+};
 
 #[cfg(feature = "solana")]
 use solana_sdk::{pubkey::Pubkey};
@@ -50,8 +53,9 @@ impl SolanaProofFetcher {
     #[cfg(feature = "client")]
     pub async fn new(rpc_url: String) -> SolanaResult<Self> {
         // Create Solana client using valence-domain-clients
-        let client = SolanaClient::new(&rpc_url, None)
-            .await
+        // Use a dummy mnemonic for read-only operations
+        let dummy_mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let client = SolanaClient::new(&rpc_url, dummy_mnemonic)
             .map_err(|e| SolanaError::NetworkError(format!("Failed to create Solana client: {}", e)))?;
 
         Ok(Self {
@@ -80,7 +84,7 @@ impl SolanaProofFetcher {
 
         // Get account info using valence-domain-clients
         let account_info = self.client
-            .get_account_info(&pubkey)
+            .get_account(&pubkey)
             .await
             .map_err(|e| SolanaError::NetworkError(format!("Failed to get account info: {}", e)))?;
 
@@ -91,10 +95,11 @@ impl SolanaProofFetcher {
         let slot = self.get_current_slot().await?;
         let block_hash = self.get_block_hash(slot).await?;
 
+        let data_len = account.data.len();
         Ok(SolanaAccountProof {
             address: address.to_string(),
             data: account.data,
-            data_len: account.data.len(),
+            data_len,
             owner: account.owner.to_string(),
             lamports: account.lamports,
             rent_epoch: account.rent_epoch,
@@ -127,9 +132,10 @@ impl SolanaProofFetcher {
 
     /// Get block hash for slot using valence-domain-clients
     #[cfg(feature = "client")]
-    async fn get_block_hash(&self, slot: u64) -> SolanaResult<String> {
+    async fn get_block_hash(&self, _slot: u64) -> SolanaResult<String> {
+        // Get latest blockhash instead of slot-specific hash
         self.client
-            .get_block_hash(slot)
+            .get_latest_blockhash()
             .await
             .map(|hash| hash.to_string())
             .map_err(|e| SolanaError::NetworkError(format!("Failed to get block hash: {}", e)))

@@ -74,8 +74,11 @@ pub use proof::{SolanaProofFetcher, SolanaAccountProof};
 // Conditionally export Anchor functionality
 #[cfg(feature = "anchor")]
 pub use anchor::{
-    SolanaIdl, IdlParser, IdlAccount, IdlInstruction, IdlType, IdlTypeDefinition,
-    IdlField, IdlArgs, IdlAccounts, IdlEvent, IdlError, IdlConstant,
+    SolanaIdl, IdlParser, IdlAccount, IdlInstruction, IdlType,
+    IdlField, IdlEvent, IdlError, IdlConstant, IdlAccountItem,
+    IdlPda, IdlSeed, IdlAccountType, IdlEnumVariant, IdlEnumFields,
+    IdlTypeKind, IdlMetadata, AccountLayoutInfo, FieldLayoutInfo,
+    TypeInfo, PdaInfo,
 };
 
 /// Check if Solana SDK features are available

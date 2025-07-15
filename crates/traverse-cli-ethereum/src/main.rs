@@ -9,10 +9,6 @@ use serde_json::{json, Value};
 use std::process;
 use traverse_cli_core::{CommonArgs, CliResult, CliUtils, OutputFormat};
 
-#[cfg(feature = "ethereum")]
-use traverse_ethereum::{
-    EthereumLayoutCompiler
-};
 
 mod commands;
 

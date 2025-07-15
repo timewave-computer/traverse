@@ -5,16 +5,16 @@
 //! avoid the k256 version conflict with Ethereum.
 
 use anyhow::Result;
-use clap::{Args, Command, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use serde_json::{json, Value};
 use std::path::Path;
-use traverse_core::OutputFormat;
+use traverse_cli_core::OutputFormat;
 
 #[cfg(feature = "cosmos")]
-use traverse_cosmos::{
-    CosmosLayoutCompiler, CosmosKeyResolver, CosmosProofFetcher,
-    CosmosError, contract::ContractSchema
-};
+use traverse_cosmos::{CosmosLayoutCompiler, CosmosKeyResolver};
+
+#[cfg(all(feature = "cosmos", feature = "client"))]
+use traverse_cosmos::CosmosProofFetcher;
 
 mod commands;
 
@@ -156,11 +156,12 @@ async fn analyze_contract(schema_file: &str, address: Option<&str>, deep: bool) 
 fn compile_layout(input: &str, output: Option<&str>) -> CliResult<()> {
     use std::path::Path;
     
+    let input_path = Path::new(input);
     let output_path = output.map(Path::new);
     commands::cmd_cosmos_compile_layout(
-        Path::new(input),
+        &input_path,
         output_path,
-        &OutputFormat::Json,
+        &OutputFormat::CoprocessorJson,
     )?;
     
     Ok(())
@@ -173,7 +174,7 @@ fn resolve_query(query: &str, layout_file: &str, address: Option<&str>) -> CliRe
     let result = commands::cmd_cosmos_resolve_query(
         query,
         Path::new(layout_file),
-        &OutputFormat::Json,
+        &OutputFormat::CoprocessorJson,
         None, // output handled by caller
     );
     

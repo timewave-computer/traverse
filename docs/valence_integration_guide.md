@@ -1,537 +1,353 @@
-# Valence Integration Guide: Minimal Traverse Applications
+# Valence Integration Guide
 
-This guide shows how 3rd party valence application developers can generate minimal, optimized libraries containing only the specific functionality needed for their storage queries.
+This guide shows how to integrate Traverse with Valence coprocessor applications for ZK storage proofs.
 
 ## Overview
 
-Instead of importing the full traverse-valence crate, you can generate custom, minimal crates that contain only the code needed for your specific contract layouts and queries. This results in:
+Traverse provides ZK-compatible storage proof generation that can be used in Valence coprocessor circuits. The integration involves:
 
-- **Smaller binary sizes** - Only code for your specific fields is included
-- **Faster compilation** - No unused dependencies or features
-- **Cleaner APIs** - Generated code is tailored to your exact use case
-- **Better performance** - Optimized for your specific data structures
+1. **Controller**: Generates witnesses from storage proofs
+2. **Circuit**: Processes witnesses to verify storage state
+3. **Domain**: Optional validation of results
 
 ## Quick Start
 
-### 1. Generate Layout from Your Contract
-
-First, compile your contract's storage layout:
-
-```bash
-# For Ethereum contracts
-traverse-cli ethereum compile-layout my-contract.abi.json --output my-layout.json
-
-# For CosmWasm contracts  
-traverse-cli cosmos compile-layout my-contract-msgs.json --output my-layout.json
-```
-
-### 2. Generate Minimal Applications
-
-#### Option A: Generate Individual Crates
-
-```bash
-# Generate a minimal controller crate
-traverse-cli codegen controller \
-  --layout my-layout.json \
-  --output ./my-controller \
-  --name my-storage-controller \
-  --include-alloy
-
-# Generate a minimal circuit crate  
-traverse-cli codegen circuit \
-  --layout my-layout.json \
-  --output ./my-circuit \
-  --name my-storage-circuit \
-  --include-alloy
-```
-
-#### Option B: Generate Complete Application
-
-```bash
-# Generate both controller and circuit as a workspace
-traverse-cli codegen app \
-  --layout my-layout.json \
-  --output ./my-valence-app \
-  --name my-storage-app \
-  --include-alloy \
-  --minimal
-```
-
-### 3. Integration Examples
-
-#### Controller Integration
+### 1. Add Dependencies
 
 Add to your valence app's `controller/Cargo.toml`:
 
 ```toml
 [dependencies]
-my-storage-controller = { path = "../generated/my-controller" }
+traverse-valence = { version = "0.1", default-features = false, features = ["controller"] }
 valence-coprocessor = { git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13" }
 ```
-
-Use in your `controller/src/lib.rs`:
-
-```rust
-use my_storage_controller::create_witness;
-use traverse_valence::StorageVerificationRequest;
-use valence_coprocessor::Witness;
-
-pub fn get_witnesses(request: StorageVerificationRequest) -> anyhow::Result<Vec<Witness>> {
-    let witness = create_witness(&request)?;
-    Ok(vec![witness])
-}
-```
-
-#### Circuit Integration
 
 Add to your valence app's `circuit/Cargo.toml`:
 
 ```toml
 [dependencies]
-my-storage-circuit = { path = "../generated/my-circuit" }
+traverse-valence = { version = "0.1", default-features = false, features = ["circuit", "constrained"] }
 valence-coprocessor = { git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13" }
 ```
 
-Use in your `circuit/src/lib.rs`:
+### 2. Controller Implementation
+
+In your `controller/src/lib.rs`:
 
 ```rust
-use my_storage_circuit::circuit;
-use valence_coprocessor::Witness;
-
-pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
-    my_storage_circuit::circuit(witnesses)
-}
-```
-
-## Feature Comparison
-
-### Traditional Approach (Full Import)
-
-```toml
-[dependencies]
-traverse-valence = { version = "0.1", features = ["controller", "circuit", "ethereum", "cosmos", "alloy"] }
-```
-
-**Result**: Large binary with all blockchain support, unused field types, and generic processing.
-
-### Modular Approach (Generated Crates)
-
-```toml
-[dependencies]
-my-storage-controller = { path = "../generated/my-controller" }
-```
-
-**Result**: Minimal binary with only your specific field types, hardcoded layout commitment, and optimized processing.
-
-## Code Generation Options
-
-### Controller Options
-
-| Flag | Description | Use Case |
-|------|-------------|----------|
-| `--include-alloy` | Include Alloy ABI encoding support | When you need ABI-compatible output |
-
-**Note**: All controllers are generated as `no_std` builds for maximum compatibility across environments.
-
-### Circuit Options
-
-| Flag | Description | Use Case |
-|------|-------------|----------|
-| `--include-alloy` | Include Alloy ABI encoding support | When circuit needs to generate ABI output |
-
-**Note**: All circuits are generated as minimal/constrained builds optimized for ZK environments.
-
-### App Options
-
-| Flag | Description | Use Case |
-|------|-------------|----------|
-| `--include-alloy` | Both crates include Alloy support | Full ABI compatibility in both components |
-
-**Note**: 
-- Controllers are always generated as `no_std` builds for maximum compatibility
-- Circuits are always generated as minimal/constrained builds optimized for ZK environments
-
-## Example: ERC20 Token Balance Verification
-
-### 1. Start with ERC20 Layout
-
-```bash
-# Generate layout from ERC20 ABI
-traverse-cli ethereum compile-layout erc20.abi.json --output erc20-layout.json
-```
-
-### 2. Generate Minimal Application
-
-```bash
-traverse-cli codegen app \
-  --layout erc20-layout.json \
-  --output ./token-balance-app \
-  --name token-balance \
-  --include-alloy \
-  --description "Minimal ERC20 balance verification for valence"
-```
-
-### 3. Generated Structure
-
-```
-token-balance-app/
-├── Cargo.toml                    # Workspace configuration
-├── README.md                     # Usage instructions
-├── crates/
-│   ├── controller/
-│   │   ├── Cargo.toml           # Controller dependencies
-│   │   └── src/
-│   │       └── lib.rs           # Controller implementation
-│   └── circuit/
-│       ├── Cargo.toml           # Circuit dependencies  
-│       └── src/
-│           └── lib.rs           # Circuit implementation
-```
-
-### 4. Generated Controller Code
-
-The generated controller (`crates/controller/src/lib.rs`) contains:
-
-```rust
-//! Generated controller for token-balance
-//! Layout commitment: 0xabc123...
-
-#![no_std]
-
-extern crate alloc;
-use alloc::vec::Vec;
-
-use valence_coprocessor::Witness;
 use traverse_valence::{StorageVerificationRequest, create_witness_from_request};
+use valence_coprocessor::Witness;
 
-/// Layout commitment for this controller (validates against expected layout)
-pub const LAYOUT_COMMITMENT: &str = "0xabc123...";
-
-/// Supported storage queries
-pub const SUPPORTED_QUERIES: &[&str] = &[
-    "totalSupply",
-    "balanceOf",
-    "allowance",
-    "name",
-    "symbol",
-    "decimals",
-];
-
-pub fn create_witness(request: &StorageVerificationRequest) -> Result<Witness, traverse_valence::TraverseValenceError> {
-    // Validate layout commitment matches
-    if request.storage_query.layout_commitment != LAYOUT_COMMITMENT {
-        return Err(traverse_valence::TraverseValenceError::LayoutMismatch(
-            format!("Expected: {}, Got: {}", LAYOUT_COMMITMENT, request.storage_query.layout_commitment)
-        ));
-    }
-    
-    // Validate query is supported
-    let query_supported = SUPPORTED_QUERIES.iter().any(|&q| q == request.storage_query.query);
-    if !query_supported {
-        return Err(traverse_valence::TraverseValenceError::InvalidWitness(
-            format!("Unsupported query: {}", request.storage_query.query)
-        ));
-    }
-    
-    create_witness_from_request(request)
+pub fn get_witnesses(request: StorageVerificationRequest) -> anyhow::Result<Vec<Witness>> {
+    let witness = create_witness_from_request(&request)?;
+    Ok(vec![witness])
 }
 ```
 
-### 5. Generated Circuit Code
+### 3. Circuit Implementation
 
-The generated circuit (`crates/circuit/src/lib.rs`) contains:
+In your `circuit/src/lib.rs`:
 
 ```rust
-//! Generated circuit for token-balance
-//! Layout commitment: 0xabc123...
-
-#![no_std]
-
-extern crate alloc;
-use alloc::vec::Vec;
-
+use traverse_valence::circuit::{CircuitProcessor, CircuitWitness};
 use valence_coprocessor::Witness;
-use traverse_valence::circuit::{CircuitProcessor, CircuitWitness, FieldType, ZeroSemantics};
-use alloy_primitives::{Address, U256};
-use alloy_sol_types::{sol, SolValue};
-
-/// Layout commitment for this circuit
-pub const LAYOUT_COMMITMENT: [u8; 32] = [/* parsed from layout */];
-
-/// Field types for ERC20 layout
-pub const FIELD_TYPES: &[FieldType] = &[
-    FieldType::Uint256,  // totalSupply
-    FieldType::Address,  // owner (mapping key)
-    FieldType::Uint256,  // balanceOf value
-    // ... etc for all fields
-];
-
-/// Field semantics for ERC20 layout
-pub const FIELD_SEMANTICS: &[ZeroSemantics] = &[
-    ZeroSemantics::ExplicitlyZero,  // totalSupply can be explicitly zero
-    ZeroSemantics::NeverWritten,    // address keys default to never written
-    ZeroSemantics::ValidZero,       // balance values can legitimately be zero
-    // ... etc
-];
-
-// ABI output structure specific to this contract
-sol! {
-    struct TokenBalanceOutput {
-        uint256 totalSupply;
-        uint256 userBalance;
-        address tokenAddress;
-        bool isValidBalance;
-    }
-}
 
 pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
-    // Create processor with layout-specific parameters
+    // Create processor with your layout parameters
     let processor = CircuitProcessor::new(
-        LAYOUT_COMMITMENT,
-        FIELD_TYPES.to_vec(),
-        FIELD_SEMANTICS.to_vec(),
+        layout_commitment,
+        field_types,
+        field_semantics,
     );
     
-    // Process witnesses with validation
+    // Parse witnesses
     let circuit_witnesses: Vec<CircuitWitness> = witnesses
         .into_iter()
-        .map(|w| CircuitProcessor::parse_witness_from_bytes(w.as_data().expect("Expected witness data")))
+        .map(|w| CircuitProcessor::parse_witness_from_bytes(
+            w.as_data().expect("Expected witness data")
+        ))
         .collect::<Result<Vec<_>, _>>()
         .expect("Failed to parse witnesses");
     
+    // Process and return results
     let results = processor.process_batch(&circuit_witnesses);
-    
-    // Generate ABI-encoded output specific to this contract
-    generate_token_balance_output(&results)
+    results.abi_encode() // Or your custom encoding
+}
+```
+
+## Storage Verification Request
+
+The `StorageVerificationRequest` contains all information needed to generate a witness:
+
+```rust
+pub struct StorageVerificationRequest {
+    pub storage_query: StorageQuery,
+    pub storage_proof: StorageProof,
+    pub block_header: BlockHeader,
 }
 
-fn generate_token_balance_output(results: &[CircuitResult]) -> Vec<u8> {
-    // Extract validated values and create typed output
-    let output = TokenBalanceOutput {
-        totalSupply: /* extract from results[0] */,
-        userBalance: /* extract from results[2] */,
-        tokenAddress: /* extract from results[1] */,
-        isValidBalance: true, // All validations passed
+pub struct StorageQuery {
+    pub layout_commitment: String,
+    pub query: String,
+    pub parameters: serde_json::Value,
+}
+```
+
+## Example: ERC20 Balance Verification
+
+### Controller
+
+```rust
+use traverse_valence::{StorageVerificationRequest, create_witness_from_request};
+use valence_coprocessor::Witness;
+
+pub fn get_witnesses(request: StorageVerificationRequest) -> anyhow::Result<Vec<Witness>> {
+    // Validate the request is for ERC20 balance
+    if request.storage_query.query != "balanceOf" {
+        return Err(anyhow::anyhow!("Only balanceOf queries supported"));
+    }
+    
+    // Generate witness
+    let witness = create_witness_from_request(&request)?;
+    Ok(vec![witness])
+}
+```
+
+### Circuit
+
+```rust
+use traverse_valence::circuit::{CircuitProcessor, CircuitWitness, FieldType, ZeroSemantics};
+use valence_coprocessor::Witness;
+use alloy_sol_types::{sol, SolValue};
+
+// Define output structure
+sol! {
+    struct BalanceOutput {
+        address token;
+        address holder;
+        uint256 balance;
+        bool verified;
+    }
+}
+
+pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
+    // ERC20 balance field configuration
+    let field_types = vec![
+        FieldType::Address,  // mapping key (holder address)
+        FieldType::Uint256,  // balance value
+    ];
+    
+    let field_semantics = vec![
+        ZeroSemantics::NeverWritten,  // address keys
+        ZeroSemantics::ValidZero,     // balance can be zero
+    ];
+    
+    let processor = CircuitProcessor::new(
+        [0u8; 32], // Your layout commitment
+        field_types,
+        field_semantics,
+    );
+    
+    // Process witness
+    let circuit_witness = CircuitProcessor::parse_witness_from_bytes(
+        witnesses[0].as_data().expect("Expected witness data")
+    ).expect("Failed to parse witness");
+    
+    let results = processor.process(&circuit_witness);
+    
+    // Create output
+    let output = BalanceOutput {
+        token: /* extract from witness */,
+        holder: /* extract from witness */,
+        balance: /* extract from results */,
+        verified: true,
     };
     
     output.abi_encode()
 }
 ```
 
-## Benefits for 3rd Party Developers
+## Feature Flags
 
-### 1. Minimal Binary Size
+### Controller Features
 
-**Before** (full traverse-valence import):
-- ✗ All blockchain support (Ethereum + Cosmos)
-- ✗ All field types (even unused ones)  
-- ✗ Generic processing logic
-- ✗ All feature flags and optional dependencies
+- `controller` - Basic controller functionality (no-std compatible)
+- `ethereum` - Ethereum-specific support
+- `cosmos` - Cosmos-specific support
 
-**After** (generated crate):
-- ✅ Only your specific blockchain  
-- ✅ Only your specific field types
-- ✅ Hardcoded layout commitment
-- ✅ Optimized processing for your exact use case
+### Circuit Features
 
-### 2. Compile-Time Guarantees
+- `circuit` - Basic circuit functionality  
+- `constrained` - Memory-optimized for ZK circuits
+- `no-std` - No standard library (recommended for circuits)
 
-Generated code provides compile-time guarantees that your application:
-- Only accepts witnesses matching your exact layout commitment
-- Only processes queries you've explicitly defined
-- Uses the correct field types and semantics for your contract
-- Generates correctly-typed ABI output
+## Best Practices
 
-### 3. No Runtime Configuration
+### 1. Layout Management
 
-Traditional approach requires runtime layout validation:
+Store your layout commitments and field configurations:
 
 ```rust
-// Runtime validation needed
-let processor = CircuitProcessor::new(layout_from_config, types_from_config, semantics_from_config);
+pub mod layouts {
+    use traverse_valence::circuit::{FieldType, ZeroSemantics};
+    
+    pub const ERC20_COMMITMENT: [u8; 32] = [/* ... */];
+    
+    pub const ERC20_BALANCE_TYPES: &[FieldType] = &[
+        FieldType::Address,
+        FieldType::Uint256,
+    ];
+    
+    pub const ERC20_BALANCE_SEMANTICS: &[ZeroSemantics] = &[
+        ZeroSemantics::NeverWritten,
+        ZeroSemantics::ValidZero,
+    ];
+}
 ```
 
-Generated approach has everything compile-time validated:
+### 2. Error Handling
+
+Always validate inputs in the controller:
 
 ```rust
-// Everything is compile-time validated
-let processor = CircuitProcessor::new(LAYOUT_COMMITMENT, FIELD_TYPES, FIELD_SEMANTICS);
+pub fn get_witnesses(request: StorageVerificationRequest) -> anyhow::Result<Vec<Witness>> {
+    // Validate layout commitment
+    if request.storage_query.layout_commitment != expected_commitment {
+        return Err(anyhow::anyhow!("Invalid layout commitment"));
+    }
+    
+    // Validate query type
+    if !SUPPORTED_QUERIES.contains(&request.storage_query.query.as_str()) {
+        return Err(anyhow::anyhow!("Unsupported query type"));
+    }
+    
+    create_witness_from_request(&request)
+}
 ```
 
-### 4. Optimized Dependencies
+### 3. Circuit Optimization
 
-Generated crates only include the exact dependencies needed:
+For memory-constrained environments:
 
-```toml
-# Generated controller - minimal dependencies
-[dependencies]
-valence-coprocessor = { git = "...", default-features = false }
-traverse-valence = { path = "...", default-features = false, features = ["controller"] }
-serde = { version = "1.0", default-features = false, features = ["alloc"] }
+```rust
+#![no_std]
+extern crate alloc;
 
-# vs full import - many unused dependencies
-[dependencies]
-traverse-valence = { version = "0.1", features = ["controller", "circuit", "ethereum", "cosmos", "alloy"] }
-# ... many transitive dependencies for unused features
+use alloc::vec::Vec;
+use traverse_valence::circuit::{CircuitProcessor, CircuitWitness};
+
+// Use fixed-size arrays where possible
+const MAX_WITNESSES: usize = 10;
+
+pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
+    assert!(witnesses.len() <= MAX_WITNESSES, "Too many witnesses");
+    
+    // Process with constrained memory
+    // ...
+}
 ```
 
 ## Advanced Usage
 
 ### Custom Field Types
 
-If your contract uses custom types, you can extend the generated code:
+Implement custom processing for domain-specific types:
 
 ```rust
-// In your generated circuit
-impl CustomFieldProcessor for MyCircuit {
-    fn process_custom_field(&self, data: &[u8]) -> CustomResult {
-        // Your custom processing logic
+use traverse_valence::circuit::{FieldProcessor, FieldType};
+
+pub struct CustomFieldProcessor;
+
+impl FieldProcessor for CustomFieldProcessor {
+    fn process_field(&self, field_type: &FieldType, data: &[u8]) -> Vec<u8> {
+        match field_type {
+            FieldType::Custom(name) if name == "MyCustomType" => {
+                // Custom processing logic
+            }
+            _ => {
+                // Default processing
+            }
+        }
     }
 }
 ```
 
-### Multiple Contracts
+### Multi-Chain Support
 
-Generate separate applications for different contracts:
+Handle different blockchain types:
+
+```rust
+use traverse_valence::{StorageVerificationRequest, ChainType};
+
+pub fn get_witnesses(request: StorageVerificationRequest) -> anyhow::Result<Vec<Witness>> {
+    match request.block_header.chain_type() {
+        ChainType::Ethereum => handle_ethereum_request(request),
+        ChainType::Cosmos => handle_cosmos_request(request),
+        _ => Err(anyhow::anyhow!("Unsupported chain type")),
+    }
+}
+```
+
+## Future Features
+
+The following features are planned for future releases:
+
+### Code Generation (Future Feature)
+
+Generate minimal, optimized crates for specific layouts:
 
 ```bash
-# Generate for DeFi protocol
-traverse-cli codegen app --layout defi-vault.json --output ./defi-app --name defi-vault
-
-# Generate for governance
-traverse-cli codegen app --layout governance.json --output ./governance-app --name governance  
-
-# Generate for token factory
-traverse-cli codegen app --layout factory.json --output ./factory-app --name token-factory
+# Generate minimal controller and circuit crates
+traverse-cli-ethereum codegen app \
+  --layout my-layout.json \
+  --output ./my-valence-app \
+  --name my-storage-app
 ```
 
-### Workspace Integration
+This will generate custom crates with:
+- Hardcoded layout commitments
+- Only required field types
+- Optimized processing logic
+- Minimal dependencies
 
-Create a master workspace for multiple generated applications:
+### Domain Integration (Future Feature)
 
-```toml
-# Cargo.toml
-[workspace]
-members = [
-    "generated/defi-app/crates/controller",
-    "generated/defi-app/crates/circuit", 
-    "generated/governance-app/crates/controller",
-    "generated/governance-app/crates/circuit",
-    "generated/factory-app/crates/controller",
-    "generated/factory-app/crates/circuit",
-]
-```
-
-## Best Practices
-
-### 1. Version Management
-
-Pin generated crates to specific layout commitments:
+Automatic domain validation:
 
 ```rust
-// Generated code includes layout validation
-pub const LAYOUT_COMMITMENT: &str = "0xabc123...";
-```
+use traverse_valence::domain::DomainValidator;
 
-When your contract is upgraded, regenerate your crates with the new layout.
-
-### 2. Testing
-
-Generated crates include basic tests:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_layout_commitment() {
-        assert_eq!(LAYOUT_COMMITMENT, "0xabc123...");
-    }
-    
-    #[test] 
-    fn test_supported_queries() {
-        assert!(SUPPORTED_QUERIES.contains(&"balanceOf"));
-    }
+pub fn validate_results(results: Vec<u8>) -> Result<(), String> {
+    let validator = DomainValidator::new(expected_schema);
+    validator.validate(&results)
 }
-```
-
-Add your own integration tests that verify the generated code works with your specific use cases.
-
-### 3. Documentation
-
-Generated crates include comprehensive documentation:
-
-```rust
-//! Generated controller for my-token
-//!
-//! This controller handles 6 storage queries for contract MyToken.
-//! Layout commitment: 0xabc123...
-//!
-//! ## Supported Queries
-//! - `totalSupply`: Total token supply
-//! - `balanceOf`: User token balances
-//! - `allowance`: Token allowances
-//! - `name`: Token name
-//! - `symbol`: Token symbol  
-//! - `decimals`: Token decimals
-```
-
-### 4. CI/CD Integration
-
-Automate crate generation in your CI/CD:
-
-```yaml
-# .github/workflows/generate-crates.yml
-name: Generate Traverse Crates
-on:
-  push:
-    paths: ['contracts/*.abi.json']
-
-jobs:
-  generate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install traverse-cli
-        run: cargo install traverse-cli
-      - name: Generate crates
-        run: |
-          for abi in contracts/*.abi.json; do
-            name=$(basename "$abi" .abi.json)
-            traverse-cli ethereum compile-layout "$abi" --output "layouts/$name.json"
-            traverse-cli codegen app --layout "layouts/$name.json" --output "generated/$name-app" --name "$name"
-          done
-      - name: Commit generated crates
-        run: |
-          git add generated/
-          git commit -m "Update generated traverse crates"
-          git push
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-**Issue**: Generated code doesn't compile
-- **Solution**: Ensure the layout file is valid JSON and contains all required fields
+1. **"Layout mismatch" errors**
+   - Ensure layout commitment matches between controller and circuit
+   - Verify the storage layout was compiled correctly
 
-**Issue**: Layout commitment mismatch at runtime  
-- **Solution**: Regenerate crates when your contract layout changes
+2. **"Invalid witness data" errors**
+   - Check that witness format matches expected structure
+   - Ensure proper serialization/deserialization
 
-**Issue**: Unsupported query error
-- **Solution**: Check that your query names match exactly what's in the layout file
-
-**Issue**: Large binary size despite using generated crates
-- **Solution**: Use `--minimal` flag and avoid `--include-alloy` unless you need ABI encoding
+3. **Memory constraints in circuits**
+   - Use `constrained` feature flag
+   - Minimize allocations
+   - Use fixed-size data structures
 
 ### Getting Help
 
-1. Check the generated `README.md` in your output directory
-2. Look at the generated test cases for usage examples
-3. Verify your layout file with `traverse-cli ethereum verify-layout`
-4. Use `--dry-run` flag to test generation without creating files
+- Check the [examples](../examples/valence/) directory
+- Review test cases in `crates/traverse-valence/src/tests/`
+- Open an issue with your use case
 
----
+## Additional Resources
 
-This modular approach allows 3rd party valence application developers to create highly optimized, minimal libraries that contain only the exact functionality needed for their specific use cases, resulting in smaller binaries, faster compilation, and better performance. 
+- [Valence Coprocessor Documentation](https://github.com/timewave-computer/valence-coprocessor)
+- [Semantic Storage Proofs](semantic_storage_proofs.md)
+- [Architecture Overview](architecture.md)

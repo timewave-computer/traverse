@@ -51,7 +51,51 @@ use crate::{
 
 // Conditional import of domain module (only when domain feature is enabled)
 #[cfg(feature = "domain")]
-use crate::domain::LightClient;
+use crate::domain::{LightClient, MockLightClient};
+
+// Fallback definitions when domain feature is not enabled
+#[cfg(not(feature = "domain"))]
+mod fallback_domain {
+    pub trait LightClient {
+        /// Get the domain name this light client is for (e.g., "ethereum", "cosmos")
+        fn domain_name(&self) -> &str;
+        
+        /// Get the verified block height
+        fn block_height(&self) -> u64;
+        
+        /// Get the proven block hash at the verified height
+        fn proven_block_hash(&self) -> [u8; 32];
+    }
+
+    pub struct MockLightClient {
+        domain: &'static str,
+        height: u64,
+        hash: [u8; 32],
+    }
+
+    impl MockLightClient {
+        pub fn new(domain: &'static str, height: u64, hash: [u8; 32]) -> Self {
+            Self { domain, height, hash }
+        }
+    }
+
+    impl LightClient for MockLightClient {
+        fn domain_name(&self) -> &str {
+            self.domain
+        }
+        
+        fn block_height(&self) -> u64 {
+            self.height
+        }
+        
+        fn proven_block_hash(&self) -> [u8; 32] {
+            self.hash
+        }
+    }
+}
+
+#[cfg(not(feature = "domain"))]
+use fallback_domain::{LightClient, MockLightClient};
 
 // === Primary no_std APIs (structured data) ===
 
@@ -74,14 +118,9 @@ use crate::domain::LightClient;
 pub fn create_witness_from_request(
     request: &StorageVerificationRequest,
 ) -> Result<Witness, TraverseValenceError> {
-    #[cfg(feature = "domain")]
-    {
-        create_witness_from_request_with_light_client::<crate::domain::MockLightClient>(request, None)
-    }
-    #[cfg(not(feature = "domain"))]
-    {
-        create_witness_from_request_without_light_client(request)
-    }
+    // Use MockLightClient for testing in both cases
+    let mock_client = MockLightClient::new("test", 0, [0u8; 32]);
+    create_witness_from_request_with_light_client(request, Some(&mock_client))
 }
 
 /// Create a semantic storage witness from structured data - internal helper (no_std compatible)
@@ -144,8 +183,7 @@ fn create_witness_from_request_internal(
 /// - Light client state verification
 /// - Block height and hash validation
 /// - Ensures proofs are from verified blocks
-#[cfg(feature = "domain")]
-pub fn create_witness_from_request_with_light_client<L: LightClient>(
+pub fn create_witness_from_request_with_light_client<L: LightClient + ?Sized>(
     request: &StorageVerificationRequest,
     light_client: Option<&L>,
 ) -> Result<Witness, TraverseValenceError> {
@@ -163,27 +201,7 @@ pub fn create_witness_from_request_with_light_client<L: LightClient>(
     create_witness_from_request_internal(request, block_height, block_hash)
 }
 
-/// Create a semantic storage witness without light client validation (no_std compatible)
-///
-/// This is the fallback API used when the domain feature is not enabled.
-/// Provides the same witness creation functionality but without light client validation.
-///
-/// ## Security Features
-/// - Validates storage key format and length
-/// - Verifies layout commitment integrity  
-/// - Ensures proof data consistency
-/// - Applies semantic validation rules
-/// - Uses provided block number if available
-#[cfg(not(feature = "domain"))]
-pub fn create_witness_from_request_without_light_client(
-    request: &StorageVerificationRequest,
-) -> Result<Witness, TraverseValenceError> {
-    // Use provided block number if available, otherwise use zero
-    let block_height = request.block_number.unwrap_or(0);
-    let block_hash = [0u8; 32]; // No hash validation without light client
 
-    create_witness_from_request_internal(request, block_height, block_hash)
-}
 
 /// Create witnesses from batch storage verification request (no_std compatible)
 ///

@@ -7,20 +7,19 @@ use anyhow::Result;
 use log::info;
 use serde_json::{json, Value};
 use std::path::Path;
-use traverse_core::OutputFormat;
+use traverse_cli_core::OutputFormat;
+use traverse_core::{LayoutCompiler, KeyResolver};
 
 #[cfg(feature = "cosmos")]
 use hex;
 
 #[cfg(feature = "cosmos")]
-use base64;
+use base64::{Engine as _, engine::general_purpose};
 #[cfg(feature = "cosmos")]
 use reqwest;
 
 #[cfg(feature = "cosmos")]
 use traverse_cosmos::{CosmosKeyResolver, CosmosLayoutCompiler};
-#[cfg(feature = "cosmos")]
-use traverse_core::{KeyResolver};
 
 /// Write output to file or stdout
 fn write_output(content: &str, output_path: Option<&Path>) -> Result<()> {
@@ -98,22 +97,23 @@ pub fn cmd_cosmos_compile_layout(
         msg_file.display()
     );
 
-    use traverse_cosmos::CosmosLayoutCompiler;
-    use traverse_core::LayoutCompiler;
-
     let compiler = CosmosLayoutCompiler;
     let layout = compiler.compile_layout(msg_file)?;
 
     let output_str = match format {
-        OutputFormat::Json => serde_json::to_string_pretty(&layout)?,
-        OutputFormat::Yaml => serde_yaml::to_string(&layout)?,
+        OutputFormat::CoprocessorJson => serde_json::to_string_pretty(&layout)?,
+        _ => {
+            // For other formats, output JSON for now
+            // TODO: Support other formats properly
+            serde_json::to_string_pretty(&layout)?
+        }
     };
 
     write_output(&output_str, output)?;
 
     println!("Layout compilation completed");
-    println!("  • {} storage entries", layout.entries.len());
-    println!("  • {} semantic entries", layout.semantic_entries.len());
+    println!("  • {} storage entries", layout.storage.len());
+    println!("  • {} type definitions", layout.types.len());
     println!(
         "  • Layout commitment: {}",
         hex::encode(layout.commitment())
@@ -152,8 +152,8 @@ pub fn cmd_cosmos_resolve_query(
     });
 
     let output_str = match format {
-        OutputFormat::Json => serde_json::to_string_pretty(&result)?,
-        OutputFormat::Yaml => serde_json::to_string_pretty(&result)?, // YAML not available, use JSON
+        OutputFormat::CoprocessorJson => serde_json::to_string_pretty(&result)?,
+        _ => serde_json::to_string_pretty(&result)?, // YAML not available, use JSON
     };
 
     write_output(&output_str, output)?;
@@ -260,7 +260,7 @@ pub async fn cmd_cosmos_auto_generate(
     cmd_cosmos_compile_layout(
         schema_file,
         Some(&layout_output),
-        &OutputFormat::Json,
+        &OutputFormat::CoprocessorJson,
     )?;
 
     // Step 3: Generate queries
@@ -279,7 +279,7 @@ pub async fn cmd_cosmos_auto_generate(
         cmd_cosmos_resolve_query(
             query,
             &layout_output,
-            &OutputFormat::Json,
+            &OutputFormat::CoprocessorJson,
             Some(&resolved_output),
         )?;
     }
@@ -306,7 +306,7 @@ async fn perform_live_cosmos_analysis(contract_address: &str, rpc_url: &str) -> 
         "method": "abci_query",
         "params": {
             "path": "/cosmwasm.wasm.v1.Query/ContractInfo",
-            "data": base64::encode(contract_address.as_bytes()),
+            "data": general_purpose::STANDARD.encode(contract_address.as_bytes()),
             "prove": false
         },
         "id": 1
@@ -325,7 +325,7 @@ async fn perform_live_cosmos_analysis(contract_address: &str, rpc_url: &str) -> 
         if let Some(response_data) = result_data.get("response") {
             if let Some(value) = response_data.get("value") {
                 // Decode base64 response
-                if let Ok(decoded) = base64::decode(value.as_str().unwrap_or("")) {
+                if let Ok(decoded) = general_purpose::STANDARD.decode(value.as_str().unwrap_or("")) {
                     // Parse protobuf response (simplified)
                     json!({
                         "contract_address": contract_address,

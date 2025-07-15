@@ -36,4 +36,15 @@ reqwest = { version = "0.12", features = ["json"] }
 proptest = "1.0"
 tempfile = "3.0"
 anyhow = "1.0"
-dotenv = "0.15" 
+dotenv = "0.15"
+base64 = "0.22"
+bincode = "1.3"
+toml = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+tera = { version = "1.0" }
+alloy-primitives = { version = "0.8.15", default-features = false }
+alloy-sol-types = { version = "0.8.15", default-features = false }
+alloy-rpc-types-eth = { version = "0.9", default-features = false }
+alloy-provider = { version = "0.9", default-features = false }
+alloy-transport-http = { version = "0.9", default-features = false } 

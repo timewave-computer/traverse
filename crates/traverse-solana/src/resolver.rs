@@ -13,8 +13,8 @@ use solana_sdk::{
     // program_pack::Pack,
 };
 
-#[cfg(all(feature = "solana", feature = "spl-token"))]
-use spl_token::state::Account as TokenAccount;
+// #[cfg(all(feature = "solana", feature = "spl-token"))]
+// use spl_token::state::Account as TokenAccount;
 
 /// Query patterns for Solana account resolution
 #[derive(Debug, Clone)]
@@ -216,7 +216,7 @@ impl SolanaKeyResolver {
     ) -> SolanaResult<String> {
         // For Solana, the "storage key" is really the account address + field offset
         // We encode this as a deterministic key for consistency with other chains
-        let combined = format!("{}:{}", account_address, field_path);
+        let combined = format!("{}:{}:{}", account_address, field_path, field_offset);
         let mut key_bytes = [0u8; 32];
         
         // Use SHA256 to create a deterministic key

@@ -93,7 +93,6 @@
 
         # Common build inputs for all ecosystems
         commonBuildInputs = with pkgs; [
-          pkg-config
           openssl
           # SSL certificate support
           cacert
@@ -106,6 +105,7 @@
 
         # Native build inputs (available at build time)
         commonNativeBuildInputs = with pkgs; [
+          pkg-config # pkg-config must be in nativeBuildInputs to be available during build
           git # Git must be available during build for cargo to fetch dependencies
         ];
 
@@ -123,6 +123,10 @@
           CARGO_NET_GIT_FETCH_WITH_CLI = "true";
           # Git configuration for SSL
           GIT_SSL_CAINFO = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+          # OpenSSL configuration for cargo builds
+          OPENSSL_DIR = "${pkgs.openssl.dev}";
+          OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
+          OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
         };
 
         # Core crates (shared by all ecosystems) - use core source filter
@@ -145,7 +149,7 @@
           src = solanaSrc;
           pname = "traverse-solana-deps";
           cargoArtifacts = coreCargoArtifacts;
-          cargoExtraArgs = "--no-default-features --features solana --package traverse-solana";
+          cargoExtraArgs = "--no-default-features --features solana,anchor --package traverse-solana";
         });
 
         # Cosmos ecosystem build
@@ -153,7 +157,7 @@
           src = cosmosSrc;
           pname = "traverse-cosmos-deps";
           cargoArtifacts = coreCargoArtifacts;
-          cargoExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos --package traverse-cli-core --package traverse-cli-cosmos";
+          cargoExtraArgs = "--no-default-features --features cosmos,std --package traverse-cosmos --package traverse-cli-core --package traverse-cli-cosmos";
         });
 
         # Ethereum CLI dependencies
@@ -169,7 +173,7 @@
           src = solanaSrc;
           pname = "traverse-solana-cli-deps";
           cargoArtifacts = solanaCargoArtifacts;
-          cargoExtraArgs = "--no-default-features --features solana,std --package traverse-cli-core --package traverse-cli-solana";
+          cargoExtraArgs = "--no-default-features --features solana,std,anchor --package traverse-cli-core --package traverse-cli-solana";
         });
 
         # Cosmos CLI dependencies
@@ -216,7 +220,7 @@
             src = solanaSrc;
             pname = "traverse-solana";
             cargoArtifacts = solanaCargoArtifacts;
-            cargoExtraArgs = "--no-default-features --features solana --package traverse-solana";
+            cargoExtraArgs = "--no-default-features --features solana,anchor --package traverse-solana";
             cargoTestCommand = "true"; # Skip tests during build
             doCheck = false; # Disable checks to avoid test compilation
           });
@@ -225,7 +229,7 @@
             src = solanaSrc;
             pname = "traverse-solana-cli";
             cargoArtifacts = solanaCliCargoArtifacts;
-            cargoExtraArgs = "--no-default-features --features solana,std --bin traverse-solana -p traverse-cli-solana";
+            cargoExtraArgs = "--no-default-features --features solana,std,anchor --bin traverse-solana -p traverse-cli-solana";
           });
 
           # Cosmos ecosystem
@@ -233,7 +237,7 @@
             src = cosmosSrc;
             pname = "traverse-cosmos";
             cargoArtifacts = cosmosCargoArtifacts;
-            cargoExtraArgs = "--no-default-features --features cosmos --package traverse-cosmos";
+            cargoExtraArgs = "--no-default-features --features cosmos,std --package traverse-cosmos";
             cargoTestCommand = "true"; # Skip tests during build
             doCheck = false; # Disable checks to avoid test compilation
           });
@@ -280,7 +284,7 @@
             src = cosmosSrc;
             pname = "traverse-cosmos-tests";
             cargoArtifacts = cosmosCargoArtifacts;
-            cargoTestExtraArgs = "--no-default-features --features std --package traverse-cosmos --lib";
+            cargoTestExtraArgs = "--no-default-features --features cosmos,std --package traverse-cosmos --lib";
           });
 
           # Valence tests (disabled - complex struct initialization issues)

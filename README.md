@@ -4,61 +4,103 @@ Chain-independent ZK storage proof system for blockchain state verification.
 
 ## Overview
 
-Traverse generates cryptographic proofs of blockchain storage state for use in zero-knowledge circuits and cross-chain applications. It provides semantic understanding of storage values to eliminate ambiguity in ZK proofs, enabling deterministic and verifiable storage path resolution across multiple blockchain ecosystems.
+Traverse generates cryptographic proofs of blockchain storage state for use in zero-knowledge circuits and cross-chain applications. It provides semantic understanding of storage values to eliminate ambiguity in ZK proofs.
 
 ### Key Features
 
-- **Chain-independent**: Supports Ethereum, Solana, and Cosmos
+- **Multi-chain support**: Ethereum, Solana, and Cosmos
 - **Semantic storage proofs**: Distinguishes between different meanings of zero values
-- **ZK-circuit ready**: Minimal, constrained builds for proof generation
-- **Modular architecture**: Use only the components you need
+- **ZK-circuit ready**: Optimized builds for proof generation
+- **Isolated builds**: Each blockchain ecosystem builds independently
 
-## Dependency Conflicts (Important)
+## Installation
 
-**Solana and Ethereum ecosystems have incompatible dependencies and cannot be used in the same binary.**
+### Using Nix (Recommended)
 
-### The Problem
+```bash
+# Core packages
+nix build .#traverse-core
+nix build .#traverse-ethereum 
+nix build .#traverse-solana
+nix build .#traverse-cosmos
 
-The Rust blockchain ecosystem has fragmented around different cryptographic libraries:
+# CLI tools
+nix build .#traverse-ethereum-cli
+nix build .#traverse-solana-cli  
+nix build .#traverse-cosmos-cli
 
-| Ecosystem | Library | k256 Version | secp256k1 Version |
-|-----------|---------|--------------|-------------------|
-| **Ethereum (Alloy)** | `alloy-*` | `^0.14` | `^0.29` |
-| **Solana** | `solana-sdk` | `^0.13` | `^0.28` |
-
-These create irreconcilable dependency conflicts in Cargo's dependency resolver.
-
-### The Solution: Feature Flags
-
-We use conditional compilation to ensure you can only enable one blockchain ecosystem at a time:
-
-#### Ethereum Only (Default)
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["ethereum"] }
+# Run all tests
+nix flake check
 ```
 
-#### Solana Only
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["solana"], default-features = false }
-```
+### Using Cargo
 
-#### Separate Binaries
+Choose one blockchain ecosystem due to dependency conflicts:
+
 ```toml
-# ethereum-processor/Cargo.toml
+# Ethereum only
 [dependencies]
 traverse = { version = "0.1", features = ["ethereum"] }
 
-# solana-processor/Cargo.toml  
+# Solana only  
 [dependencies]
 traverse = { version = "0.1", features = ["solana"], default-features = false }
+
+# Cosmos only
+[dependencies]
+traverse = { version = "0.1", features = ["cosmos"], default-features = false }
 ```
 
-## Quick Start
+See [Feature Flags documentation](docs/feature_flags.md) for details on dependency conflicts.
 
-### Ethereum Storage Proofs
+## Architecture
 
+```
+traverse/
+├── traverse-core/          # Chain-agnostic types and traits
+├── traverse-ethereum/      # Ethereum/EVM implementation  
+├── traverse-solana/        # Solana implementation
+├── traverse-cosmos/        # Cosmos implementation
+├── traverse-valence/       # ZK circuit integration
+├── traverse-cli-*/         # Ecosystem-specific CLIs
+└── workspace-configs/      # Per-ecosystem Cargo workspaces
+```
+
+### Build System
+
+Traverse uses isolated Nix builds with separate Cargo workspaces per ecosystem to handle incompatible dependencies. See [Feature Flags documentation](docs/feature_flags.md) for technical details.
+
+## Usage
+
+### CLI Examples
+
+#### Ethereum Storage Proof
+```bash
+traverse-ethereum generate-proof \
+  --contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
+  --slot 0x0000000000000000000000000000000000000000000000000000000000000001 \
+  --rpc https://eth-mainnet.g.alchemy.com/v2/YOUR-API-KEY \
+  --zero-means valid-zero
+```
+
+#### Solana Account Proof
+```bash
+traverse-solana generate-proof \
+  --account TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA \
+  --rpc https://api.mainnet-beta.solana.com
+```
+
+#### Cosmos Storage Proof
+```bash
+traverse-cosmos generate-proof \
+  --contract osmo1qzsxd3t0p2ek0y2ysycfq3gm5qmfhsh32w6s9xrw4x2cmwlz3rjs5rrsnw \
+  --key "balances" \
+  --rpc https://rpc.osmosis.zone
+```
+
+### Library Usage
+
+#### Ethereum
 ```rust
 use traverse_ethereum::{EthereumLayoutCompiler, EthereumProofFetcher};
 
@@ -70,12 +112,11 @@ let fetcher = EthereumProofFetcher::new(rpc_url);
 let proof = fetcher.fetch_storage_proof(
     &contract_address, 
     &storage_slot,
-    ZeroSemantics::ValidZero  // Semantic meaning of zero values
+    ZeroSemantics::ValidZero
 ).await?;
 ```
 
-### Solana Account Proofs
-
+#### Solana
 ```rust
 use traverse_solana::{SolanaLayoutCompiler, SolanaProofFetcher};
 
@@ -87,110 +128,50 @@ let fetcher = SolanaProofFetcher::new(rpc_url);
 let proof = fetcher.fetch_account_proof(&account_address).await?;
 ```
 
-### ZK Circuit Integration
-
+#### ZK Circuit Integration
 ```rust
 use traverse_valence::{create_witness_from_request, StorageVerificationRequest};
 
 // Create witness for ZK circuit
 let witness = create_witness_from_request(&verification_request)?;
-
-// Use in your circuit
-let result = my_circuit(vec![witness]);
 ```
 
 ## Semantic Zero Values
 
-Traverse eliminates ambiguity in ZK proofs by requiring explicit declaration of what zero values mean:
+Traverse eliminates ambiguity in storage proofs by requiring explicit declaration of zero meanings:
 
 ```rust
 use traverse_core::ZeroSemantics;
 
-// Different semantic meanings of storage slot = 0x00...00
 ZeroSemantics::NeverWritten    // Slot has never been written to
 ZeroSemantics::ExplicitlyZero  // Slot was intentionally set to zero  
 ZeroSemantics::Cleared         // Slot was previously non-zero but cleared
 ZeroSemantics::ValidZero       // Zero is a valid operational state
 ```
 
-This prevents semantic confusion attacks and makes proofs more reliable.
-
 ## Feature Flags
 
 ### Core Features
 - `std` - Standard library support (default)
-- `no-std` - No standard library (embedded/constrained environments)
-- `minimal` - Lightweight build with essential functionality only
+- `no-std` - No standard library
+- `minimal` - Essential functionality only
 - `constrained` - Maximum optimization for ZK circuits
 
 ### Blockchain Features (Mutually Exclusive)
-- `ethereum` - Ethereum/EVM support with lightweight Alloy integration
-- `solana` - Solana support with SDK integration **Conflicts with Alloy**
+- `ethereum` - Ethereum/EVM support
+- `solana` - Solana support
 - `cosmos` - Cosmos/CosmWasm support
 
-### Integration Features
-- `client` - HTTP clients for live blockchain data
-- `lightweight` - Optimized Ethereum support with selective Alloy imports
-- `codegen` - Generate custom crates for specific layouts
+### Additional Features
+- `client` - HTTP clients for blockchain data
+- `lightweight-alloy` - Minimal Ethereum dependencies
+- `codegen` - Layout code generation
 
-## Architecture
+## Documentation
 
-```
-traverse/
-├── traverse-core/          # Chain-agnostic types and traits
-├── traverse-ethereum/      # Ethereum/EVM implementation  
-├── traverse-solana/        # Solana implementation
-├── traverse-cosmos/        # Cosmos implementation
-├── traverse-valence/       # ZK circuit integration
-└── traverse-cli/           # Command-line interface
-```
-
-## Examples
-
-### Generate Ethereum Storage Proof
-```bash
-cargo run --features ethereum -- ethereum generate-proof \
-  --contract 0xA0b86a33E6842E8D4EACB7EB3Bf4a8B0B6A0A20D \
-  --slot 0x0000000000000000000000000000000000000000000000000000000000000001 \
-  --rpc https://eth-mainnet.g.alchemy.com/v2/YOUR-API-KEY \
-  --zero-means valid_zero
-```
-
-### Generate Solana Account Proof
-```bash
-cargo run --features solana --no-default-features -- solana generate-proof \
-  --account 4fYNw3dojWmQ4dXtSGE9epjRGy9VpgX1BAmH6qAoMZY4 \
-  --rpc https://api.mainnet-beta.solana.com
-```
-
-### Compile Storage Layout
-```bash
-# Ethereum ABI to layout
-cargo run --features ethereum -- ethereum compile-layout \
-  ./contracts/MyToken.abi.json \
-  --output layout.json
-
-# Solana IDL to layout  
-cargo run --features solana --no-default-features -- solana compile-layout \
-  ./programs/my_program.json \
-  --output layout.json
-```
-
-## Integration Guides
-
-- **[Valence Integration](docs/valence_integration_guide.md)** - ZK coprocessor integration
+- **[Valence Integration Guide](docs/valence_integration_guide.md)** - ZK coprocessor integration
 - **[Semantic Storage Proofs](docs/semantic_storage_proofs.md)** - Understanding zero semantics
-- **[Feature Flags](docs/feature_flags.md)** - Complete feature flag reference
-
-## Contributing
-
-When contributing:
-
-1. **Choose your blockchain**: Don't mix Ethereum and Solana dependencies
-2. **Use feature flags**: Always gate blockchain-specific code with `#[cfg(feature = "...")]`
-3. **Provide fallbacks**: Implement stubs when features are disabled
-4. **Test thoroughly**: Test with and without features enabled
-5. **Document conflicts**: Update documentation for any new dependency conflicts
+- **[Feature Flags Reference](docs/feature_flags.md)** - Complete feature documentation
 
 ## License
 

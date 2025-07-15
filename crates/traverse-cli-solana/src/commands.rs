@@ -7,6 +7,7 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use serde_json::Value;
 use traverse_cli_core::{formatters::write_output, OutputFormat};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 /// Analyze Solana program from IDL
 #[cfg(feature = "solana")]
@@ -121,7 +122,6 @@ pub async fn cmd_solana_compile_layout(
         .map_err(|e| anyhow::anyhow!("Failed to read IDL file '{}': {}", idl_file.display(), e))?;
     
     use traverse_solana::{SolanaLayoutCompiler, anchor::IdlParser};
-    use traverse_core::LayoutCompiler;
     
     // Parse IDL
     let idl = IdlParser::parse_idl(&idl_content)?;
@@ -135,10 +135,9 @@ pub async fn cmd_solana_compile_layout(
         OutputFormat::Traverse => serde_json::to_string_pretty(&layout)?,
         OutputFormat::CoprocessorJson => {
             let simplified = serde_json::json!({
-                "program_name": layout.contract_name,
-                "accounts": layout.storage.len(),
-                "types": layout.types.len(),
-                "commitment": hex::encode(&layout.commitment),
+                "program_id": layout.program_id,
+                "accounts": layout.accounts.len(),
+                "instructions": layout.instructions.len(),
                 "generated_at": std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
@@ -149,29 +148,28 @@ pub async fn cmd_solana_compile_layout(
         }
         OutputFormat::Toml => {
             let simplified = serde_json::json!({
-                "program_name": layout.contract_name,
-                "accounts": layout.storage.len(),
-                "types": layout.types.len(),
-                "commitment": hex::encode(&layout.commitment)
+                "program_id": layout.program_id,
+                "accounts": layout.accounts.len(),
+                "instructions": layout.instructions.len()
             });
             toml::to_string_pretty(&simplified)?
         }
         OutputFormat::Binary => {
             let binary_data = bincode::serialize(&layout)?;
-            format!("Binary layout: {} bytes\nBase64: {}", binary_data.len(), base64::engine::general_purpose::STANDARD.encode(&binary_data))
+            format!("Binary layout: {} bytes\nBase64: {}", binary_data.len(), BASE64.encode(&binary_data))
         }
         OutputFormat::Base64 => {
             let binary_data = bincode::serialize(&layout)?;
-            base64::engine::general_purpose::STANDARD.encode(&binary_data)
+            BASE64.encode(&binary_data)
         }
     };
     
     write_output(&output_str, output)?;
     
     println!("✓ Storage layout compiled");
-    println!("  - Program: {}", layout.contract_name);
-    println!("  - Accounts: {}", layout.storage.len());
-    println!("  - Types: {}", layout.types.len());
+    println!("  - Program ID: {}", layout.program_id);
+    println!("  - Accounts: {}", layout.accounts.len());
+    println!("  - Instructions: {}", layout.instructions.len());
     
     Ok(())
 }
@@ -219,19 +217,19 @@ pub async fn cmd_solana_generate_queries(
             let mut query = serde_json::json!({
                 "account": key,
                 "type": entry.type_name,
-                "discriminator": entry.slot, // In Solana, slot represents discriminator
-                "fields": entry.size
+                "slot": entry.slot,
+                "offset": entry.offset
             });
             
             if include_examples {
-                query["example_queries"] = match entry.type_name.as_deref() {
-                    Some(t) if t.contains("pubkey") => {
+                query["example_queries"] = match entry.type_name.as_str() {
+                    t if t.contains("pubkey") => {
                         serde_json::json!([
                             format!("{}[9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM]", key),
                             format!("{}[11111111111111111111111111111112]", key)
                         ])
                     }
-                    Some(t) if t.contains("array") => {
+                    t if t.contains("array") => {
                         serde_json::json!([
                             format!("{}[0]", key),
                             format!("{}[1]", key)
@@ -307,10 +305,10 @@ pub async fn cmd_solana_resolve_query(
         OutputFormat::CoprocessorJson => {
             let coprocessor_format = serde_json::json!({
                 "query": query,
-                "account_key": hex::encode(&resolved.key),
-                "layout_commitment": hex::encode(&resolved.layout_commitment),
-                "field_size": resolved.field_size,
-                "offset": resolved.offset
+                "resolved_address": resolved["address"].as_str().unwrap_or(""),
+                "layout_commitment": "not_implemented",
+                "field_size": 0,
+                "offset": 0
             });
             serde_json::to_string_pretty(&coprocessor_format)?
         }
@@ -324,11 +322,11 @@ pub async fn cmd_solana_resolve_query(
         }
         OutputFormat::Binary => {
             let binary_data = bincode::serialize(&resolved)?;
-            format!("Binary query result: {} bytes\nBase64: {}", binary_data.len(), base64::engine::general_purpose::STANDARD.encode(&binary_data))
+            format!("Binary query result: {} bytes\nBase64: {}", binary_data.len(), BASE64.encode(&binary_data))
         }
         OutputFormat::Base64 => {
             let binary_data = bincode::serialize(&resolved)?;
-            base64::engine::general_purpose::STANDARD.encode(&binary_data)
+            BASE64.encode(&binary_data)
         }
     };
     

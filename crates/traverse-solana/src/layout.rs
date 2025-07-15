@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use solana_sdk::account::Account;
 
 #[cfg(feature = "anchor")]
-use crate::anchor::{SolanaIdl, IdlAccount, IdlType};
+use crate::anchor::{SolanaIdl, IdlAccount, IdlType, IdlAccountType};
 
 /// Layout information for a Solana program compiled from IDL
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,7 +62,10 @@ impl SolanaLayoutCompiler {
         }
 
         Ok(SolanaLayout {
-            program_id: idl.metadata.address.clone(),
+            program_id: idl.metadata
+                .as_ref()
+                .and_then(|m| m.address.clone())
+                .unwrap_or_else(|| idl.program_id.clone()),
             accounts,
             instructions,
         })
@@ -105,7 +108,7 @@ impl SolanaLayoutCompiler {
     #[cfg(feature = "anchor")]
     fn compile_account_layout(&self, account_def: &IdlAccount) -> SolanaResult<AccountLayout> {
         let mut fields = Vec::new();
-        let mut offset = 0;
+        let mut offset: u32 = 0;
 
         // Add discriminator field if enabled
         if self.include_discriminator {
@@ -119,76 +122,137 @@ impl SolanaLayoutCompiler {
             offset += 8;
         }
 
-        // Process account fields
-        for field in &account_def.fields {
-            let field_layout = self.compile_field_layout(field, offset)?;
-            offset += field_layout.size;
-            fields.push(field_layout);
+        // Process account fields based on account type
+        match &account_def.account_type {
+            IdlAccountType::Struct { fields: struct_fields } => {
+                for field in struct_fields {
+                    let field_layout = self.compile_field_layout(field, offset as usize)?;
+                    offset += field_layout.size;
+                    fields.push(field_layout);
+                }
+            },
+            IdlAccountType::Enum { .. } => {
+                // TODO: Handle enum account types
+                return Err(SolanaError::InvalidIdl("Enum account types not yet supported".into()));
+            }
         }
 
         Ok(AccountLayout {
-            commitment: self.compute_layout_commitment(&fields),
-            fields,
-            total_size: offset,
+            account_type: AccountType::Program {
+                program_id: String::new(), // Will be set by caller  
+                discriminator: account_def.discriminator.as_ref().and_then(|d| {
+                    if d.len() >= 8 {
+                        let mut arr = [0u8; 8];
+                        arr.copy_from_slice(&d[..8]);
+                        Some(arr)
+                    } else {
+                        None
+                    }
+                }),
+            },
+            address: String::new(), // Address will be set by caller
+            data_layout: fields,
+            size: offset as u64,
+            initialized: true,
+            discriminator: account_def.discriminator.as_ref().and_then(|d| {
+                if d.len() >= 8 {
+                    let mut arr = [0u8; 8];
+                    arr.copy_from_slice(&d[..8]);
+                    Some(arr)
+                } else {
+                    None
+                }
+            }),
         })
     }
 
     /// Compile instruction parameter fields (requires anchor feature)
     #[cfg(feature = "anchor")]
-    fn compile_instruction_fields(&self, _args: &[crate::anchor::IdlField]) -> SolanaResult<Vec<FieldLayout>> {
-        // For now, return empty - would implement instruction parameter layout
-        Ok(vec![])
+    fn compile_instruction_fields(&self, args: &[crate::anchor::IdlField]) -> SolanaResult<Vec<FieldLayout>> {
+        let mut fields = Vec::new();
+        let mut offset: u32 = 0;
+        
+        for arg in args {
+            let field_layout = self.compile_field_layout(arg, offset as usize)?;
+            offset += field_layout.size;
+            fields.push(field_layout);
+        }
+        
+        Ok(fields)
     }
 
     /// Compile individual field layout (requires anchor feature)
     #[cfg(feature = "anchor")]
-    fn compile_field_layout(&self, field: &crate::anchor::IdlField, offset: usize) -> SolanaResult<FieldLayout> {
-        let (field_type, size) = self.idl_type_to_field_type(&field.type_)?;
+    fn compile_field_layout(&self, field: &crate::anchor::IdlField, field_offset: usize) -> SolanaResult<FieldLayout> {
+        let (field_type, size) = self.idl_type_to_field_type(&field.field_type)?;
+        
+        let zero_semantics = self.infer_zero_semantics(&field.name, &field_type);
         
         Ok(FieldLayout {
             name: field.name.clone(),
             field_type,
-            offset,
-            size,
-            zero_semantics: self.infer_zero_semantics(&field.name, &field_type),
+            offset: field_offset as u32,
+            size: size as u32,
+            zero_semantics,
         })
     }
 
     /// Convert IDL type to field type (requires anchor feature)
     #[cfg(feature = "anchor")]
     fn idl_type_to_field_type(&self, idl_type: &IdlType) -> SolanaResult<(FieldType, usize)> {
+        use crate::anchor::IdlTypeKind;
+        
         match idl_type {
-            IdlType::Bool => Ok((FieldType::Bool, 1)),
-            IdlType::U8 => Ok((FieldType::U8, 1)),
-            IdlType::I8 => Ok((FieldType::I8, 1)),
-            IdlType::U16 => Ok((FieldType::U16, 2)),
-            IdlType::I16 => Ok((FieldType::I16, 2)),
-            IdlType::U32 => Ok((FieldType::U32, 4)),
-            IdlType::I32 => Ok((FieldType::I32, 4)),
-            IdlType::U64 => Ok((FieldType::U64, 8)),
-            IdlType::I64 => Ok((FieldType::I64, 8)),
-            IdlType::U128 => Ok((FieldType::U128, 16)),
-            IdlType::I128 => Ok((FieldType::I128, 16)),
-            IdlType::PublicKey => Ok((FieldType::PublicKey, 32)),
-            IdlType::String => Ok((FieldType::String, 4)), // Length prefix
-            IdlType::Bytes => Ok((FieldType::Bytes, 4)), // Length prefix
-            IdlType::Array { inner, size } => {
-                let (inner_type, inner_size) = self.idl_type_to_field_type(inner)?;
-                Ok((FieldType::Array(Box::new(inner_type)), inner_size * size))
+            IdlType::Primitive(type_name) => {
+                match type_name.as_str() {
+                    "bool" => Ok((FieldType::Bool, 1)),
+                    "u8" => Ok((FieldType::U8, 1)),
+                    "i8" => Ok((FieldType::I8, 1)),
+                    "u16" => Ok((FieldType::U16, 2)),
+                    "i16" => Ok((FieldType::I16, 2)),
+                    "u32" => Ok((FieldType::U32, 4)),
+                    "i32" => Ok((FieldType::I32, 4)),
+                    "u64" => Ok((FieldType::U64, 8)),
+                    "i64" => Ok((FieldType::I64, 8)),
+                    "u128" => Ok((FieldType::U128, 16)),
+                    "i128" => Ok((FieldType::I128, 16)),
+                    "publicKey" | "pubkey" => Ok((FieldType::PublicKey, 32)),
+                    "string" => Ok((FieldType::String, 4)), // Length prefix
+                    "bytes" => Ok((FieldType::Bytes(0), 4)), // Length prefix, dynamic size
+                    _ => Err(SolanaError::InvalidIdl(format!("Unknown primitive type: {}", type_name))),
+                }
             }
-            IdlType::Vec { inner: _ } => {
-                // Variable length, return size of length prefix
-                Ok((FieldType::Vec, 4))
+            IdlType::Complex { kind } => {
+                match kind {
+                    IdlTypeKind::Option { inner } => {
+                        let (inner_type, inner_size) = self.idl_type_to_field_type(inner)?;
+                        // Option adds 1 byte for discriminant
+                        Ok((FieldType::Option(Box::new(inner_type)), 1 + inner_size))
+                    }
+                    IdlTypeKind::Vec { .. } => {
+                        // Variable length, return size of length prefix
+                        Ok((FieldType::Vec(Box::new(FieldType::U8)), 4))
+                    }
+                    IdlTypeKind::Array { element, size } => {
+                        let (inner_type, inner_size) = self.idl_type_to_field_type(element)?;
+                        Ok((FieldType::Array(Box::new(inner_type)), inner_size * (*size as usize)))
+                    }
+                    IdlTypeKind::Struct { .. } => {
+                        // For struct types, we'd need to calculate the full size
+                        // For now, treat as opaque data with a placeholder size
+                        Ok((FieldType::Defined("struct".to_string()), 32))
+                    }
+                    IdlTypeKind::Enum { .. } => {
+                        // Enums have a discriminant + largest variant size
+                        // For now, treat as opaque data with a placeholder size
+                        Ok((FieldType::Defined("enum".to_string()), 32))
+                    }
+                }
             }
-            IdlType::Option { inner } => {
-                let (inner_type, inner_size) = self.idl_type_to_field_type(inner)?;
-                // Option adds 1 byte for discriminant
-                Ok((FieldType::Option(Box::new(inner_type)), 1 + inner_size))
-            }
-            IdlType::Defined { name } => {
+            IdlType::Defined { defined } => {
                 // For defined types, we'd need to look up the definition
                 // For now, treat as opaque data
-                Ok((FieldType::Defined(name.clone()), 32)) // Assume 32 bytes
+                Ok((FieldType::Defined(defined.clone()), 32)) // Assume 32 bytes
             }
         }
     }

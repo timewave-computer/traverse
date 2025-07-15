@@ -5,7 +5,6 @@
 
 use crate::{SolanaError, SolanaResult};
 use serde::{Deserialize, Serialize};
-use alloc::{format, string::String, vec::Vec, collections::BTreeMap};
 
 /// Complete Anchor IDL structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -327,7 +326,7 @@ impl IdlParser {
                 });
 
                 // Add variant fields (simplified - real implementation would be more complex)
-                for (i, variant) in variants.iter().enumerate() {
+                for (_i, variant) in variants.iter().enumerate() {
                     if let Some(variant_fields) = &variant.fields {
                         match variant_fields {
                             IdlEnumFields::Named(named_fields) => {
@@ -356,11 +355,13 @@ impl IdlParser {
             }
         }
 
+        let total_size = Self::calculate_total_size(&fields);
+        
         Ok(AccountLayoutInfo {
             name: account.name.clone(),
             discriminator: account.discriminator.clone().unwrap_or_default(),
             fields,
-            total_size: Self::calculate_total_size(&fields),
+            total_size,
         })
     }
 

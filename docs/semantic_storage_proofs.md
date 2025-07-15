@@ -19,9 +19,10 @@ This semantic ambiguity can lead to incorrect business logic and security vulner
 Traverse extends traditional storage proofs with semantic metadata that captures the meaning of the proven data. These semantic proofs enable applications to make correct decisions based on the business logic significance of the storage values.
 
 **Core semantic types:**
-- `never_written`: Storage slot has never been modified from its default zero state
-- `explicitly_zero`: Storage slot was intentionally set to zero value
-- `valid_zero`: Storage slot contains zero due to legitimate state transitions
+- `NeverWritten`: Storage slot has never been modified from its default zero state
+- `ExplicitlyZero`: Storage slot was intentionally set to zero value
+- `Cleared`: Storage slot was previously non-zero but cleared
+- `ValidZero`: Storage slot contains zero as a valid operational state
 
 ## Architecture
 
@@ -47,6 +48,7 @@ pub struct StorageSemantics {
 pub enum ZeroSemantics {
     NeverWritten,
     ExplicitlyZero,
+    Cleared,
     ValidZero,
 }
 ```
@@ -124,19 +126,19 @@ This validation process:
 ```bash
 # Step-by-step workflow for building confidence in semantic specifications
 # 1. Analyze contract and create initial semantic specification
-traverse-cli ethereum analyze-contract contract.abi.json --output initial_spec.json
+traverse-ethereum compile-layout contract.abi.json --output initial_spec.json
 
 # 2. Run pre-compilation validation to check specification coverage (Future Feature)
-# traverse-cli ethereum validate-semantics --spec initial_spec.json --contract 0x123... --rpc $ETHEREUM_RPC_URL
+# traverse-ethereum validate-semantics --spec initial_spec.json --contract 0x123... --rpc $ETHEREUM_RPC_URL
 
 # 3. Refine specification based on validation results (Future Feature)
-# traverse-cli ethereum refine-semantics --spec initial_spec.json --events events.json --output refined_spec.json
+# traverse-ethereum refine-semantics --spec initial_spec.json --events events.json --output refined_spec.json
 
 # 4. Repeat validation until confidence is high (Future Feature)
-# traverse-cli ethereum validate-semantics --spec refined_spec.json --contract 0x123... --rpc $ETHEREUM_RPC_URL
+# traverse-ethereum validate-semantics --spec refined_spec.json --contract 0x123... --rpc $ETHEREUM_RPC_URL
 
 # 5. Compile final circuit with validated specification (Future Feature)
-# traverse-cli ethereum compile-circuit --spec refined_spec.json --output final_circuit.json
+# traverse-ethereum compile-circuit --spec refined_spec.json --output final_circuit.json
 ```
 
 ## Production Usage
@@ -161,11 +163,11 @@ Production proof generation uses compiled circuits with embedded semantic valida
 
 ```bash
 # Generate semantic storage proof for production use
-traverse-cli ethereum generate-proof \
+traverse-ethereum generate-proof \
     --contract 0xdAC17F958D2ee523a2206206994597C13D831ec7 \
     --slot 0x0000000000000000000000000000000000000000000000000000000000000539 \
     --rpc $ETHEREUM_RPC_URL \
-    --zero-means explicitly_zero \
+    --zero-means explicitly-zero \
     --output proof.json
 ```
 
