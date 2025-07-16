@@ -3,7 +3,7 @@
 //! This module generates minimal, purpose-built code that is tailored specifically
 //! to the provided schema without any unnecessary abstractions or dependencies.
 
-use alloc::{format, string::String};
+use alloc::{format, string::String, vec::Vec};
 use traverse_core::{LayoutInfo, StorageEntry, ZeroSemantics};
 
 /// Generate minimal query code for a specific storage layout

@@ -4,8 +4,7 @@
 //! compiling storage layouts, and generating account proofs.
 
 use anyhow::Result;
-use std::path::{Path, PathBuf};
-use serde_json::Value;
+use std::path::Path;
 use traverse_cli_core::{formatters::write_output, OutputFormat};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
@@ -31,76 +30,49 @@ pub async fn cmd_solana_analyze_program(
         .map_err(|e| anyhow::anyhow!("Failed to read IDL file '{}': {}", idl_file.display(), e))?;
     
     #[cfg(feature = "anchor")]
-    use traverse_solana::anchor::{IdlParser, SolanaIdl};
-    
-    // Parse IDL
-    #[cfg(feature = "anchor")]
-    let idl = IdlParser::parse_idl(&idl_content)?;
-    
-    #[cfg(not(feature = "anchor"))]
-    return Err(anyhow::anyhow!("Anchor feature not enabled. Enable it to parse IDL files."));
+    use traverse_solana::anchor::IdlParser;
     
     #[cfg(feature = "anchor")]
     {
+        // Parse IDL
+        let idl = IdlParser::parse_idl(&idl_content)?;
+        
         if validate_schema {
             println!("Validating IDL schema...");
             validate_idl_schema(&idl)?;
             println!("✓ IDL validation passed");
         }
-    }
-    
-    // Extract analysis information
-    #[cfg(feature = "anchor")]
-    let analysis = serde_json::json!({
-        "program_id": idl.program_id,
-        "program_name": idl.name,
-        "version": idl.version,
-        "instructions": idl.instructions.len(),
-        "accounts": idl.accounts.len(),
-        "types": idl.types.len(),
-        "events": idl.events.len(),
-        "errors": idl.errors.len(),
-        "constants": idl.constants.len(),
-        "account_layouts": {
-            let layouts = IdlParser::extract_account_layouts(&idl)?;
-            layouts.iter().map(|layout| serde_json::json!({
-                "name": layout.name,
-                "discriminator": layout.discriminator,
-                "fields": layout.fields.len(),
-                "total_size": layout.total_size
-            })).collect::<Vec<_>>()
-        },
-        "pdas": {
-            let pdas = IdlParser::extract_pdas(&idl);
-            pdas.iter().map(|pda| serde_json::json!({
-                "account_name": pda.account_name,
-                "seeds": pda.seeds.len(),
-                "program_id": pda.program_id
-            })).collect::<Vec<_>>()
+        
+        // Extract analysis information
+        let analysis = serde_json::json!({
+            "program_id": idl.program_id,
+            "program_name": idl.name,
+            "version": idl.version,
+            "instructions": idl.instructions.len(),
+            "accounts": idl.accounts.len(),
+            "types": idl.types.len(),
+            "events": idl.events.len(),
+            "errors": idl.errors.len(),
+            "constants": idl.constants.len()
+        });
+        
+        // Format and write output
+        let output_content = serde_json::to_string_pretty(&analysis)?;
+        write_output(&output_content, output)?;
+        
+        if output.is_some() {
+            println!("✓ Program analysis completed and written to file");
+        } else {
+            println!("✓ Program analysis completed");
         }
-    });
+        
+        return Ok(());
+    }
     
     #[cfg(not(feature = "anchor"))]
-    let analysis = serde_json::json!({});
-    
-    // Output analysis
-    let output_content = serde_json::to_string_pretty(&analysis)?;
-    
-    if let Some(output_path) = output {
-        std::fs::write(output_path, output_content)?;
-        println!("✓ Analysis written to: {}", output_path.display());
-    } else {
-        println!("{}", output_content);
+    {
+        return Err(anyhow::anyhow!("Anchor feature not enabled. Enable it to parse IDL files."));
     }
-    
-    println!("✓ Program analysis completed");
-    println!("  - Program ID: {}", idl.program_id);
-    println!("  - Instructions: {}", idl.instructions.len());
-    println!("  - Accounts: {}", idl.accounts.len());
-    println!("  - Account layouts: {}", IdlParser::extract_account_layouts(&idl)?.len());
-    println!("  - PDAs: {}", IdlParser::extract_pdas(&idl).len());
-    
-    Ok(())
 }
 
 #[cfg(not(feature = "solana"))]
@@ -140,7 +112,7 @@ pub async fn cmd_solana_compile_layout(
     
     // Parse IDL
     #[cfg(feature = "anchor")]
-    let idl = IdlParser::parse_idl(&idl_content)?;
+    let _idl = IdlParser::parse_idl(&idl_content)?;
     
     #[cfg(not(feature = "anchor"))]
     return Err(anyhow::anyhow!("Anchor feature not enabled. Enable it to parse IDL files."));

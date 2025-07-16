@@ -10,8 +10,9 @@ use serde_json::{json, Value};
 use std::path::Path;
 use traverse_cli_core::OutputFormat;
 
-#[cfg(feature = "cosmos")]
-use traverse_cosmos::{CosmosLayoutCompiler, CosmosKeyResolver};
+// Note: These imports are currently unused but may be needed for future features
+// #[cfg(feature = "cosmos")]
+// use traverse_cosmos::{CosmosLayoutCompiler, CosmosKeyResolver};
 
 #[cfg(all(feature = "cosmos", feature = "client"))]
 use traverse_cosmos::CosmosProofFetcher;
@@ -109,6 +110,7 @@ enum CosmosCommand {
 
 type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 
+#[allow(dead_code)]
 fn write_output(content: &str, output_path: Option<&str>) -> CliResult<()> {
     match output_path {
         Some(path) => {
@@ -159,7 +161,7 @@ fn compile_layout(input: &str, output: Option<&str>) -> CliResult<()> {
     let input_path = Path::new(input);
     let output_path = output.map(Path::new);
     commands::cmd_cosmos_compile_layout(
-        &input_path,
+        input_path,
         output_path,
         &OutputFormat::CoprocessorJson,
     )?;

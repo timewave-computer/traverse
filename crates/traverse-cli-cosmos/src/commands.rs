@@ -11,12 +11,7 @@ use traverse_cli_core::OutputFormat;
 use traverse_core::{LayoutCompiler, KeyResolver};
 
 #[cfg(feature = "cosmos")]
-use hex;
-
-#[cfg(feature = "cosmos")]
 use base64::{Engine as _, engine::general_purpose};
-#[cfg(feature = "cosmos")]
-use reqwest;
 
 #[cfg(feature = "cosmos")]
 use traverse_cosmos::{CosmosKeyResolver, CosmosLayoutCompiler};
@@ -221,6 +216,7 @@ pub fn cmd_cosmos_generate_queries(
 
 /// Execute cosmos auto-generate command
 #[cfg(feature = "cosmos")]
+#[allow(dead_code)]
 pub async fn cmd_cosmos_auto_generate(
     schema_file: &Path,
     rpc: &str,

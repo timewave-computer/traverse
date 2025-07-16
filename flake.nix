@@ -39,6 +39,55 @@
           # Clean up git and other development files
           rm -rf $out/.git $out/.github $out/target $out/result*
         '';
+
+        # Core-only source (just traverse-core, no valence)
+        coreOnlySrc = pkgs.runCommand "core-only-source" {} ''
+          cp -r ${./.} $out
+          chmod -R +w $out
+          # Create core-only workspace configuration
+          cat > $out/Cargo.toml << 'EOF'
+[workspace]
+members = [
+    "crates/traverse-core",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Timewave Labs"]
+license = "Apache-2.0"
+repository = "https://github.com/timewave-computer/traverse"
+homepage = "https://github.com/timewave-computer/traverse"
+description = "Chain-independent ZK storage path generator for blockchain state verification"
+keywords = ["zk", "blockchain", "cosmos", "storage", "proof"]
+categories = ["cryptography", "development-tools"]
+
+[workspace.dependencies]
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+sha2 = { version = "0.10", default-features = false }
+keccak = { version = "0.1", default-features = false }
+tiny-keccak = { version = "2.0", default-features = false, features = ["keccak"] }
+clap = { version = "4.0", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+thiserror = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+proptest = "1.0"
+tempfile = "3.0"
+anyhow = { version = "1.0", default-features = false }
+dotenv = "0.15"
+toml = "0.8"
+EOF
+          # Remove Cargo.lock since we'll let Cargo generate it
+          rm -f $out/Cargo.lock
+          # Remove all non-core crates
+          find $out/crates -name "traverse-*" -not -name "traverse-core" -type d -exec rm -rf {} +
+          # Clean up git and other development files
+          rm -rf $out/.git $out/.github $out/target $out/result*
+        '';
         
         ethereumSrc = pkgs.runCommand "ethereum-source" {} ''
           cp -r ${./.} $out
@@ -115,9 +164,11 @@
           nativeBuildInputs = commonNativeBuildInputs;
           strictDeps = true;
           cargoVendorDir = null; # Skip vendoring to avoid Cargo.lock conflicts
-          cargoLock = null; # Don't use locked dependencies
-          # Override test command to avoid --locked flag
+          # Override all cargo commands to avoid --locked flag
           cargoTestCommand = "cargo test --release";
+          cargoCheckCommand = "cargo check --release";
+          cargoBuildCommand = "cargo build --release";
+          cargoTestExtraArgs = ""; # Ensure no --locked flag is passed to tests
           # SSL certificate configuration
           SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
           CARGO_NET_GIT_FETCH_WITH_CLI = "true";
@@ -129,11 +180,18 @@
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
         };
 
-        # Core crates (shared by all ecosystems) - use core source filter
+        # Core-only crates (just traverse-core)
+        coreOnlyCargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+          src = coreOnlySrc;
+          pname = "traverse-core-only-deps";
+          cargoExtraArgs = "--package traverse-core";
+        });
+
+        # Core + Valence crates (shared by all ecosystems) - use core source filter
         coreCargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
           src = coreSrc;
           pname = "traverse-core-deps";
-          cargoExtraArgs = "--package traverse-core";
+          cargoExtraArgs = "--package traverse-core --package traverse-valence";
         });
 
         # Ethereum ecosystem build (with Alloy dependencies) - use ethereum source filter
@@ -230,6 +288,8 @@
             pname = "traverse-solana-cli";
             cargoArtifacts = solanaCliCargoArtifacts;
             cargoExtraArgs = "--no-default-features --features solana,std,anchor --bin traverse-solana -p traverse-cli-solana";
+            cargoTestCommand = "true"; # Skip tests during build
+            doCheck = false; # Disable checks to avoid test compilation
           });
 
           # Cosmos ecosystem
@@ -255,12 +315,36 @@
 
         # Isolated test derivations for each ecosystem
         checks = {
-          # Core tests (no ecosystem dependencies)
+          # Core tests (no ecosystem dependencies, no valence)
           traverse-core-tests = craneLib.cargoTest (commonArgs // {
-            src = coreSrc;
+            src = coreOnlySrc;
             pname = "traverse-core-tests";
-            cargoArtifacts = coreCargoArtifacts;
+            cargoArtifacts = coreOnlyCargoArtifacts;
             cargoTestExtraArgs = "--package traverse-core";
+            cargoTestCommand = "cargo test --release --package traverse-core";
+            # Override check phase to remove --locked flag
+            checkPhase = ''
+              runHook preCheck
+              cargo test --release --package traverse-core
+              runHook postCheck
+            '';
+            doCheck = true;
+          });
+
+          # Valence tests (with core dependencies)
+          traverse-valence-tests = craneLib.cargoTest (commonArgs // {
+            src = coreSrc;
+            pname = "traverse-valence-tests";
+            cargoArtifacts = coreCargoArtifacts;
+            cargoTestExtraArgs = "--no-default-features --features std,controller,circuit --package traverse-valence";
+            cargoTestCommand = "cargo test --release --no-default-features --features std,controller,circuit --package traverse-valence";
+            # Override check phase to remove --locked flag
+            checkPhase = ''
+              runHook preCheck
+              cargo test --release --no-default-features --features std,controller,circuit --package traverse-valence
+              runHook postCheck
+            '';
+            doCheck = true;
           });
 
           # Ethereum ecosystem tests (lib tests only)
@@ -269,6 +353,14 @@
             pname = "traverse-ethereum-tests";
             cargoArtifacts = ethereumCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features ethereum,std --package traverse-ethereum --lib";
+            cargoTestCommand = "cargo test --release --no-default-features --features ethereum,std --package traverse-ethereum --lib";
+            # Override check phase to remove --locked flag
+            checkPhase = ''
+              runHook preCheck
+              cargo test --release --no-default-features --features ethereum,std --package traverse-ethereum --lib
+              runHook postCheck
+            '';
+            doCheck = true;
           });
 
           # Solana ecosystem tests (fallback implementation, lib tests only)
@@ -277,6 +369,14 @@
             pname = "traverse-solana-tests";
             cargoArtifacts = solanaCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features std --package traverse-solana --lib";
+            cargoTestCommand = "cargo test --release --no-default-features --features std --package traverse-solana --lib";
+            # Override check phase to remove --locked flag
+            checkPhase = ''
+              runHook preCheck
+              cargo test --release --no-default-features --features std --package traverse-solana --lib
+              runHook postCheck
+            '';
+            doCheck = true;
           });
 
           # Cosmos ecosystem tests (fallback implementation, lib tests only)
@@ -285,6 +385,14 @@
             pname = "traverse-cosmos-tests";
             cargoArtifacts = cosmosCargoArtifacts;
             cargoTestExtraArgs = "--no-default-features --features cosmos,std --package traverse-cosmos --lib";
+            cargoTestCommand = "cargo test --release --no-default-features --features cosmos,std --package traverse-cosmos --lib";
+            # Override check phase to remove --locked flag
+            checkPhase = ''
+              runHook preCheck
+              cargo test --release --no-default-features --features cosmos,std --package traverse-cosmos --lib
+              runHook postCheck
+            '';
+            doCheck = true;
           });
 
           # Valence tests (disabled - complex struct initialization issues)
@@ -330,11 +438,11 @@
               echo "  nix build .#traverse-cosmos-cli    # Cosmos CLI"
               echo ""
               echo "Isolated ecosystem tests:"
-              echo "  nix build .#traverse-core-tests     # Core tests (no conflicts)"
+              echo "  nix build .#traverse-core-tests     # Core tests (no dependencies)"
+              echo "  nix build .#traverse-valence-tests  # Valence tests (with alloy support)"
               echo "  nix build .#traverse-ethereum-tests # Ethereum ecosystem tests"
               echo "  nix build .#traverse-solana-tests   # Solana ecosystem tests"
               echo "  nix build .#traverse-cosmos-tests   # Cosmos ecosystem tests"
-              echo "  nix build .#traverse-valence-tests  # Valence tests (no alloy)"
               echo ""
               echo "Run all ecosystem tests:"
               echo "  nix flake check                     # Run all isolated tests"

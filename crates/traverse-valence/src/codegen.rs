@@ -517,8 +517,8 @@ description = "{} - Controller"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-valence-coprocessor = {{ git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false }}
-traverse-valence = {{ path = "../../../traverse", default-features = false, features = ["controller"] }}
+valence-coprocessor = {{ "{{" }} git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false {{ "}}" }}
+traverse-valence = {{ "{{" }} path = "../../../traverse", default-features = false, features = ["controller"] {{ "}}" }}
 serde = {{ version = "1.0", default-features = false, features = ["derive", "alloc"] }}
 hex = {{ version = "0.4", default-features = false, features = ["alloc"] }}
 "#,
@@ -1255,8 +1255,8 @@ authors = {:?}
 description = "{} - Circuit"
 
 [dependencies]
-valence-coprocessor = {{ git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false }}
-traverse-valence = {{ path = "../../../traverse", default-features = false, features = ["circuit"] }}
+valence-coprocessor = {{ "{{" }} git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false {{ "}}" }}
+traverse-valence = {{ "{{" }} path = "../../../traverse", default-features = false, features = ["circuit"] {{ "}}" }}
 "#,
         options.crate_name,
         options.crate_name,
@@ -1284,7 +1284,7 @@ pub const LAYOUT_COMMITMENT: [u8; 32] = [
     {}
 ];
 
-pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {{
+pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {{{{
     let processor = CircuitProcessor::new(
         LAYOUT_COMMITMENT,
         generate_field_types_from_layout(layout),
@@ -1294,44 +1294,44 @@ pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {{
     // Process witnesses through the circuit
     let mut result = alloc::vec![0x01]; // Success indicator
     
-    for witness in witnesses {
+    for witness in witnesses {{{{
         // Basic witness validation
-        if witness.len() < 32 {
+        if witness.len() < 32 {{{{
             return alloc::vec![0x00]; // Error indicator
-        }
+        }}}}
         
         // Process witness data (simplified)
         let witness_hash = simple_hash(&witness);
         result.extend_from_slice(&witness_hash[..8]); // First 8 bytes as proof
-    }
+    }}}}
     
     result
-}}
+}}}}
 
 /// Generate field types from layout
-fn generate_field_types_from_layout(layout: &LayoutInfo) -> alloc::vec::Vec<&'static str> {{
+fn generate_field_types_from_layout(layout: &LayoutInfo) -> alloc::vec::Vec<&'static str> {{{{
     alloc::vec![{}]
-}}
+}}}}
 
 /// Generate field semantics from layout
-fn generate_field_semantics_from_layout(layout: &LayoutInfo) -> alloc::vec::Vec<u8> {{
+fn generate_field_semantics_from_layout(layout: &LayoutInfo) -> alloc::vec::Vec<u8> {{{{
     alloc::vec![{}]
-}}
+}}}}
 
 /// Simple hash function for witness processing
-fn simple_hash(data: &[u8]) -> [u8; 32] {{
+fn simple_hash(data: &[u8]) -> [u8; 32] {{{{
     let mut result = [0u8; 32];
     let mut state = 0x9e3779b9u32; // Golden ratio constant
     
-    for (i, &byte) in data.iter().enumerate() {{
+    for (i, &byte) in data.iter().enumerate() {{{{
         state = state.wrapping_mul(0x85ebca6b);
         state = state.wrapping_add(byte as u32);
         state = state.wrapping_add(i as u32);
         result[i % 32] ^= (state >> 24) as u8;
-    }}
+    }}}}
     
     result
-}}
+}}}}
 "#,
         options.crate_name,
         layout.commitment,

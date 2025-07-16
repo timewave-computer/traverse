@@ -9,11 +9,7 @@ use serde_json::{json, Value};
 use std::process;
 use traverse_cli_core::{CommonArgs, CliResult, CliUtils, OutputFormat};
 
-#[cfg(feature = "solana")]
-use traverse_solana::{
-    SolanaLayoutCompiler, SolanaKeyResolver, SolanaProofFetcher,
-    SolanaError, anchor::IdlRoot, AccountLayout
-};
+// Note: traverse_solana imports are used conditionally in commands.rs
 
 mod commands;
 
@@ -236,7 +232,7 @@ async fn handle_command(args: SolanaArgs) -> CliResult<()> {
         }
         
         SolanaCommand::AutoGenerate { config, output_dir } => {
-            let config_data = CliUtils::load_config(&config)?;
+            let _config_data = CliUtils::load_config(&config)?;
             CliUtils::ensure_output_dir(&output_dir)?;
             
             let result = json!({

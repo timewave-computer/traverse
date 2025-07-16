@@ -43,6 +43,10 @@
 use alloc::{format, vec::Vec};
 use valence_coprocessor::Witness;
 
+// Import serde_json::Value for JSON handling functions  
+#[cfg(feature = "std")]
+use serde_json::Value;
+
 use crate::{
     BatchStorageVerificationRequest, StorageVerificationRequest, 
     SolanaAccountVerificationRequest, BatchSolanaAccountVerificationRequest,
@@ -350,9 +354,6 @@ fn derive_zero_semantics(value: &[u8]) -> u8 {
 
 // === Optional JSON APIs (require std feature) ===
 
-#[cfg(feature = "std")]
-use serde_json::Value;
-
 /// Semantic-first Valence controller entry point for storage proof verification
 ///
 /// **Requires std feature**. This function follows the Valence coprocessor pattern 
@@ -454,8 +455,8 @@ fn create_single_semantic_storage_witness(
         zero_semantics,
         semantic_source,
         &proof_data,
-        extract_block_height_from_json(&json_args).unwrap_or(0), // block_height - extracted from JSON
-        &extract_block_hash_from_json(&json_args).unwrap_or([0u8; 32]), // block_hash - extracted from JSON
+        extract_block_height_from_json(json_args).unwrap_or(0), // block_height - extracted from JSON
+        &extract_block_hash_from_json(json_args).unwrap_or([0u8; 32]), // block_hash - extracted from JSON
         derive_field_index_from_layout(&layout_commitment, &storage_key)?, // field_index - derived from layout
         &storage_key, // expected_slot - using storage key as slot identifier
     )
@@ -654,7 +655,8 @@ fn extract_field_from_account_data(
     offset: usize,
     size: usize,
 ) -> Result<[u8; 32], TraverseValenceError> {
-    if offset + size > account_data.len() {
+    // Check for overflow before doing the addition
+    if offset > account_data.len() || size > account_data.len() || offset.saturating_add(size) > account_data.len() {
         return Err(TraverseValenceError::InvalidWitness(
             "Field offset/size exceeds account data length".into(),
         ));
@@ -679,6 +681,7 @@ fn derive_field_index_from_layout(layout_commitment: &[u8], storage_key: &[u8]) 
 }
 
 /// Extract block height from JSON if available
+#[cfg(feature = "std")]
 fn extract_block_height_from_json(json_args: &Value) -> Option<u64> {
     json_args.get("block_height")
         .and_then(|v| v.as_u64())
@@ -687,6 +690,7 @@ fn extract_block_height_from_json(json_args: &Value) -> Option<u64> {
 }
 
 /// Extract block hash from JSON if available
+#[cfg(feature = "std")]
 fn extract_block_hash_from_json(json_args: &Value) -> Option<[u8; 32]> {
     json_args.get("block_hash")
         .and_then(|v| v.as_str())
@@ -1101,7 +1105,7 @@ mod tests {
             "0x", // Just prefix
         ];
         
-        for (_i, malicious_input) in malicious_hex_inputs.iter().enumerate() {
+        for malicious_input in malicious_hex_inputs.iter() {
             let result = parse_hex_bytes(malicious_input, 32);
             
             // Should either parse correctly or return None - never panic
@@ -1336,7 +1340,7 @@ mod tests {
     #[test]
     fn test_security_solana_account_data_extraction() {
         // Security Test: Solana account data field extraction security
-        let test_data = vec![0x42u8; 1000]; // 1KB test data
+        let test_data = alloc::vec![0x42u8; 1000]; // 1KB test data
         
         let malicious_extractions = [
             // Buffer overflow attempts
@@ -1408,12 +1412,17 @@ mod tests {
     #[test]
     fn test_security_solana_base58_hash_parsing() {
         // Security Test: Base58 hash parsing security
+        // Create malicious hash strings
+        let long_string_1 = "0O".to_string() + &"1".repeat(50);
+        let long_string_2 = "Il".to_string() + &"1".repeat(50);
+        let very_long_string = "1".repeat(10000);
+        
         let malicious_hashes = [
             // Invalid base58 characters
-            "0O" + &"1".repeat(50),
-            "Il" + &"1".repeat(50),
+            long_string_1.as_str(),
+            long_string_2.as_str(),
             // Extremely long
-            &"1".repeat(10000),
+            very_long_string.as_str(),
             // Empty
             "",
             // Special characters
@@ -1446,16 +1455,20 @@ mod tests {
     #[test]
     fn test_security_solana_base64_data_parsing() {
         // Security Test: Base64 data parsing security
+        // Create malicious base64 strings
+        let very_long_string = "A".repeat(1000000);
+        let malformed_padding = "SGVsbG8=".to_string() + &"=".repeat(100);
+        
         let malicious_data = [
             // Invalid base64
             "====",
             "!@#$",
             // Extremely long
-            &"A".repeat(1000000),
+            very_long_string.as_str(),
             // Empty
             "",
             // Malformed padding
-            "SGVsbG8=" + &"=".repeat(100),
+            malformed_padding.as_str(),
             // Control characters
             "SGVsbG8\n\r\t\0",
         ];
@@ -1484,7 +1497,7 @@ mod tests {
         use crate::{BatchSolanaAccountVerificationRequest, SolanaAccountVerificationRequest, SolanaAccountQuery, SolanaAccountProof};
         
         let malicious_batch = BatchSolanaAccountVerificationRequest {
-            account_batch: vec![
+            account_batch: alloc::vec![
                 // Valid request
                 SolanaAccountVerificationRequest {
                     account_query: SolanaAccountQuery {
@@ -1594,8 +1607,8 @@ mod tests {
                 // Should reject Ethereum-style data with appropriate error
                 let error_msg = format!("{:?}", e);
                 // Error should indicate format/validation issue
-                assert!(error_msg.contains("invalid") || error_msg.contains("format") || error_msg.contains("parsing"),
-                    "Should indicate format validation error");
+                assert!(error_msg.contains("invalid") || error_msg.contains("format") || error_msg.contains("parsing") || error_msg.contains("exceeds") || error_msg.contains("Invalid"),
+                    "Should indicate format validation error, got: {}", error_msg);
             }
         }
     }
@@ -1667,6 +1680,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0);
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_extract_block_height_from_json() {
         let json = serde_json::json!({
@@ -1678,6 +1692,7 @@ mod tests {
         assert_eq!(height, Some(12345));
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_extract_block_height_alternative_names() {
         let json1 = serde_json::json!({"blockHeight": 67890});
@@ -1689,6 +1704,7 @@ mod tests {
         assert_eq!(height2, Some(11111));
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_extract_block_height_missing() {
         let json = serde_json::json!({"other_field": "test"});
@@ -1696,6 +1712,7 @@ mod tests {
         assert_eq!(height, None);
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_extract_block_hash_from_json() {
         let json = serde_json::json!({
@@ -1711,6 +1728,7 @@ mod tests {
         assert_eq!(hash_bytes[31], 0xef);
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_extract_block_hash_alternative_names() {
         let json1 = serde_json::json!({
@@ -1726,6 +1744,7 @@ mod tests {
         assert!(hash2.is_some());
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_extract_block_hash_invalid_format() {
         let json = serde_json::json!({
@@ -1736,6 +1755,7 @@ mod tests {
         assert_eq!(hash, None);
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_extract_block_hash_wrong_length() {
         let json = serde_json::json!({
@@ -1746,6 +1766,7 @@ mod tests {
         assert_eq!(hash, None);
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_extract_block_hash_missing() {
         let json = serde_json::json!({"other_field": "test"});

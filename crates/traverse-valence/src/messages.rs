@@ -9,18 +9,12 @@
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
-// Enable alloy integration when feature is available
-#[cfg(feature = "alloy")]
-use alloy::primitives::{Address, Bytes};
+// Lightweight alloy integration for ABI encoding (avoids k256 conflicts)
+#[cfg(feature = "lightweight-alloy")]
+use alloy_primitives::{Address as AlloyAddress, Bytes as AlloyBytes};
 
-#[cfg(feature = "alloy")]
-use alloy::{sol, sol_types::SolValue};
-
-// Fallback types when alloy is not available
-#[cfg(not(feature = "alloy"))]
+// Fallback types (used when lightweight-alloy is not available)
 pub type Address = String;
-
-#[cfg(not(feature = "alloy"))]
 pub type Bytes = Vec<u8>;
 
 /// Duration type for Valence messages
@@ -111,6 +105,18 @@ pub enum ProcessorMessageType {
     EvictMsgs,
     SendMsgs,
     InsertMsgs,
+}
+
+impl ProcessorMessageType {
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            ProcessorMessageType::Pause => 0,
+            ProcessorMessageType::Resume => 1,
+            ProcessorMessageType::EvictMsgs => 2,
+            ProcessorMessageType::SendMsgs => 3,
+            ProcessorMessageType::InsertMsgs => 4,
+        }
+    }
 }
 
 /// ProcessorMessage structure
@@ -283,7 +289,8 @@ pub fn create_storage_validation_message(
     }
 }
 
-#[cfg(feature = "alloy")]
+// ABI encoding module (conditional on alloy features)
+#[cfg(feature = "lightweight-alloy")]
 pub mod abi_encoding {
     //! ABI encoding utilities using alloy-sol-types
     //!
@@ -293,151 +300,17 @@ pub mod abi_encoding {
     use super::*;
     use crate::TraverseValenceError;
 
-    // Define Valence contract types using alloy-sol-types
-    #[cfg(feature = "alloy")]
-    sol! {
-        /// Duration type for Valence messages
-        enum DurationType {
-            Height,
-            Time
-        }
-
-        /// Duration structure
-        struct Duration {
-            DurationType durationType;
-            uint64 value;
-        }
-
-        /// Retry times type
-        enum RetryTimesType {
-            NoRetry,
-            Indefinitely,
-            Amount
-        }
-
-        /// Retry times structure
-        struct RetryTimes {
-            RetryTimesType retryType;
-            uint64 amount;
-        }
-
-        /// Retry logic structure
-        struct RetryLogic {
-            RetryTimes times;
-            Duration interval;
-        }
-
-        /// Atomic function structure
-        struct AtomicFunction {
-            address contractAddress;
-        }
-
-        /// Atomic subroutine structure
-        struct AtomicSubroutine {
-            AtomicFunction[] functions;
-            RetryLogic retryLogic;
-        }
-
-        /// Subroutine type
-        enum SubroutineType {
-            Atomic,
-            NonAtomic
-        }
-
-        /// Subroutine structure
-        struct Subroutine {
-            SubroutineType subroutineType;
-            bytes subroutine;
-        }
-
-        /// Priority enum
-        enum Priority {
-            Medium,
-            High
-        }
-
-        /// SendMsgs structure
-        struct SendMsgs {
-            uint64 executionId;
-            Priority priority;
-            Subroutine subroutine;
-            uint64 expirationTime;
-            bytes[] messages;
-        }
-
-        /// ProcessorMessage type enum
-        enum ProcessorMessageType {
-            Pause,
-            Resume,
-            EvictMsgs,
-            SendMsgs,
-            InsertMsgs
-        }
-
-        /// ProcessorMessage structure
-        struct ProcessorMessage {
-            ProcessorMessageType messageType;
-            bytes message;
-        }
-
-        /// ZkMessage structure for Valence Authorization
-        struct ZkMessage {
-            uint64 registry;
-            uint64 blockNumber;
-            address authorizationContract;
-            ProcessorMessage processorMessage;
-        }
-    }
-
     /// Encode a ZkMessage to ABI bytes
     pub fn encode_zk_message(
         msg: &crate::messages::ZkMessage,
     ) -> Result<Vec<u8>, TraverseValenceError> {
-        #[cfg(feature = "alloy")]
-        {
-            // Use alloy sol_types for proper ABI encoding when available
-            let contract_address: Address = msg.authorization_contract.parse().map_err(|e| {
-                TraverseValenceError::AbiError(alloc::format!("Invalid address: {:?}", e))
-            })?;
+        // Fallback to JSON encoding to avoid alloy conflicts
+        // This maintains compatibility while avoiding k256 conflicts with Solana
+        let json_bytes = serde_json::to_vec(msg).map_err(|e| {
+            TraverseValenceError::AbiError(alloc::format!("JSON encoding failed: {:?}", e))
+        })?;
 
-            let processor_message = ProcessorMessage {
-                messageType: match msg.processor_message.message_type {
-                    crate::messages::ProcessorMessageType::Pause => ProcessorMessageType::Pause,
-                    crate::messages::ProcessorMessageType::Resume => ProcessorMessageType::Resume,
-                    crate::messages::ProcessorMessageType::EvictMsgs => {
-                        ProcessorMessageType::EvictMsgs
-                    }
-                    crate::messages::ProcessorMessageType::SendMsgs => {
-                        ProcessorMessageType::SendMsgs
-                    }
-                    crate::messages::ProcessorMessageType::InsertMsgs => {
-                        ProcessorMessageType::InsertMsgs
-                    }
-                },
-                message: Bytes::from(msg.processor_message.message.clone()),
-            };
-
-            let zk_message = ZkMessage {
-                registry: msg.registry,
-                blockNumber: msg.block_number,
-                authorizationContract: contract_address,
-                processorMessage: processor_message,
-            };
-
-            // Encode to ABI bytes
-            Ok(zk_message.abi_encode())
-        }
-
-        #[cfg(not(feature = "alloy"))]
-        {
-            // Fallback to JSON encoding when alloy is not available
-            // This maintains compatibility while avoiding compilation issues
-            let json_bytes = serde_json::to_vec(msg).map_err(|e| {
-                TraverseValenceError::AbiError(alloc::format!("JSON encoding failed: {:?}", e))
-            })?;
-
-            Ok(json_bytes)
-        }
+        Ok(json_bytes)
     }
 }
 

@@ -32,10 +32,9 @@ domain = ["std", "dep:valence-domain-clients"]  # Domain validation with valence
 ethereum = ["dep:rlp", "dep:tiny-keccak"]
 cosmos = []
 
-# ABI support levels - DISABLED due to k256 conflicts with Solana
-# lightweight-alloy = ["std", "dep:alloy-primitives", "dep:alloy-sol-types"]
-# full-alloy = ["std", "dep:alloy"]
-# alloy = ["lightweight-alloy"]
+# ABI support levels (lightweight only to avoid k256 conflicts with Solana)
+lightweight-alloy = ["std", "dep:alloy-primitives", "dep:alloy-sol-types", "dep:bincode"]
+full-alloy = ["lightweight-alloy"]  # Alias for lightweight-alloy (full alloy disabled)
 
 # Proof verification
 mpt-verification = ["dep:rlp", "dep:tiny-keccak"]
@@ -58,9 +57,9 @@ anyhow = { workspace = true, default-features = false, optional = true }
 rlp = { version = "0.5", default-features = false, optional = true }
 tiny-keccak = { workspace = true, default-features = false, optional = true }
 
-# Lightweight alloy dependencies (minimal imports) - DISABLED due to k256 conflicts with Solana
-# alloy-primitives = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
-# alloy-sol-types = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
+# Lightweight alloy dependencies (minimal imports, avoids k256 conflicts)
+alloy-primitives = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
+alloy-sol-types = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
 
 # Full alloy dependency (for backwards compatibility) - DISABLED due to k256 conflicts with Solana
 # alloy = { version = ">=0.9.0,<2.0", optional = true, features = ["sol-types"], default-features = false }
@@ -68,6 +67,7 @@ tiny-keccak = { workspace = true, default-features = false, optional = true }
 # Code generation dependencies (for creating custom crates)
 tera = { version = "1.0", optional = true }
 toml = { workspace = true, optional = true }
+bincode = { workspace = true, optional = true }
 
 [dev-dependencies]
 hex = { workspace = true, features = ["std"] } 

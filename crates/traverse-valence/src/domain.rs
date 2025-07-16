@@ -9,11 +9,11 @@ use alloc::{format, vec::Vec};
 use serde_json::Value;
 
 // Import from valence-domain-clients when available
-#[cfg(feature = "domain")]
-pub use valence_domain_clients::common::LightClient;
+// Note: Commented out due to import path issues - using fallback trait instead
+// #[cfg(feature = "domain")]
+// pub use valence_domain_clients::common::LightClient;
 
-// Fallback local trait for when valence-domain-clients is not available
-#[cfg(not(feature = "domain"))]
+// Local trait definition (used as fallback or main implementation)
 pub trait LightClient {
     /// Get the domain name this light client is for (e.g., "ethereum", "cosmos")
     fn domain_name(&self) -> &str;
