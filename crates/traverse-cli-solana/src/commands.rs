@@ -30,18 +30,27 @@ pub async fn cmd_solana_analyze_program(
     let idl_content = std::fs::read_to_string(idl_file)
         .map_err(|e| anyhow::anyhow!("Failed to read IDL file '{}': {}", idl_file.display(), e))?;
     
+    #[cfg(feature = "anchor")]
     use traverse_solana::anchor::{IdlParser, SolanaIdl};
     
     // Parse IDL
+    #[cfg(feature = "anchor")]
     let idl = IdlParser::parse_idl(&idl_content)?;
     
-    if validate_schema {
-        println!("Validating IDL schema...");
-        validate_idl_schema(&idl)?;
-        println!("✓ IDL validation passed");
+    #[cfg(not(feature = "anchor"))]
+    return Err(anyhow::anyhow!("Anchor feature not enabled. Enable it to parse IDL files."));
+    
+    #[cfg(feature = "anchor")]
+    {
+        if validate_schema {
+            println!("Validating IDL schema...");
+            validate_idl_schema(&idl)?;
+            println!("✓ IDL validation passed");
+        }
     }
     
     // Extract analysis information
+    #[cfg(feature = "anchor")]
     let analysis = serde_json::json!({
         "program_id": idl.program_id,
         "program_name": idl.name,
@@ -70,6 +79,9 @@ pub async fn cmd_solana_analyze_program(
             })).collect::<Vec<_>>()
         }
     });
+    
+    #[cfg(not(feature = "anchor"))]
+    let analysis = serde_json::json!({});
     
     // Output analysis
     let output_content = serde_json::to_string_pretty(&analysis)?;
@@ -121,14 +133,27 @@ pub async fn cmd_solana_compile_layout(
     let idl_content = std::fs::read_to_string(idl_file)
         .map_err(|e| anyhow::anyhow!("Failed to read IDL file '{}': {}", idl_file.display(), e))?;
     
+    #[cfg(feature = "anchor")]
     use traverse_solana::{SolanaLayoutCompiler, anchor::IdlParser};
+    #[cfg(not(feature = "anchor"))]
+    use traverse_solana::SolanaLayoutCompiler;
     
     // Parse IDL
+    #[cfg(feature = "anchor")]
     let idl = IdlParser::parse_idl(&idl_content)?;
     
+    #[cfg(not(feature = "anchor"))]
+    return Err(anyhow::anyhow!("Anchor feature not enabled. Enable it to parse IDL files."));
+    
     // Create compiler and compile layout
-    let compiler = SolanaLayoutCompiler::new();
-    let layout = compiler.compile_from_idl(&idl)?;
+    #[cfg(feature = "anchor")]
+    let layout = {
+        let compiler = SolanaLayoutCompiler::new();
+        compiler.compile_from_idl(&idl_content)?
+    };
+    
+    #[cfg(not(feature = "anchor"))]
+    let layout: traverse_solana::layout::SolanaLayout = unreachable!();
     
     // Format output based on requested format
     let output_str = match format {
@@ -212,8 +237,8 @@ pub async fn cmd_solana_generate_queries(
     
     // Generate queries
     let mut queries = Vec::new();
-    for key in key_list {
-        if let Some(entry) = layout.storage.iter().find(|e| e.label == key) {
+    for key in &key_list {
+        if let Some(entry) = layout.storage.iter().find(|e| e.label == *key) {
             let mut query = serde_json::json!({
                 "account": key,
                 "type": entry.type_name,
@@ -290,15 +315,21 @@ pub async fn cmd_solana_resolve_query(
     // Load layout
     let layout_content = std::fs::read_to_string(layout_file)
         .map_err(|e| anyhow::anyhow!("Failed to read layout file '{}': {}", layout_file.display(), e))?;
-    let layout: traverse_core::LayoutInfo = serde_json::from_str(&layout_content)
+    let _layout: traverse_core::LayoutInfo = serde_json::from_str(&layout_content)
         .map_err(|e| anyhow::anyhow!("Failed to parse layout file '{}': {}", layout_file.display(), e))?;
     
     // Create resolver
     use traverse_solana::SolanaKeyResolver;
-    use traverse_core::KeyResolver;
     
     let resolver = SolanaKeyResolver::new();
-    let resolved = resolver.resolve(query, &layout)?;
+    let parsed_query = SolanaKeyResolver::parse_query(query)?;
+    let resolved_address = resolver.resolve_account_address(&parsed_query)?;
+    
+    // Create a resolved structure for compatibility
+    let resolved = serde_json::json!({
+        "address": resolved_address,
+        "query": query
+    });
     
     let output_str = match format {
         OutputFormat::Traverse => serde_json::to_string_pretty(&resolved)?,
@@ -315,17 +346,19 @@ pub async fn cmd_solana_resolve_query(
         OutputFormat::Toml => {
             let simplified = serde_json::json!({
                 "query": query,
-                "account_key": hex::encode(&resolved.key),
-                "layout_commitment": hex::encode(&resolved.layout_commitment)
+                "account_key": resolved["address"].as_str().unwrap_or(""),
+                "layout_commitment": "not_implemented"
             });
             toml::to_string_pretty(&simplified)?
         }
         OutputFormat::Binary => {
-            let binary_data = bincode::serialize(&resolved)?;
+            // For binary/base64, we need to serialize the JSON value
+            let binary_data = resolved.to_string().as_bytes().to_vec();
             format!("Binary query result: {} bytes\nBase64: {}", binary_data.len(), BASE64.encode(&binary_data))
         }
         OutputFormat::Base64 => {
-            let binary_data = bincode::serialize(&resolved)?;
+            // For binary/base64, we need to serialize the JSON value
+            let binary_data = resolved.to_string().as_bytes().to_vec();
             BASE64.encode(&binary_data)
         }
     };
@@ -334,7 +367,7 @@ pub async fn cmd_solana_resolve_query(
     
     println!("✓ Query resolved");
     println!("  - Query: {}", query);
-    println!("  - Account key: {}", hex::encode(&resolved.key));
+    println!("  - Account address: {}", resolved["address"].as_str().unwrap_or(""));
     
     Ok(())
 }
@@ -485,8 +518,8 @@ pub async fn cmd_solana_auto_generate(
 }
 
 /// Validate IDL schema for correctness and completeness
-#[cfg(feature = "solana")]
-fn validate_idl_schema(idl: &SolanaIdl) -> Result<()> {
+#[cfg(feature = "anchor")]
+fn validate_idl_schema(idl: &traverse_solana::anchor::SolanaIdl) -> Result<()> {
     // Basic validation checks
     
     // 1. Check program ID is valid
@@ -505,19 +538,29 @@ fn validate_idl_schema(idl: &SolanaIdl) -> Result<()> {
             return Err(anyhow::anyhow!("Account with empty name found"));
         }
         
-        if account.fields.is_empty() {
-            return Err(anyhow::anyhow!("Account '{}' has no fields", account.name));
-        }
-        
-        // Check for duplicate field names
-        let mut field_names = std::collections::HashSet::new();
-        for field in &account.fields {
-            if field.name.is_empty() {
-                return Err(anyhow::anyhow!("Account '{}' has field with empty name", account.name));
+        use traverse_solana::anchor::IdlAccountType;
+        match &account.account_type {
+            IdlAccountType::Struct { fields } => {
+                if fields.is_empty() {
+                    return Err(anyhow::anyhow!("Account '{}' has no fields", account.name));
+                }
+                
+                // Check for duplicate field names
+                let mut field_names = std::collections::HashSet::new();
+                for field in fields {
+                    if field.name.is_empty() {
+                        return Err(anyhow::anyhow!("Account '{}' has field with empty name", account.name));
+                    }
+                    
+                    if !field_names.insert(&field.name) {
+                        return Err(anyhow::anyhow!("Account '{}' has duplicate field '{}'", account.name, field.name));
+                    }
+                }
             }
-            
-            if !field_names.insert(&field.name) {
-                return Err(anyhow::anyhow!("Account '{}' has duplicate field '{}'", account.name, field.name));
+            IdlAccountType::Enum { variants } => {
+                if variants.is_empty() {
+                    return Err(anyhow::anyhow!("Account '{}' enum has no variants", account.name));
+                }
             }
         }
     }
@@ -532,19 +575,19 @@ fn validate_idl_schema(idl: &SolanaIdl) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(feature = "solana"))]
+#[cfg(not(feature = "anchor"))]
 fn validate_idl_schema(_idl: &()) -> Result<()> {
-    Err(anyhow::anyhow!("Solana support not enabled"))
+    Err(anyhow::anyhow!("Anchor support not enabled"))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "anchor"))]
 mod tests {
     use super::*;
 
     #[cfg(feature = "solana")]
     #[test]
     fn test_validate_idl_schema_valid() {
-        use traverse_solana::anchor::{SolanaIdl, IdlAccountField, IdlAccount, IdlInstruction};
+        use traverse_solana::anchor::{SolanaIdl, IdlField, IdlAccount, IdlInstruction, IdlAccountType};
 
         let idl = SolanaIdl {
             program_id: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM".to_string(),
@@ -553,16 +596,19 @@ mod tests {
             accounts: vec![
                 IdlAccount {
                     name: "UserAccount".to_string(),
-                    fields: vec![
-                        IdlAccountField {
+                    discriminator: None,
+                    account_type: IdlAccountType::Struct {
+                        fields: vec![
+                            IdlField {
                             name: "authority".to_string(),
                             field_type: "publicKey".to_string(),
                         },
-                        IdlAccountField {
+                        IdlField {
                             name: "balance".to_string(),
                             field_type: "u64".to_string(),
                         },
                     ],
+                    },
                 }
             ],
             instructions: vec![
@@ -584,7 +630,7 @@ mod tests {
     #[cfg(feature = "solana")]
     #[test]
     fn test_validate_idl_schema_missing_program_id() {
-        use traverse_solana::anchor::{SolanaIdl, IdlAccountField, IdlAccount};
+        use traverse_solana::anchor::{SolanaIdl, IdlField, IdlAccount, IdlAccountType};
 
         let idl = SolanaIdl {
             program_id: "".to_string(), // Empty program ID
@@ -593,12 +639,15 @@ mod tests {
             accounts: vec![
                 IdlAccount {
                     name: "UserAccount".to_string(),
-                    fields: vec![
-                        IdlAccountField {
+                    discriminator: None,
+                    account_type: IdlAccountType::Struct {
+                        fields: vec![
+                            IdlField {
                             name: "authority".to_string(),
                             field_type: "publicKey".to_string(),
                         },
                     ],
+                    },
                 }
             ],
             instructions: vec![],
@@ -636,7 +685,7 @@ mod tests {
     #[cfg(feature = "solana")]
     #[test]
     fn test_validate_idl_schema_duplicate_fields() {
-        use traverse_solana::anchor::{SolanaIdl, IdlAccountField, IdlAccount};
+        use traverse_solana::anchor::{SolanaIdl, IdlField, IdlAccount, IdlAccountType};
 
         let idl = SolanaIdl {
             program_id: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM".to_string(),
@@ -645,16 +694,19 @@ mod tests {
             accounts: vec![
                 IdlAccount {
                     name: "UserAccount".to_string(),
-                    fields: vec![
-                        IdlAccountField {
+                    discriminator: None,
+                    account_type: IdlAccountType::Struct {
+                        fields: vec![
+                            IdlField {
                             name: "authority".to_string(),
                             field_type: "publicKey".to_string(),
                         },
-                        IdlAccountField {
+                        IdlField {
                             name: "authority".to_string(), // Duplicate field name
                             field_type: "u64".to_string(),
                         },
                     ],
+                    },
                 }
             ],
             instructions: vec![],

@@ -262,13 +262,13 @@ This document details the comprehensive security testing framework implemented f
 
 | Attack Category | Vectors Tested | Test Count | Coverage |
 |----------------|----------------|------------|----------|
-| Input Validation | 15+ | 12 | ✅ Comprehensive |
-| Memory Safety | 10+ | 8 | ✅ Comprehensive |
-| Code Generation | 12+ | 8 | ✅ Comprehensive |
-| Concurrency | 4+ | 3 | ✅ Comprehensive |
-| Error Handling | 8+ | 2 | ✅ Comprehensive |
-| Replay Protection | 6+ | 2 | ✅ Comprehensive |
-| Solana-Specific | 8+ | 8 | ✅ Comprehensive |
+| Input Validation | 15+ | 12 | Comprehensive |
+| Memory Safety | 10+ | 8 | Comprehensive |
+| Code Generation | 12+ | 8 | Comprehensive |
+| Concurrency | 4+ | 3 | Comprehensive |
+| Error Handling | 8+ | 2 | Comprehensive |
+| Replay Protection | 6+ | 2 | Comprehensive |
+| Solana-Specific | 8+ | 8 | Comprehensive |
 
 ## Security Properties Validated
 
