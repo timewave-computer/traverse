@@ -1,0 +1,46 @@
+# Solana-specific CLI for traverse ZK storage path generation
+[package]
+name = "traverse-cli-solana"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Solana-specific CLI for traverse ZK storage path generation"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std", "solana"]
+std = ["traverse-cli-core/std", "traverse-solana?/std"]
+solana = ["dep:traverse-solana", "traverse-solana?/solana"]
+anchor = ["solana", "traverse-solana?/anchor"]
+client = ["traverse-solana?/client"]
+
+[dependencies]
+# Shared CLI core
+traverse-cli-core = { path = "../traverse-cli-core" }
+
+# Solana ecosystem crates only
+traverse-core = { path = "../traverse-core" }
+traverse-solana = { path = "../traverse-solana", optional = true }
+
+# CLI dependencies
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+base64 = { workspace = true }
+bincode = { workspace = true }
+hex = { workspace = true }
+toml = { workspace = true }
+
+[[bin]]
+name = "traverse-solana"
+path = "src/main.rs"
+required-features = ["std", "solana"]
+
+[dev-dependencies]
+tempfile = { workspace = true } 

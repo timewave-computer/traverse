@@ -6,7 +6,15 @@
 use crate::CosmosError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+#[cfg(feature = "std")]
 use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec::Vec, format, vec};
+
+#[cfg(not(feature = "std"))]
+compile_error!("std feature must be enabled for HashMap support in cosmos crate");
 
 /// Represents a CosmWasm contract with its message schema and storage patterns
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,33 +132,61 @@ pub struct ComplexityMetrics {
 
 impl CosmWasmContract {
     /// Parse a CosmWasm contract from JSON schema files
+    #[cfg(feature = "std")]
     pub fn from_schema_files(
         instantiate_path: Option<&str>,
         execute_path: Option<&str>,
         query_path: Option<&str>,
     ) -> Result<Self, CosmosError> {
         let instantiate_msg = if let Some(path) = instantiate_path {
-            let content = std::fs::read_to_string(path).map_err(|e| {
-                CosmosError::InvalidSchema(format!("Failed to read instantiate schema: {}", e))
-            })?;
+            let content = {
+                #[cfg(feature = "std")]
+                {
+                    std::fs::read_to_string(path).map_err(|e| {
+                        CosmosError::InvalidSchema(format!("Failed to read schema: {}", e))
+                    })?
+                }
+                #[cfg(not(feature = "std"))]
+                {
+                    return Err(CosmosError::InvalidSchema("File operations not supported in no_std".into()));
+                }
+            };
             Some(serde_json::from_str(&content)?)
         } else {
             None
         };
 
         let execute_msg = if let Some(path) = execute_path {
-            let content = std::fs::read_to_string(path).map_err(|e| {
-                CosmosError::InvalidSchema(format!("Failed to read execute schema: {}", e))
-            })?;
+            let content = {
+                #[cfg(feature = "std")]
+                {
+                    std::fs::read_to_string(path).map_err(|e| {
+                        CosmosError::InvalidSchema(format!("Failed to read schema: {}", e))
+                    })?
+                }
+                #[cfg(not(feature = "std"))]
+                {
+                    return Err(CosmosError::InvalidSchema("File operations not supported in no_std".into()));
+                }
+            };
             Some(serde_json::from_str(&content)?)
         } else {
             None
         };
 
         let query_msg = if let Some(path) = query_path {
-            let content = std::fs::read_to_string(path).map_err(|e| {
-                CosmosError::InvalidSchema(format!("Failed to read query schema: {}", e))
-            })?;
+            let content = {
+                #[cfg(feature = "std")]
+                {
+                    std::fs::read_to_string(path).map_err(|e| {
+                        CosmosError::InvalidSchema(format!("Failed to read schema: {}", e))
+                    })?
+                }
+                #[cfg(not(feature = "std"))]
+                {
+                    return Err(CosmosError::InvalidSchema("File operations not supported in no_std".into()));
+                }
+            };
             Some(serde_json::from_str(&content)?)
         } else {
             None

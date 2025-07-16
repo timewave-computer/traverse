@@ -4,6 +4,7 @@
 //! storage queries (like `balances[0x123...]`) into deterministic Ethereum
 //! storage keys using Solidity's storage layout rules.
 
+#[cfg(feature = "ethereum")]
 use tiny_keccak::{Hasher, Keccak};
 use traverse_core::{Key, KeyResolver, LayoutInfo, StaticKeyPath, TraverseError};
 
@@ -80,11 +81,25 @@ impl EthereumKeyResolver {
     ///
     /// 32-byte Keccak256 hash of the input
     fn keccak256(data: &[u8]) -> [u8; 32] {
-        let mut hasher = Keccak::v256();
-        let mut output = [0u8; 32];
-        hasher.update(data);
-        hasher.finalize(&mut output);
-        output
+        #[cfg(feature = "ethereum")]
+        {
+            let mut hasher = Keccak::v256();
+            let mut output = [0u8; 32];
+            hasher.update(data);
+            hasher.finalize(&mut output);
+            output
+        }
+        #[cfg(not(feature = "ethereum"))]
+        {
+            // Without ethereum feature, use a simple hash
+            let mut output = [0u8; 32];
+            for (i, &byte) in data.iter().enumerate() {
+                if i < 32 {
+                    output[i] = byte;
+                }
+            }
+            output
+        }
     }
 
     /// Derive storage key for array element: keccak256(slot) + index

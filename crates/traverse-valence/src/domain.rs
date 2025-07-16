@@ -8,6 +8,23 @@ use crate::TraverseValenceError;
 use alloc::{format, vec::Vec};
 use serde_json::Value;
 
+// Import from valence-domain-clients when available
+// Note: Commented out due to import path issues - using fallback trait instead
+// #[cfg(feature = "domain")]
+// pub use valence_domain_clients::common::LightClient;
+
+// Local trait definition (used as fallback or main implementation)
+pub trait LightClient {
+    /// Get the domain name this light client is for (e.g., "ethereum", "cosmos")
+    fn domain_name(&self) -> &str;
+    
+    /// Get the verified block height
+    fn block_height(&self) -> u64;
+    
+    /// Get the proven block hash at the verified height
+    fn proven_block_hash(&self) -> [u8; 32];
+}
+
 /// Type alias for parsed semantic state proof data (key, value, proof, zero_semantics, semantic_source)
 type ParsedSemanticStateProofData = (Vec<u8>, Vec<u8>, Vec<u8>, u8, u8);
 
@@ -236,35 +253,52 @@ pub fn validate_ethereum_semantic_state_proof(
     })
 }
 
-/// Light client trait for verified block information
-///
-/// This trait provides access to cryptographically verified block data
-/// from an external light client system. The light client is responsible
-/// for consensus verification and providing proven block information.
-pub trait LightClient {
-    /// Get the domain name this light client is for (e.g., "ethereum", "cosmos")
-    fn domain_name(&self) -> &str;
-    
-    /// Get the verified block height
-    fn block_height(&self) -> u64;
-    
-    /// Get the proven block hash at the verified height
-    fn proven_block_hash(&self) -> [u8; 32];
-}
-
 /// Mock light client for testing and no_std environments
+#[cfg(not(feature = "domain"))]
 pub struct MockLightClient {
     domain: &'static str,
     height: u64,
     hash: [u8; 32],
 }
 
+#[cfg(not(feature = "domain"))]
 impl MockLightClient {
     pub fn new(domain: &'static str, height: u64, hash: [u8; 32]) -> Self {
         Self { domain, height, hash }
     }
 }
 
+#[cfg(not(feature = "domain"))]
+impl LightClient for MockLightClient {
+    fn domain_name(&self) -> &str {
+        self.domain
+    }
+    
+    fn block_height(&self) -> u64 {
+        self.height
+    }
+    
+    fn proven_block_hash(&self) -> [u8; 32] {
+        self.hash
+    }
+}
+
+/// Mock light client for testing when domain feature is enabled
+#[cfg(feature = "domain")]
+pub struct MockLightClient {
+    domain: &'static str,
+    height: u64,
+    hash: [u8; 32],
+}
+
+#[cfg(feature = "domain")]
+impl MockLightClient {
+    pub fn new(domain: &'static str, height: u64, hash: [u8; 32]) -> Self {
+        Self { domain, height, hash }
+    }
+}
+
+#[cfg(feature = "domain")]
 impl LightClient for MockLightClient {
     fn domain_name(&self) -> &str {
         self.domain

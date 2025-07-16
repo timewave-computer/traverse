@@ -26,6 +26,12 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+use alloc::string::String;
+
 pub mod contract;
 pub mod layout;
 pub mod resolver;
@@ -43,28 +49,29 @@ pub use proof::{
 };
 
 /// Error types specific to CosmWasm contract analysis
-#[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
+#[derive(Debug)]
 pub enum CosmosError {
-    #[error("Invalid CosmWasm contract schema: {0}")]
+    #[cfg_attr(feature = "std", error("Invalid CosmWasm contract schema: {0}"))]
     InvalidSchema(String),
 
-    #[error("Unsupported storage pattern: {0}")]
+    #[cfg_attr(feature = "std", error("Unsupported storage pattern: {0}"))]
     UnsupportedPattern(String),
 
-    #[error("Contract analysis failed: {0}")]
+    #[cfg_attr(feature = "std", error("Contract analysis failed: {0}"))]
     AnalysisFailed(String),
 
-    #[error("Storage key generation failed: {0}")]
+    #[cfg_attr(feature = "std", error("Storage key generation failed: {0}"))]
     KeyGenerationFailed(String),
 
     #[cfg(feature = "client")]
-    #[error("Network error: {0}")]
+    #[cfg_attr(feature = "std", error("Network error: {0}"))]
     Network(#[from] reqwest::Error),
 
-    #[error("JSON error: {0}")]
+    #[cfg_attr(feature = "std", error("JSON error: {0}"))]
     Json(#[from] serde_json::Error),
 
-    #[error("Traverse core error: {0}")]
+    #[cfg_attr(feature = "std", error("Traverse core error: {0}"))]
     TraverseCore(#[from] traverse_core::TraverseError),
 }
 

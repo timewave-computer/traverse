@@ -1,472 +1,172 @@
-# Feature Flags Guide
+# Feature Flags & Build System Guide
 
-This document explains the feature flags system in Traverse, which allows you to build the library with only the components you need, optimizing for size, performance, and target environment compatibility.
+This document explains Traverse's feature flag system and the isolated build approach used to handle incompatible blockchain dependencies.
 
-## Overview
+## Dependency Conflict Resolution
 
-Traverse uses a comprehensive feature flag system that allows you to:
-- Build minimal versions for resource-constrained environments
-- Support no-std and WASM targets
-- Include only the blockchain networks you need
-- Optimize dependency footprint
+### The Problem
+
+The Rust blockchain ecosystem has incompatible dependencies between different chains:
+
+| Ecosystem | Library | k256 Version | secp256k1 Version |
+|-----------|---------|--------------|-------------------|
+| **Ethereum (Alloy)** | `alloy-*` | `^0.14` | `^0.29` |
+| **Solana** | `solana-sdk` | `^0.13` | `^0.28` |
+
+These version conflicts make it impossible to include both Ethereum and Solana support in the same binary.
+
+### The Solution: Isolated Builds
+
+Traverse uses separate Cargo workspaces for each blockchain ecosystem:
+
+```
+workspace-configs/
+├── Cargo.toml.core      # Core functionality only
+├── Cargo.toml.ethereum   # Ethereum + core
+├── Cargo.toml.solana     # Solana + core  
+├── Cargo.toml.cosmos     # Cosmos + core
+└── Cargo.lock.*         # Locked dependencies per workspace
+```
+
+The Nix build system automatically:
+- Selects the appropriate workspace configuration
+- Resolves dependencies independently per ecosystem
+- Ensures reproducible builds with checked-in lock files
+- Prevents accidental mixing of incompatible dependencies
 
 ## Core Feature Flags
 
 ### `std` (default)
-Enables standard library support with full functionality.
-
-**Includes:**
-- Full file system access
-- Network operations (tokio, reqwest)
-- Complete error handling
-- All CLI functionality
+Standard library support with full functionality.
 
 **Use when:** Building for desktop, server, or development environments.
 
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["std"] }
-```
-
 ### `no-std`
-Minimal no-std build for embedded and circuit environments.
+Minimal build for embedded and circuit environments.
 
-**Includes:**
-- Core types only
-- Basic storage path resolution
-- No network operations
-- No file system access
-- Alloc-based memory management
-
-**Use when:** Building for ZK circuits, embedded systems, or resource-constrained environments.
-
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["no-std"] }
-```
-
-### `constrained`
-Enhanced no-std build optimized for memory-constrained environments.
-
-**Includes:**
-- Compact data structures
-- Memory pool management
-- Stack-based operations
-- Constrained circuit processing
-- Fixed-size witness handling
-
-**Use when:** Building for embedded systems, WASM runtimes, or environments with strict memory limits.
-
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["constrained"] }
-```
-
-### `embedded`
-Specialized build for embedded systems and microcontrollers.
-
-**Includes:**
-- Constrained environment optimizations
-- Minimal memory footprint
-- Hardware-friendly data structures
-- Interrupt-safe operations
-
-**Use when:** Building for microcontrollers, IoT devices, or bare-metal systems.
-
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["embedded"] }
-```
+**Use when:** Building for ZK circuits or resource-constrained environments.
 
 ### `minimal`
-Lightweight build with essential functionality only.
+Essential functionality without heavy dependencies.
 
-**Includes:**
-- Core types and traits
-- Basic serialization
-- No heavy dependencies
+**Use when:** You need basic functionality with fast compilation.
 
-**Use when:** You need basic functionality without the full feature set.
+### `constrained`
+Optimized for memory-constrained environments with fixed-size data structures.
 
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["minimal"] }
-```
+**Use when:** Building for embedded systems or environments with strict memory limits.
 
 ### `wasm`
 WebAssembly-compatible build with browser support.
 
-**Includes:**
-- WASM-compatible dependencies
-- JSON serialization
-- Web-friendly APIs
-
 **Use when:** Building for web browsers or WASM runtimes.
 
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["wasm"] }
-```
+## Blockchain Features (Mutually Exclusive)
 
-## Chain-Specific Features
-
-### `lightweight`
-Enables lightweight alloy integration with selective imports through the `lightweight-alloy` feature in traverse-ethereum.
-
-**Includes:**
-- Essential alloy primitives only (Address, B256, U256, Bytes)
-- ABI encoding/decoding functionality
-- Essential RPC types for storage proofs
-- Basic provider functionality
-- HTTP transport layer
-
-**Selective Imports:**
-- `alloy-primitives`: Core primitive types
-- `alloy-sol-types`: ABI encoding/decoding
-- `alloy-rpc-types-eth`: RPC types for storage proofs
-- `alloy-provider`: Basic provider functionality
-- `alloy-transport-http`: HTTP transport
-
-**Benefits:**
-- 50-70% faster compilation
-- 40-60% smaller binary size
-- Full type compatibility with alloy ecosystem
-- Easy to upgrade when needed
-
-**Use when:** You want Ethereum support with minimal overhead and fast compilation.
-
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["lightweight", "ethereum"] }
-```
-
-### `ethereum` (default)
-Enables Ethereum blockchain support with lightweight alloy integration.
+### `ethereum`
+Ethereum/EVM support with lightweight Alloy integration.
 
 **Includes:**
 - Solidity ABI parsing
 - Storage layout compilation
+- MPT proof verification
 - Keccak256 hashing
-- Lightweight alloy selective imports
 
-**Use when:** Working with Ethereum contracts (recommended approach).
+### `solana`
+Solana blockchain support.
 
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["ethereum"] }
-```
-
-### Full Alloy Support
-For full alloy ecosystem support, you can enable all alloy crates directly in your dependency:
-
-**Note:** traverse-ethereum uses lightweight-alloy by default for better performance. If you need the full alloy ecosystem, add alloy as a direct dependency in your project:
-
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["ethereum"] }
-alloy = { version = "0.9", features = ["full"] }
-```
-
-This gives you access to the complete alloy feature set while still using traverse for storage path generation.
+**Includes:**
+- Anchor IDL parsing
+- Account layout compilation
+- Borsh serialization
+- SPL token support
 
 ### `cosmos`
-Enables Cosmos/CosmWasm blockchain support.
+Cosmos/CosmWasm support.
 
 **Includes:**
 - CosmWasm schema parsing
+- ICS23 proof verification
 - Cosmos storage patterns
-- IBC proof verification
-- Cosmos RPC client (with `client` feature)
 
-**Use when:** Working with Cosmos or CosmWasm contracts.
-
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["cosmos"] }
-```
-
-## Integration Features
+## Additional Features
 
 ### `client`
-Enables live blockchain integration.
+HTTP clients for live blockchain data (requires `std`).
 
-**Includes:**
-- HTTP clients for RPC calls
-- Live proof generation
-- Real-time data fetching
+### `lightweight-alloy`
+Minimal Alloy dependencies for faster compilation (Ethereum only).
 
-**Use when:** You need to fetch live data from blockchains.
+### `codegen`
+Generate custom crates for specific storage layouts.
 
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["client", "ethereum"] }
-```
-
-### `examples`
-Enables example code and demonstrations.
-
-**Includes:**
-- Example applications
-- Demo contracts
-- Integration guides
-
-**Use when:** Learning or developing with traverse.
-
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["examples", "ethereum"] }
-```
-
-## Common Use Cases
+## Common Configurations
 
 ### ZK Circuit Integration
-For use in zero-knowledge circuits:
-
 ```toml
 [dependencies]
 traverse-core = { version = "0.1", features = ["no-std"] }
-traverse-valence = { version = "0.1", features = ["no-std"] }
-```
-
-### CLI Tool
-For building the full CLI tool:
-
-```toml
-[dependencies]
-traverse-cli = { version = "0.1", features = ["std", "ethereum", "cosmos", "client"] }
-```
-
-### Web Application
-For browser-based applications:
-
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["wasm", "ethereum"] }
-```
-
-### Server Application
-For server-side applications with live blockchain access:
-
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["std", "ethereum", "client"] }
-```
-
-### Embedded System
-For resource-constrained environments:
-
-```toml
-[dependencies]
-traverse-core = { version = "0.1", features = ["embedded"] }
-```
-
-### Memory-Constrained Circuit
-For ZK circuits with strict memory limits:
-
-```toml
-[dependencies]
-traverse-core = { version = "0.1", features = ["constrained"] }
 traverse-valence = { version = "0.1", features = ["constrained"] }
 ```
 
-### Microcontroller
-For bare-metal embedded systems:
-
+### Ethereum Application
 ```toml
 [dependencies]
-traverse-core = { version = "0.1", features = ["embedded"] }
+traverse = { version = "0.1", features = ["ethereum", "client"] }
 ```
 
-## Version Compatibility
-
-All dependencies use flexible version ranges to ensure compatibility:
-
-- **Alloy**: `>=0.9.0,<2.0` - Supports Alloy 0.9+ through 1.x
-- **Serde**: `>=1.0.0,<2.0` - Supports all Serde 1.x versions
-- **Tokio**: `>=1.0.0,<2.0` - Supports all Tokio 1.x versions
-
-This allows you to upgrade dependencies within major version ranges without breaking compatibility.
-
-## Feature Combinations
-
-### Valid Combinations
-
-```toml
-# Full-featured development
-traverse = { features = ["std", "ethereum", "cosmos", "client", "examples"] }
-
-# Production server
-traverse = { features = ["std", "ethereum", "client"] }
-
-# Browser application
-traverse = { features = ["wasm", "ethereum"] }
-
-# ZK circuit
-traverse-core = { features = ["no-std"] }
-traverse-valence = { features = ["no-std"] }
-
-# Minimal CLI
-traverse-cli = { features = ["minimal", "ethereum"] }
-```
-
-### Invalid Combinations
-
-```toml
-# ❌ Cannot combine std and no-std
-traverse = { features = ["std", "no-std"] }
-
-# ❌ Client requires std
-traverse = { features = ["no-std", "client"] }
-
-# ❌ Examples require std
-traverse = { features = ["minimal", "examples"] }
-```
-
-## Migration Guide
-
-### From Previous Versions
-
-If you were using traverse without explicit features:
-
-**Before:**
+### Solana Application
 ```toml
 [dependencies]
-traverse = "0.1"
+traverse = { version = "0.1", features = ["solana", "client"], default-features = false }
 ```
 
-**After:**
-```toml
-[dependencies]
-traverse = { version = "0.1", features = ["std", "ethereum"] }
+## Building with Nix
+
+### Individual Packages
+```bash
+nix build .#traverse-ethereum
+nix build .#traverse-solana
+nix build .#traverse-cosmos
 ```
 
-### For Specific Use Cases
-
-**CLI Development:**
-```toml
-# Before
-traverse-cli = "0.1"
-
-# After
-traverse-cli = { version = "0.1", features = ["std", "ethereum", "client"] }
+### Running Tests
+```bash
+nix flake check                    # All ecosystems
+nix build .#checks.$SYSTEM.traverse-ethereum-tests  # Specific ecosystem
 ```
 
-**Circuit Integration:**
-```toml
-# Before
-traverse-valence = "0.1"
-
-# After
-traverse-valence = { version = "0.1", features = ["no-std"] }
+### Development Shells
+```bash
+nix develop .#ethereum  # Ethereum development
+nix develop .#solana    # Solana development  
+nix develop .#cosmos    # Cosmos development
 ```
 
-## Building
+## Building with Cargo
 
-### Check Available Features
+When using Cargo directly, you must manually ensure only one blockchain ecosystem is enabled:
 
 ```bash
-# List all available features
-cargo metadata --format-version=1 | jq '.packages[] | select(.name == "traverse") | .features'
-```
-
-### Build with Specific Features
-
-```bash
-# Build with ethereum support only
+# Ethereum only
 cargo build --features ethereum
 
-# Build minimal version
-cargo build --features minimal --no-default-features
+# Solana only (disable defaults)
+cargo build --features solana --no-default-features
 
-# Build for WASM
-cargo build --target wasm32-unknown-unknown --features wasm --no-default-features
+# Test specific ecosystem
+cargo test --features ethereum --package traverse-ethereum
 ```
 
-### Test with Features
+### Using Nix for Multi-Ecosystem Projects
 
-```bash
-# Test with all features
-cargo test --all-features
+Create a flake.nix that builds separate binaries:
 
-# Test minimal build
-cargo test --features minimal --no-default-features
-
-# Test no-std build
-cargo test --features no-std --no-default-features
+```nix
+{
+  packages = {
+    ethereum-processor = traverse.packages.traverse-ethereum-cli;
+    solana-processor = traverse.packages.traverse-solana-cli;
+  };
+}
 ```
-
-## Troubleshooting
-
-### Common Issues
-
-**Error: "feature not found"**
-- Ensure the feature exists in the crate you're using
-- Check if the feature requires other features to be enabled
-
-**Error: "dependency not found"**
-- Some features make dependencies optional
-- Enable the appropriate feature flag
-
-**Error: "std not available"**
-- You're trying to use std features in a no-std build
-- Use `no-std` or `minimal` features instead
-
-### Getting Help
-
-If you encounter issues with feature flags:
-
-1. Check the feature documentation for your specific crate
-2. Look at the examples in the repository
-3. File an issue with your use case and target environment
-
-## Performance Notes
-
-### Binary Size Impact
-
-| Feature Set | Approximate Binary Size |
-|-------------|------------------------|
-| `no-std` | ~50KB |
-| `constrained` | ~75KB |
-| `embedded` | ~60KB |
-| `minimal` | ~200KB |
-| `wasm` | ~500KB |
-| `std` | ~2MB |
-| `lightweight` | ~3MB |
-| `ethereum` (lightweight) | ~3.5MB |
-| `ethereum-full` | ~6MB |
-| `std + client` | ~5MB |
-| `std + client + examples` | ~10MB |
-
-### Compile Time Impact
-
-| Feature Set | Approximate Compile Time |
-|-------------|-------------------------|
-| `no-std` | ~30s |
-| `constrained` | ~45s |
-| `embedded` | ~35s |
-| `minimal` | ~1m |
-| `wasm` | ~1m 30s |
-| `std` | ~2m |
-| `lightweight` | ~2m 30s |
-| `ethereum` (lightweight) | ~3m |
-| `ethereum-full` | ~5m |
-| `std + client` | ~3m |
-| `std + client + examples` | ~5m |
-
-### Alloy Integration Comparison
-
-| Integration Level | Dependencies | Compile Time | Binary Size | Use Case |
-|------------------|--------------|--------------|-------------|----------|
-| **Fallback** | None | Fastest | Smallest | Basic encoding only |
-| **Lightweight** (`lightweight-alloy`) | alloy-primitives, alloy-sol-types, alloy-rpc-types-eth, alloy-provider, alloy-transport-http | ~50% faster than full | ~40% smaller than full | Recommended for most apps |
-| **Full Alloy** | Complete alloy ecosystem (add as direct dependency) | Slowest | Largest | Advanced alloy features needed |
-
-### Dependency Count Comparison
-
-| Feature Set | Total Dependencies | Alloy Components |
-|-------------|-------------------|------------------|
-| `minimal` | ~15 | 0 |
-| `lightweight` | ~35 | 3 minimal |
-| `ethereum-full` | ~80+ | Complete ecosystem |
-
-These are approximate values and will vary based on your hardware and caching. 

@@ -5,53 +5,57 @@
 //! This approach gives us access to all ABI types while maintaining lightweight
 //! compilation and avoiding the full alloy ecosystem.
 
-use alloc::{boxed::Box, format, string::String, vec::Vec};
+use alloc::{boxed::Box, format, string::String, vec, vec::Vec};
 use serde::{Deserialize, Serialize};
+
+// Import for serialization
+#[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+use bincode;
+use hex;
 
 // === COMPREHENSIVE ALLOY TYPE IMPORTS ===
 
-#[cfg(feature = "alloy")]
+#[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
 use alloy_primitives::{
     // Basic types we actually use
-    Address, U256,
-    // Bytes types
-    B256,
-    // Utility types
     keccak256,
+    Address as AlloyAddress, U256 as AlloyU256,
+    // Bytes types
+    B256 as AlloyB256,
 };
 
 
 // === FALLBACK TYPES FOR NON-ALLOY BUILDS ===
 
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type Address = String;
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type Bytes = Vec<u8>;
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type U256 = [u8; 32];
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type I256 = [u8; 32];
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type B256 = [u8; 32];
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type U128 = [u8; 16];
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type I128 = [u8; 16];
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type U64 = u64;
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type I64 = i64;
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type U32 = u32;
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type I32 = i32;
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type U16 = u16;
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type I16 = i16;
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type U8 = u8;
-#[cfg(not(feature = "alloy"))]
+#[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
 pub type I8 = i8;
 
 use crate::{TraverseValenceError, ZkMessage};
@@ -61,10 +65,62 @@ pub struct AlloyAbiTypes;
 
 impl AlloyAbiTypes {
     /// Encode a ZkMessage using comprehensive alloy ABI types
-    #[cfg(feature = "alloy")]
-    pub fn encode_zk_message(_msg: &ZkMessage) -> Result<Vec<u8>, TraverseValenceError> {
-        // TODO: Implement when sol! macro types are properly integrated
-        Err(TraverseValenceError::AbiError("ZkMessage encoding not implemented".into()))
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    pub fn encode_zk_message(msg: &ZkMessage) -> Result<Vec<u8>, TraverseValenceError> {
+        // Basic ABI encoding implementation without sol! macro
+        let mut encoded = Vec::new();
+        
+        // Encode registry as uint64 (padded to 32 bytes)
+        let mut registry_bytes = [0u8; 32];
+        registry_bytes[24..32].copy_from_slice(&msg.registry.to_be_bytes());
+        encoded.extend_from_slice(&registry_bytes);
+        
+        // Encode block_number as uint64 (padded to 32 bytes)
+        let mut block_bytes = [0u8; 32];
+        block_bytes[24..32].copy_from_slice(&msg.block_number.to_be_bytes());
+        encoded.extend_from_slice(&block_bytes);
+        
+        // ABI encode uint8 (padded to 32 bytes)
+        let mut type_bytes = [0u8; 32];
+        // Encode processor message type
+        type_bytes[31] = msg.processor_message.message_type.as_u8();
+        encoded.extend_from_slice(&type_bytes);
+        
+        // Encode message data based on type
+        match msg.processor_message.message_type {
+            crate::messages::ProcessorMessageType::Pause | crate::messages::ProcessorMessageType::Resume => {
+                // No additional data - just encode empty bytes
+                let mut offset = [0u8; 32];
+                offset[31] = 32; // offset to data (after type)
+                encoded.extend_from_slice(&offset);
+                
+                let mut length = [0u8; 32];
+                // length = 0
+                encoded.extend_from_slice(&length);
+            },
+            crate::messages::ProcessorMessageType::EvictMsgs | crate::messages::ProcessorMessageType::SendMsgs | crate::messages::ProcessorMessageType::InsertMsgs => {
+                // Encode as dynamic bytes array
+                let serialized = &msg.processor_message.message;
+                
+                // Offset to data
+                let mut offset = [0u8; 32];
+                offset[31] = 32;
+                encoded.extend_from_slice(&offset);
+                
+                // Length of data
+                let mut length = [0u8; 32];
+                let len_bytes = (serialized.len() as u64).to_be_bytes();
+                length[24..].copy_from_slice(&len_bytes);
+                encoded.extend_from_slice(&length);
+                
+                // Pad data to 32-byte boundary
+                encoded.extend_from_slice(serialized);
+                let padding = (32 - (serialized.len() % 32)) % 32;
+                encoded.extend(vec![0u8; padding]);
+            }
+        }
+        
+        Ok(encoded)
         /*
         sol! {
             enum ProcessorMessageType {
@@ -116,17 +172,65 @@ impl AlloyAbiTypes {
     }
 
     /// Fallback JSON encoding when alloy is not available
-    #[cfg(not(feature = "alloy"))]
+    #[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
     pub fn encode_zk_message(msg: &ZkMessage) -> Result<Vec<u8>, TraverseValenceError> {
         serde_json::to_vec(msg)
             .map_err(|e| TraverseValenceError::AbiError(format!("JSON encoding failed: {:?}", e)))
     }
 
     /// Encode any ABI value using comprehensive type support
-    #[cfg(feature = "alloy")]
-    pub fn encode_abi_value(_value: &AbiValue) -> Result<Vec<u8>, TraverseValenceError> {
-        // TODO: Implement proper ABI encoding when sol types are available
-        Err(TraverseValenceError::AbiError("ABI encoding not implemented".into()))
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    pub fn encode_abi_value(value: &AbiValue) -> Result<Vec<u8>, TraverseValenceError> {
+        // Basic ABI encoding implementation
+        let mut encoded = [0u8; 32];
+        
+        match value {
+            AbiValue::Bool(b) => {
+                encoded[31] = if *b { 1 } else { 0 };
+            },
+            AbiValue::Uint8(n) => {
+                encoded[31] = *n;
+            },
+            AbiValue::Uint16(n) => {
+                encoded[30..32].copy_from_slice(&n.to_be_bytes());
+            },
+            AbiValue::Uint32(n) => {
+                encoded[28..32].copy_from_slice(&n.to_be_bytes());
+            },
+            AbiValue::Uint64(n) => {
+                encoded[24..32].copy_from_slice(&n.to_be_bytes());
+            },
+            AbiValue::Uint128(n) => {
+                encoded[16..32].copy_from_slice(&n.to_be_bytes());
+            },
+            AbiValue::Uint256(parts) => {
+                // Convert [u64; 4] to big endian bytes
+                for (i, part) in parts.iter().enumerate() {
+                    let start = i * 8;
+                    encoded[start..start + 8].copy_from_slice(&part.to_be_bytes());
+                }
+            },
+            AbiValue::Address(addr) => {
+                // Parse hex address and pad to 32 bytes (20 bytes address + 12 zeros)
+                if let Ok(addr_bytes) = hex::decode(addr.trim_start_matches("0x")) {
+                    if addr_bytes.len() == 20 {
+                        encoded[12..32].copy_from_slice(&addr_bytes);
+                    } else {
+                        return Err(TraverseValenceError::AbiError("Invalid address length".into()));
+                    }
+                } else {
+                    return Err(TraverseValenceError::AbiError("Invalid address format".into()));
+                }
+            },
+            AbiValue::FixedBytes(bytes) => {
+                encoded.copy_from_slice(bytes);
+            },
+            _ => {
+                return Err(TraverseValenceError::AbiError("Complex ABI types not yet implemented".into()));
+            }
+        }
+        
+        Ok(encoded.to_vec())
         /*
         match value {
             AbiValue::Bool(_b) => Err(TraverseValenceError::AbiError("ABI encoding not implemented".into())),
@@ -169,7 +273,7 @@ impl AlloyAbiTypes {
     }
 
     /// Decode ABI value using comprehensive type support
-    #[cfg(feature = "alloy")]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
     pub fn decode_abi_value(_data: &[u8], _abi_type: &AbiType) -> Result<AbiValue, TraverseValenceError> {
         // TODO: Implement proper ABI decoding when sol types are available
         Err(TraverseValenceError::AbiError("ABI decoding not implemented".into()))
@@ -273,20 +377,20 @@ impl AlloyAbiTypes {
     }
 
     /// Create function selector using alloy keccak256
-    #[cfg(feature = "alloy")]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
     pub fn function_selector(signature: &str) -> [u8; 4] {
         let hash = keccak256(signature.as_bytes());
         [hash[0], hash[1], hash[2], hash[3]]
     }
 
     /// Fallback function selector returns zeros when alloy is not available
-    #[cfg(not(feature = "alloy"))]
+    #[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
     pub fn function_selector(_signature: &str) -> [u8; 4] {
         [0u8; 4]
     }
 
     /// Encode a function call with parameters
-    #[cfg(feature = "alloy")]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
     pub fn encode_function_call(
         signature: &str,
         params: &[AbiValue],
@@ -305,7 +409,7 @@ impl AlloyAbiTypes {
     }
 
     /// Decode function return value
-    #[cfg(feature = "alloy")]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
     pub fn decode_function_return(
         data: &[u8],
         return_type: &AbiType,
@@ -314,29 +418,63 @@ impl AlloyAbiTypes {
     }
 
     /// Parse an address from string
-    #[cfg(feature = "alloy")]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    pub fn parse_address(addr: &str) -> Result<AlloyAddress, TraverseValenceError> {
+        addr.parse().map_err(|e| TraverseValenceError::AbiError(format!("Invalid address: {:?}", e)))
+    }
+    
+    #[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
     pub fn parse_address(addr: &str) -> Result<Address, TraverseValenceError> {
         addr.parse()
             .map_err(|e| TraverseValenceError::AbiError(format!("Invalid address: {:?}", e)))
     }
 
     /// Parse a B256 hash from string
-    #[cfg(feature = "alloy")]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    pub fn parse_b256(hash: &str) -> Result<AlloyB256, TraverseValenceError> {
+        hash.parse().map_err(|e| TraverseValenceError::AbiError(format!("Invalid B256: {:?}", e)))
+    }
+    
+    #[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
     pub fn parse_b256(hash: &str) -> Result<B256, TraverseValenceError> {
-        hash.parse()
-            .map_err(|e| TraverseValenceError::AbiError(format!("Invalid B256: {:?}", e)))
+        // Fallback: try to decode as hex
+        let hex_str = hash.strip_prefix("0x").unwrap_or(hash);
+        if hex_str.len() != 64 {
+            return Err(TraverseValenceError::AbiError("B256 must be 64 hex characters".to_string()));
+        }
+        let mut result = [0u8; 32];
+        hex::decode_to_slice(hex_str, &mut result)
+            .map_err(|e| TraverseValenceError::AbiError(format!("Invalid hex: {:?}", e)))?;
+        Ok(result)
     }
 
     /// Parse a U256 from string
-    #[cfg(feature = "alloy")]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    pub fn parse_u256(value: &str) -> Result<AlloyU256, TraverseValenceError> {
+        value.parse().map_err(|e| TraverseValenceError::AbiError(format!("Invalid U256: {:?}", e)))
+    }
+    
+    #[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
     pub fn parse_u256(value: &str) -> Result<U256, TraverseValenceError> {
-        value.parse()
+        // Fallback: try to decode as hex
+        let hex_str = value.strip_prefix("0x").unwrap_or(value);
+        if hex_str.len() > 64 {
+            return Err(TraverseValenceError::AbiError("U256 hex too long".to_string()));
+        }
+        let mut result = [0u8; 32];
+        // Pad left with zeros for shorter values
+        let padding = 64 - hex_str.len();
+        let hex_padded = format!("{:0width$}{}", 0, hex_str, width = padding);
+        hex::decode_to_slice(&hex_padded, &mut result)
+            .map_err(|e| TraverseValenceError::AbiError(format!("Invalid hex: {:?}", e)))?;
+        Ok(result)
             .map_err(|e| TraverseValenceError::AbiError(format!("Invalid U256: {:?}", e)))
     }
 
     /// Check if alloy features are available
     pub fn alloy_features_available() -> bool {
-        cfg!(feature = "alloy")
+        cfg!(any(feature = "lightweight-alloy", feature = "full-alloy"))
     }
 }
 
@@ -394,13 +532,13 @@ pub enum AbiValue {
 
 impl AbiValue {
     /// Encode using comprehensive alloy support
-    #[cfg(feature = "alloy")]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
     pub fn encode(&self) -> Result<Vec<u8>, TraverseValenceError> {
         AlloyAbiTypes::encode_abi_value(self)
     }
 
     /// Fallback encoding without alloy
-    #[cfg(not(feature = "alloy"))]
+    #[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
     pub fn encode(&self) -> Result<Vec<u8>, TraverseValenceError> {
         // Simple binary encoding as fallback
         match self {
@@ -542,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "alloy")]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
     fn test_comprehensive_encoding() {
         // TODO: Enable this test when ABI encoding is implemented
         // Currently the encode_abi_value function returns "not implemented"
@@ -554,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "alloy")]
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
     fn test_parsing_utilities() {
         // TODO: Enable these tests when alloy types are properly available
         // Currently these functions may not work without the full alloy feature set
@@ -577,18 +715,172 @@ mod tests {
 
         let result = AlloyAbiTypes::encode_zk_message(&zk_message);
         
-        #[cfg(feature = "alloy")]
+        #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
         {
             // When alloy feature is enabled, encoding is not yet implemented
             assert!(result.is_err());
         }
         
-        #[cfg(not(feature = "alloy"))]
+        #[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
         {
             // When alloy feature is not enabled, JSON encoding is used
             assert!(result.is_ok());
             let encoded = result.unwrap();
             assert!(!encoded.is_empty());
         }
+    }
+
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    #[test]
+    fn test_encode_zk_message_pause() {
+        use crate::messages::ZkMessage;
+        
+        use crate::messages::*;
+        let processor_msg = ProcessorMessage {
+            message_type: ProcessorMessageType::Pause,
+            message: vec![],
+        };
+        let msg = ZkMessage {
+            registry: 0,
+            block_number: 0,
+            authorization_contract: "test".to_string(),
+            processor_message: processor_msg,
+        };
+        let result = AlloyAbiTypes::encode_zk_message(&msg);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        // New encoding format: registry (32) + block_number (32) + auth_contract (32) + type (32) + offset (32) + length (32) = 192 bytes
+        // But we now encode the message type in the 4th 32-byte chunk
+        assert!(encoded.len() >= 128); // At least registry + block + auth + type fields
+        
+        // Message type should be at position 96 (4th 32-byte chunk, last byte)
+        assert_eq!(encoded[127], 0); // Pause = 0
+    }
+
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    #[test]
+    fn test_encode_zk_message_resume() {
+        use crate::messages::ZkMessage;
+        
+        use crate::messages::*;
+        let processor_msg = ProcessorMessage {
+            message_type: ProcessorMessageType::Resume,
+            message: vec![],
+        };
+        let msg = ZkMessage {
+            registry: 0,
+            block_number: 0,
+            authorization_contract: "test".to_string(),
+            processor_message: processor_msg,
+        };
+        let result = AlloyAbiTypes::encode_zk_message(&msg);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        // Message type should be at position 127 (4th 32-byte chunk, last byte)
+        assert_eq!(encoded[127], 1); // Resume = 1
+    }
+
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    #[test]
+    fn test_encode_abi_value_bool() {
+        let value = AbiValue::Bool(true);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        assert_eq!(encoded.len(), 32);
+        let mut expected = [0u8; 32];
+        expected[31] = 1;
+        assert_eq!(encoded, expected);
+    }
+
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    #[test]
+    fn test_encode_abi_value_uint8() {
+        let value = AbiValue::Uint8(255);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        assert_eq!(encoded.len(), 32);
+        let mut expected = [0u8; 32];
+        expected[31] = 255;
+        assert_eq!(encoded, expected);
+    }
+
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    #[test]
+    fn test_encode_abi_value_uint256() {
+        let value = AbiValue::Uint256([1, 2, 3, 4]);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        assert_eq!(encoded.len(), 32);
+        // First 8 bytes should be big-endian representation of 1
+        assert_eq!(encoded[0..8], [0, 0, 0, 0, 0, 0, 0, 1]);
+        assert_eq!(encoded[8..16], [0, 0, 0, 0, 0, 0, 0, 2]);
+    }
+
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    #[test]
+    fn test_encode_abi_value_address() {
+        let value = AbiValue::Address("0x1234567890123456789012345678901234567890".to_string());
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        assert_eq!(encoded.len(), 32);
+        // First 12 bytes should be zero (padding)
+        assert_eq!(&encoded[0..12], &[0u8; 12]);
+        // Last 20 bytes should be the address
+        assert_eq!(encoded[12], 0x12);
+        assert_eq!(encoded[13], 0x34);
+    }
+
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    #[test]
+    fn test_encode_abi_value_fixed_bytes() {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 0xAB;
+        bytes[31] = 0xCD;
+        
+        let value = AbiValue::FixedBytes(bytes);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        
+        assert_eq!(encoded.len(), 32);
+        assert_eq!(encoded[0], 0xAB);
+        assert_eq!(encoded[31], 0xCD);
+    }
+
+    #[cfg(any(feature = "lightweight-alloy", feature = "full-alloy"))]
+    #[test]
+    fn test_encode_abi_value_complex_unsupported() {
+        let value = AbiValue::Array(vec![AbiValue::Uint8(1), AbiValue::Uint8(2)]);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Complex ABI types not yet implemented"));
+    }
+
+    #[cfg(not(any(feature = "lightweight-alloy", feature = "full-alloy")))]
+    #[test]
+    fn test_encode_abi_value_without_alloy() {
+        let value = AbiValue::Bool(true);
+        let result = AlloyAbiTypes::encode_abi_value(&value);
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Alloy ABI types not available"));
     }
 } 

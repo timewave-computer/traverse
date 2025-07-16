@@ -45,17 +45,17 @@ rlp = { workspace = true, optional = true }
 
 # Heavy dependencies (optional)
 tokio = { workspace = true, optional = true }
-reqwest = { version = ">=0.11.0,<1.0", features = ["json"], optional = true }
+reqwest = { workspace = true, optional = true }
 
 # Selective alloy imports - only the specific crates we need
-alloy-primitives = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
-alloy-sol-types = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
-alloy-rpc-types-eth = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
-alloy-provider = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
-alloy-transport-http = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
+alloy-primitives = { workspace = true, optional = true }
+alloy-sol-types = { workspace = true, optional = true }
+alloy-rpc-types-eth = { workspace = true, optional = true }
+alloy-provider = { workspace = true, optional = true }
+alloy-transport-http = { workspace = true, optional = true }
 
 # Optional valence-domain-clients integration
-valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", branch = "main", optional = true }
+valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", rev = "d2fd402366d54f4421c15c7b33ccd6eecbfbcd2b", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

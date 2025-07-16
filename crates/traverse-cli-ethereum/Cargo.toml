@@ -1,0 +1,49 @@
+# Ethereum-specific CLI for traverse ZK storage path generation
+[package]
+name = "traverse-cli-ethereum"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Ethereum-specific CLI for traverse ZK storage path generation"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std", "ethereum"]
+std = ["traverse-cli-core/std", "traverse-ethereum?/std"]
+ethereum = ["dep:traverse-ethereum", "traverse-ethereum?/ethereum"]
+client = ["traverse-ethereum?/client"]
+
+[dependencies]
+# Shared CLI core
+traverse-cli-core = { path = "../traverse-cli-core" }
+
+# Ethereum ecosystem crates only
+traverse-core = { path = "../traverse-core" }
+traverse-ethereum = { path = "../traverse-ethereum", optional = true }
+
+# CLI dependencies
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+base64 = { workspace = true }
+bincode = { workspace = true }
+hex = { workspace = true }
+toml = { workspace = true }
+reqwest = { workspace = true }
+chrono = { workspace = true }
+
+[[bin]]
+name = "traverse-ethereum"
+path = "src/main.rs"
+required-features = ["std", "ethereum"]
+
+[dev-dependencies]
+tempfile = { workspace = true }
+mockito = "1.4" 

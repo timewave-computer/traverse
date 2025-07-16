@@ -960,7 +960,7 @@ mod tests {
             block_hash: [0u8; 32],
         };
         
-        // Should be valid - non-zero values with ValidZero semantics is allowed
+        // Should be valid - non-zero values with ValidZero semantics are allowed
         let result = processor.process_witness(&witness);
         assert!(matches!(result, CircuitResult::Valid { .. }));
         
@@ -1284,19 +1284,19 @@ mod tests {
                     value[31] = 0xFF;
                 },
                 FieldType::Uint64 => {
-                    for i in 24..32 {
-                        value[i] = 0xFF;
+                    for item in value.iter_mut().skip(24) {
+                        *item = 0xFF;
                     }
                 },
                 FieldType::Uint256 | FieldType::Bytes32 => {
-                    for i in 0..32 {
-                        value[i] = 0xFF;
+                    for item in &mut value {
+                        *item = 0xFF;
                     }
                 },
                 FieldType::Address => {
                     // Valid non-zero address
-                    for i in 12..32 {
-                        value[i] = 0x42;
+                    for item in value.iter_mut().skip(12) {
+                        *item = 0x42;
                     }
                 },
                 _ => {
@@ -1490,8 +1490,8 @@ mod tests {
                 // Test Address extraction with pattern
         let mut value_addr = [0u8; 32];
         // Set address bytes (12-31)
-        for i in 12..32 {
-            value_addr[i] = (i - 12) as u8;
+        for (idx, item) in value_addr.iter_mut().enumerate().skip(12) {
+            *item = (idx - 12) as u8;
         }
 
         let witness_addr = CircuitWitness {
@@ -1510,8 +1510,8 @@ mod tests {
         if let CircuitResult::Valid { extracted_value, .. } = result {
             if let ExtractedValue::Address(addr) = extracted_value {
                 // Check address extraction
-                for i in 0..20 {
-                    assert_eq!(addr[i], i as u8);
+                for (i, &byte) in addr.iter().enumerate() {
+                    assert_eq!(byte, i as u8);
                 }
             } else {
                 panic!("Expected Address extraction");

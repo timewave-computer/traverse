@@ -6,6 +6,9 @@
 use sha2::{Digest, Sha256};
 use traverse_core::{Key, KeyResolver, LayoutInfo, StaticKeyPath, TraverseError};
 
+#[cfg(not(feature = "std"))]
+use alloc::{format, vec::Vec, string::String};
+
 /// CosmWasm key resolver that handles Cosmos-specific storage patterns
 ///
 /// CosmWasm uses a different storage model than Ethereum:

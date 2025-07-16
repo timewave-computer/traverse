@@ -2,78 +2,88 @@
 //!
 //! This module defines the error types used throughout the traverse library.
 
-use alloc::format;
 use alloc::string::String;
+#[cfg(feature = "serde")]
+use alloc::format;
+#[cfg(feature = "std")]
+use std::io;
 
 /// Error type for the traverse library
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum TraverseError {
     /// I/O error
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    #[cfg(feature = "std")]
+    #[cfg_attr(feature = "std", error("I/O error: {0}"))]
+    Io(#[from] io::Error),
+    
+    /// I/O error (no-std)
+    #[cfg(not(feature = "std"))]
+    #[cfg_attr(feature = "std", error("I/O error: {0}"))]
+    Io(String),
 
     /// Serialization error
-    #[error("Serialization error: {0}")]
+    #[cfg_attr(feature = "std", error("Serialization error: {0}"))]
     Serialization(String),
 
     /// Layout compilation error
-    #[error("Layout compilation error: {0}")]
+    #[cfg_attr(feature = "std", error("Layout compilation error: {0}"))]
     LayoutCompilation(String),
 
     /// Key resolution error
-    #[error("Key resolution error: {0}")]
+    #[cfg_attr(feature = "std", error("Key resolution error: {0}"))]
     KeyResolution(String),
 
     /// Proof generation error
-    #[error("Proof generation error: {0}")]
+    #[cfg_attr(feature = "std", error("Proof generation error: {0}"))]
     ProofGeneration(String),
 
     /// Invalid input error
-    #[error("Invalid input: {0}")]
+    #[cfg_attr(feature = "std", error("Invalid input: {0}"))]
     InvalidInput(String),
 
     /// Feature not supported error
-    #[error("Feature not supported: {0}")]
+    #[cfg_attr(feature = "std", error("Feature not supported: {0}"))]
     FeatureNotSupported(String),
 
     /// Configuration error
-    #[error("Configuration error: {0}")]
+    #[cfg_attr(feature = "std", error("Configuration error: {0}"))]
     Configuration(String),
 
     /// External service error
-    #[error("External service error: {0}")]
+    #[cfg_attr(feature = "std", error("External service error: {0}"))]
     ExternalService(String),
 
     /// Validation error
-    #[error("Validation error: {0}")]
+    #[cfg_attr(feature = "std", error("Validation error: {0}"))]
     Validation(String),
 
     /// Semantic error
-    #[error("Semantic error: {0}")]
+    #[cfg_attr(feature = "std", error("Semantic error: {0}"))]
     Semantic(String),
 
     /// Circuit generation error
-    #[error("Circuit generation error: {0}")]
+    #[cfg_attr(feature = "std", error("Circuit generation error: {0}"))]
     CircuitGeneration(String),
 
     /// Witness generation error
-    #[error("Witness generation error: {0}")]
+    #[cfg_attr(feature = "std", error("Witness generation error: {0}"))]
     WitnessGeneration(String),
 
     /// Memory allocation error
-    #[error("Memory allocation error: {0}")]
+    #[cfg_attr(feature = "std", error("Memory allocation error: {0}"))]
     MemoryAllocation(String),
 
     /// Constraint violation error
-    #[error("Constraint violation: {0}")]
+    #[cfg_attr(feature = "std", error("Constraint violation: {0}"))]
     ConstraintViolation(String),
 
     /// Hash computation error
-    #[error("Hash computation error: {0}")]
+    #[cfg_attr(feature = "std", error("Hash computation error: {0}"))]
     HashComputation(String),
 
     /// Compatibility error
-    #[error("Compatibility error: {0}")]
+    #[cfg_attr(feature = "std", error("Compatibility error: {0}"))]
     Compatibility(String),
 }
 

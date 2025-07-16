@@ -89,7 +89,9 @@ pub enum ZeroSemantics {
 
 ## Step-by-Step Integration
 
-### 1. Fork Valence Coprocessor Template
+### 1. Setup Your Project
+
+Start with the Valence coprocessor template:
 
 ```bash
 git clone https://github.com/timewave-computer/valence-coprocessor-app my-storage-verifier
@@ -412,19 +414,19 @@ First, obtain your contract's storage layout and use traverse CLI to generate st
 
 ```bash
 # Fetch ABI and generate layout with semantic metadata
-cargo run -p traverse-cli -- compile-layout VaultContract.abi.json > vault_layout.json
+traverse-ethereum compile-layout VaultContract.abi.json > vault_layout.json
 
 # The compile-layout command automatically includes semantic specifications
 # Check the generated layout to ensure semantic specifications are correct
 jq '.storage_layout.storage[] | {label, zero_semantics}' vault_layout.json
 
 # Generate storage key with semantic specification
-cargo run -p traverse-cli -- resolve "_withdrawRequests" \
+traverse-ethereum resolve "_withdrawRequests" \
   --layout vault_layout.json \
   --format coprocessor-json > withdraw_requests_query.json
 
 # For indexed mappings with semantics
-cargo run -p traverse-cli -- resolve "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" \
+traverse-ethereum resolve "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" \
   --layout vault_layout.json \
   --format coprocessor-json > balance_query.json
 ```
@@ -435,45 +437,43 @@ Use traverse CLI to generate complete storage proofs with semantic specification
 
 ```bash
 # Step 1: Resolve query to get storage slot
-cargo run -p traverse-cli -- resolve "_withdrawRequests" \
+traverse-ethereum resolve "_withdrawRequests" \
   --layout vault_layout.json \
   --format coprocessor-json > withdraw_query.json
 
 # Step 2: Extract slot and generate proof with semantic specification
 SLOT=$(jq -r '.storage_key' withdraw_query.json)
-cargo run -p traverse-cli -- generate-proof \
+traverse-ethereum generate-proof \
   --slot "0x$SLOT" \
   --contract 0xf2b85c389a771035a9bd147d4bf87987a7f9cf98 \
   --rpc https://mainnet.infura.io/v3/your_project_id \
-  --zero-means explicitly_zero \
+  --zero-means explicitly-zero \
   --output vault_proof.json
 
 # Generate proof with semantic validation for balance mapping
-cargo run -p traverse-cli -- resolve "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" \
+traverse-ethereum resolve "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]" \
   --layout vault_layout.json \
   --format coprocessor-json > balance_query.json
 
 SLOT=$(jq -r '.storage_key' balance_query.json)
-cargo run -p traverse-cli -- generate-proof \
+traverse-ethereum generate-proof \
   --slot "0x$SLOT" \
   --contract 0xf2b85c389a771035a9bd147d4bf87987a7f9cf98 \
   --rpc https://mainnet.infura.io/v3/your_project_id \
-  --zero-means never_written \
-  --validate-semantics \
+  --zero-means never-written \
   --output balance_proof.json
 
 # For complex scenarios with cleared semantics
-cargo run -p traverse-cli -- resolve "tempVariable" \
+traverse-ethereum resolve "tempVariable" \
   --layout vault_layout.json \
   --format coprocessor-json > temp_query.json
 
 SLOT=$(jq -r '.storage_key' temp_query.json)
-cargo run -p traverse-cli -- generate-proof \
+traverse-ethereum generate-proof \
   --slot "0x$SLOT" \
   --contract 0xf2b85c389a771035a9bd147d4bf87987a7f9cf98 \
   --rpc https://mainnet.infura.io/v3/your_project_id \
   --zero-means cleared \
-  --validate-semantics \
   --output cleared_value_proof.json
 ```
 
@@ -755,7 +755,7 @@ match verify_storage_proofs(&witnesses) {
 
 ```bash
 # 1. Test storage key generation
-cargo run -p traverse-cli -- resolve "your_query" --layout layout.json
+traverse-ethereum resolve "your_query" --layout layout.json
 
 # 2. Test with example data  
 cargo run --example valence_vault_storage --features client,examples

@@ -1,0 +1,39 @@
+# Shared CLI core functionality for traverse CLI tools
+[package]
+name = "traverse-cli-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Shared CLI core functionality for traverse CLI tools"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = ["dep:tokio", "dep:tracing-subscriber"]
+
+[dependencies]
+# Core dependencies for CLI functionality
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Dependencies for formatters
+traverse-core = { path = "../traverse-core" }
+base64 = "0.22"
+toml = "0.8"
+bincode = "1.3"
+hex = { workspace = true }
+
+# Optional std dependencies
+tokio = { workspace = true, optional = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true } 

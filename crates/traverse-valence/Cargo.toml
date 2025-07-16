@@ -26,16 +26,15 @@ wasm = ["alloc", "traverse-core/wasm", "serde/std", "serde_json/std"]
 # Modular components (following valence-coprocessor-app pattern)
 controller = ["no-std"]  # Controller is always no_std for maximum compatibility
 circuit = ["constrained"]  # Circuit is always minimal/constrained for ZK environments
-domain = []  # Domain validation (optional)
+domain = ["std", "dep:valence-domain-clients"]  # Domain validation with valence-domain-clients (requires std)
 
 # Chain-specific features (optional)
 ethereum = ["dep:rlp", "dep:tiny-keccak"]
 cosmos = []
 
-# ABI support levels
-lightweight-alloy = ["std", "dep:alloy-primitives", "dep:alloy-sol-types"]
-full-alloy = ["std", "dep:alloy"]
-alloy = ["lightweight-alloy"]
+# ABI support levels (lightweight only to avoid k256 conflicts with Solana)
+lightweight-alloy = ["std", "dep:alloy-primitives", "dep:alloy-sol-types", "dep:bincode"]
+full-alloy = ["lightweight-alloy"]  # Alias for lightweight-alloy (full alloy disabled)
 
 # Proof verification
 mpt-verification = ["dep:rlp", "dep:tiny-keccak"]
@@ -48,25 +47,27 @@ codegen = ["std", "dep:tera", "dep:toml"]
 traverse-core = { path = "../traverse-core", default-features = false }
 valence-coprocessor = { git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false }
 valence-coprocessor-wasm = { git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false, optional = true }
-serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
-serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
-hex = { version = "0.4", default-features = false, features = ["alloc"] }
-anyhow = { version = "1.0", default-features = false, optional = true }
+valence-domain-clients = { git = "https://github.com/timewave-computer/valence-domain-clients.git", rev = "d2fd402366d54f4421c15c7b33ccd6eecbfbcd2b", default-features = false, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+anyhow = { workspace = true, default-features = false, optional = true }
 
 # Chain-specific dependencies (optional)
 rlp = { version = "0.5", default-features = false, optional = true }
-tiny-keccak = { version = "2.0", default-features = false, features = ["keccak"], optional = true }
+tiny-keccak = { workspace = true, default-features = false, optional = true }
 
-# Lightweight alloy dependencies (minimal imports)
+# Lightweight alloy dependencies (minimal imports, avoids k256 conflicts)
 alloy-primitives = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
 alloy-sol-types = { version = ">=0.9.0,<2.0", default-features = false, optional = true }
 
-# Full alloy dependency (for backwards compatibility)
-alloy = { version = ">=0.9.0,<2.0", optional = true, features = ["sol-types"], default-features = false }
+# Full alloy dependency (for backwards compatibility) - DISABLED due to k256 conflicts with Solana
+# alloy = { version = ">=0.9.0,<2.0", optional = true, features = ["sol-types"], default-features = false }
 
 # Code generation dependencies (for creating custom crates)
 tera = { version = "1.0", optional = true }
-toml = { version = "0.8", optional = true }
+toml = { workspace = true, optional = true }
+bincode = { workspace = true, optional = true }
 
 [dev-dependencies]
 hex = { workspace = true, features = ["std"] } 

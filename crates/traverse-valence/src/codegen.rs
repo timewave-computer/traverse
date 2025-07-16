@@ -517,8 +517,8 @@ description = "{} - Controller"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-valence-coprocessor = {{ git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false }}
-traverse-valence = {{ path = "../../../traverse", default-features = false, features = ["controller"] }}
+valence-coprocessor = {{ "{{" }} git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false {{ "}}" }}
+traverse-valence = {{ "{{" }} path = "../../../traverse", default-features = false, features = ["controller"] {{ "}}" }}
 serde = {{ version = "1.0", default-features = false, features = ["derive", "alloc"] }}
 hex = {{ version = "0.4", default-features = false, features = ["alloc"] }}
 "#,
@@ -646,7 +646,7 @@ mod tests {
         
         assert_eq!(result.len(), 32);
         assert!(result.iter().all(|s| s == "0x00"));
-        assert_eq!(joined, "0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00");
+        assert_eq!(joined, "0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00");
     }
     
     #[cfg(feature = "std")]
@@ -1202,6 +1202,38 @@ mod tests {
     }
 } 
 
+/// Format field types as string literals for code generation
+fn format_field_types(field_types: &[String]) -> String {
+    if field_types.is_empty() {
+        return String::new();
+    }
+    
+    field_types.iter()
+        .map(|t| format!("\"{}\"", t))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Format field semantics as byte literals for code generation
+fn format_field_semantics(field_semantics: &[String]) -> String {
+    if field_semantics.is_empty() {
+        return String::new();
+    }
+    
+    field_semantics.iter()
+        .map(|s| {
+            // Convert semantic strings to byte values
+            match s.as_str() {
+                "ValidZero" => "0u8",
+                "InvalidZero" => "1u8",
+                "RequiredNonZero" => "2u8",
+                _ => "0u8" // Default
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// No-std compatible circuit template generation
 pub fn generate_circuit_template(
     layout: &LayoutInfo,
@@ -1223,8 +1255,8 @@ authors = {:?}
 description = "{} - Circuit"
 
 [dependencies]
-valence-coprocessor = {{ git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false }}
-traverse-valence = {{ path = "../../../traverse", default-features = false, features = ["circuit"] }}
+valence-coprocessor = {{ "{{" }} git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13", default-features = false {{ "}}" }}
+traverse-valence = {{ "{{" }} path = "../../../traverse", default-features = false, features = ["circuit"] {{ "}}" }}
 "#,
         options.crate_name,
         options.crate_name,
@@ -1252,22 +1284,155 @@ pub const LAYOUT_COMMITMENT: [u8; 32] = [
     {}
 ];
 
-pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {{
+pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {{{{
     let processor = CircuitProcessor::new(
         LAYOUT_COMMITMENT,
-        alloc::vec![], // TODO: Add field types from layout
-        alloc::vec![], // TODO: Add field semantics from layout
+        generate_field_types_from_layout(layout),
+        generate_field_semantics_from_layout(layout),
     );
     
-    // TODO: Implement witness processing
-    alloc::vec![0x01] // Success indicator
-}}
+    // Process witnesses through the circuit
+    let mut result = alloc::vec![0x01]; // Success indicator
+    
+    for witness in witnesses {{{{
+        // Basic witness validation
+        if witness.len() < 32 {{{{
+            return alloc::vec![0x00]; // Error indicator
+        }}}}
+        
+        // Process witness data (simplified)
+        let witness_hash = simple_hash(&witness);
+        result.extend_from_slice(&witness_hash[..8]); // First 8 bytes as proof
+    }}}}
+    
+    result
+}}}}
+
+/// Generate field types from layout
+fn generate_field_types_from_layout(layout: &LayoutInfo) -> alloc::vec::Vec<&'static str> {{{{
+    alloc::vec![{}]
+}}}}
+
+/// Generate field semantics from layout
+fn generate_field_semantics_from_layout(layout: &LayoutInfo) -> alloc::vec::Vec<u8> {{{{
+    alloc::vec![{}]
+}}}}
+
+/// Simple hash function for witness processing
+fn simple_hash(data: &[u8]) -> [u8; 32] {{{{
+    let mut result = [0u8; 32];
+    let mut state = 0x9e3779b9u32; // Golden ratio constant
+    
+    for (i, &byte) in data.iter().enumerate() {{{{
+        state = state.wrapping_mul(0x85ebca6b);
+        state = state.wrapping_add(byte as u32);
+        state = state.wrapping_add(i as u32);
+        result[i % 32] ^= (state >> 24) as u8;
+    }}}}
+    
+    result
+}}}}
 "#,
         options.crate_name,
         layout.commitment,
         layout.commitment,
-        commitment_array
+        commitment_array,
+        format_field_types(&layout.field_types),
+        format_field_semantics(&layout.field_semantics)
     );
 
     Ok((cargo_toml, lib_rs))
+}
+
+#[cfg(test)]
+mod new_functionality_tests {
+    use super::*;
+
+    #[test]
+    fn test_format_field_types_empty() {
+        let field_types = vec![];
+        let result = format_field_types(&field_types);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_format_field_types_single() {
+        let field_types = vec!["uint256".to_string()];
+        let result = format_field_types(&field_types);
+        assert_eq!(result, "\"uint256\"");
+    }
+
+    #[test]
+    fn test_format_field_types_multiple() {
+        let field_types = vec![
+            "uint256".to_string(),
+            "address".to_string(),
+            "bool".to_string(),
+        ];
+        let result = format_field_types(&field_types);
+        assert_eq!(result, "\"uint256\", \"address\", \"bool\"");
+    }
+
+    #[test]
+    fn test_format_field_semantics_empty() {
+        let field_semantics = vec![];
+        let result = format_field_semantics(&field_semantics);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_format_field_semantics_valid_zero() {
+        let field_semantics = vec!["ValidZero".to_string()];
+        let result = format_field_semantics(&field_semantics);
+        assert_eq!(result, "0u8");
+    }
+
+    #[test]
+    fn test_format_field_semantics_invalid_zero() {
+        let field_semantics = vec!["InvalidZero".to_string()];
+        let result = format_field_semantics(&field_semantics);
+        assert_eq!(result, "1u8");
+    }
+
+    #[test]
+    fn test_format_field_semantics_required_non_zero() {
+        let field_semantics = vec!["RequiredNonZero".to_string()];
+        let result = format_field_semantics(&field_semantics);
+        assert_eq!(result, "2u8");
+    }
+
+    #[test]
+    fn test_format_field_semantics_unknown() {
+        let field_semantics = vec!["UnknownSemantic".to_string()];
+        let result = format_field_semantics(&field_semantics);
+        assert_eq!(result, "0u8"); // Default fallback
+    }
+
+    #[test]
+    fn test_format_field_semantics_multiple() {
+        let field_semantics = vec![
+            "ValidZero".to_string(),
+            "InvalidZero".to_string(),
+            "RequiredNonZero".to_string(),
+            "Unknown".to_string(),
+        ];
+        let result = format_field_semantics(&field_semantics);
+        assert_eq!(result, "0u8, 1u8, 2u8, 0u8");
+    }
+
+    #[test]
+    fn test_layout_info_with_field_data() {
+        let layout = LayoutInfo {
+            commitment: "abc123".to_string(),
+            contract_name: "TestContract".to_string(),
+            field_types: vec!["uint256".to_string(), "address".to_string()],
+            field_semantics: vec!["ValidZero".to_string(), "InvalidZero".to_string()],
+            queries: vec![],
+        };
+
+        assert_eq!(layout.field_types.len(), 2);
+        assert_eq!(layout.field_semantics.len(), 2);
+        assert_eq!(format_field_types(&layout.field_types), "\"uint256\", \"address\"");
+        assert_eq!(format_field_semantics(&layout.field_semantics), "0u8, 1u8");
+    }
 } 

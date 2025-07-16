@@ -10,7 +10,10 @@ This document details the comprehensive security testing framework implemented f
 
 #### Layout Commitment Security
 - **Attack Vector**: Layout commitment tampering and substitution attacks
-- **Tests**: `test_security_layout_commitment_tampering`, `test_security_layout_commitment_substitution`
+- **Tests**: 
+  - `test_security_layout_commitment_tampering` (controller.rs)
+  - `test_security_layout_commitment_substitution` (circuit.rs)
+  - `test_security_layout_commitment_injection` (codegen.rs)
 - **Coverage**: 
   - Different layout commitments produce different witnesses
   - Circuit rejects witnesses with wrong layout commitments
@@ -18,7 +21,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Storage Key Security  
 - **Attack Vector**: Storage key injection and manipulation
-- **Tests**: `test_security_storage_key_injection`
+- **Tests**: `test_security_storage_key_injection` (controller.rs)
 - **Coverage**:
   - SQL-like injection attempts with special characters
   - Buffer overflow attempts with 0xFF/0x00 patterns
@@ -26,7 +29,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Hex Parsing Security
 - **Attack Vector**: Hex parsing injection and path traversal
-- **Tests**: `test_security_hex_parsing_injection`
+- **Tests**: `test_security_hex_parsing_injection` (controller.rs)
 - **Coverage**:
   - Path traversal attempts (`../etc/passwd`)
   - URL encoding bypass attempts
@@ -39,15 +42,15 @@ This document details the comprehensive security testing framework implemented f
 
 #### Semantic Enum Validation
 - **Attack Vector**: Invalid semantic values bypassing validation
-- **Tests**: `test_security_semantic_enum_boundary_validation`
+- **Tests**: `test_security_semantic_enum_boundary_validation` (controller.rs)
 - **Coverage**:
-  - Valid values (0-3 for zero_semantics, 0-2 for semantic_source)
+  - Valid values (0-3 for zero_semantics)
   - Invalid boundary values (4, 5, 100, 255)
   - Error message information leakage prevention
 
 #### Semantic Manipulation Attacks
 - **Attack Vector**: Attackers manipulating semantic claims to bypass validation
-- **Tests**: `test_security_semantic_manipulation_attacks`
+- **Tests**: `test_security_semantic_manipulation_attacks` (circuit.rs)
 - **Coverage**:
   - Circuit enforces layout semantics over witness semantics
   - Zero addresses with NeverWritten semantics properly rejected
@@ -55,7 +58,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Zero Value Edge Cases
 - **Attack Vector**: Edge cases in zero value handling that could bypass semantic validation
-- **Tests**: `test_security_zero_value_edge_cases`
+- **Tests**: `test_security_zero_value_edge_cases` (circuit.rs)
 - **Coverage**:
   - Zero addresses with different semantic combinations
   - Zero uint256 values with ValidZero semantics
@@ -65,7 +68,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Memory Bounds Checking
 - **Attack Vector**: Buffer overflow and out-of-bounds access
-- **Tests**: `test_security_memory_bounds_checking`
+- **Tests**: `test_security_memory_bounds_checking` (controller.rs)
 - **Coverage**:
   - Incorrect field lengths (31/33 bytes instead of 32)
   - All critical fields validated for exact length requirements
@@ -73,7 +76,9 @@ This document details the comprehensive security testing framework implemented f
 
 #### Proof Size DoS Protection
 - **Attack Vector**: Denial of service through extremely large proof data
-- **Tests**: `test_security_proof_data_size_limits`, `test_security_proof_size_dos_protection`
+- **Tests**: 
+  - `test_security_proof_data_size_limits` (controller.rs)
+  - `test_security_proof_size_dos_protection` (circuit.rs)
 - **Coverage**:
   - Reasonable proof sizes (0, 32, 64, 1024, 4096 bytes)
   - Extremely large proofs (10MB) handled gracefully
@@ -81,7 +86,9 @@ This document details the comprehensive security testing framework implemented f
 
 #### Memory Exhaustion Protection
 - **Attack Vector**: Memory exhaustion through large field configurations
-- **Tests**: `test_security_memory_exhaustion_protection`
+- **Tests**: 
+  - `test_security_memory_exhaustion_protection` (circuit.rs)
+  - `test_security_solana_memory_exhaustion_prevention` (controller.rs)
 - **Coverage**:
   - 10,000 field types and semantics handled gracefully
   - Out-of-bounds field index detection
@@ -89,17 +96,20 @@ This document details the comprehensive security testing framework implemented f
 
 #### Arithmetic Overflow Protection
 - **Attack Vector**: Integer overflow in size calculations
-- **Tests**: `test_security_arithmetic_overflow_protection`
+- **Tests**: 
+  - `test_security_arithmetic_overflow_protection` (controller.rs)
+  - `test_security_numeric_overflow_protection` (codegen.rs)
 - **Coverage**:
   - Large proof data size calculations
   - Witness size calculation correctness
   - Proof length field accuracy
+  - Numeric overflow in slot values
 
 ### 4. Block Height and Replay Attack Protection
 
 #### Block Height Validation
 - **Attack Vector**: Replay attacks using old block heights
-- **Tests**: `test_security_block_height_replay_protection`, `test_security_block_height_replay_attacks`
+- **Tests**: `test_security_block_height_replay_attacks` (circuit.rs)
 - **Coverage**:
   - Current and recent blocks accepted
   - Expired blocks (beyond expiration window) rejected
@@ -108,7 +118,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Expected Slot Validation
 - **Attack Vector**: Slot confusion attacks using wrong expected slots
-- **Tests**: `test_security_expected_slot_validation`
+- **Tests**: `test_security_expected_slot_validation` (circuit.rs)
 - **Coverage**:
   - Correct expected slots accepted
   - Wrong expected slots rejected
@@ -118,7 +128,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Template Injection Prevention
 - **Attack Vector**: Code injection through template manipulation
-- **Tests**: `test_security_template_injection_prevention`
+- **Tests**: `test_security_template_injection_prevention` (codegen.rs)
 - **Coverage**:
   - Shell command injection attempts (`rm -rf /`)
   - XSS injection attempts (`<script>alert(1)</script>`)
@@ -127,7 +137,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Generated Code Safety
 - **Attack Vector**: Unsafe code patterns in generated output
-- **Tests**: `test_security_generated_code_compilation_safety`
+- **Tests**: `test_security_generated_code_compilation_safety` (codegen.rs)
 - **Coverage**:
   - No `unsafe` blocks in generated code
   - No `unwrap()`, `expect()`, `panic!()` calls
@@ -137,7 +147,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Field Type Validation
 - **Attack Vector**: Code injection through malicious field types
-- **Tests**: `test_security_field_type_validation`
+- **Tests**: `test_security_field_type_validation` (codegen.rs)
 - **Coverage**:
   - Code injection attempts through field type names
   - SQL injection style patterns
@@ -147,7 +157,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Path Traversal Prevention
 - **Attack Vector**: Path traversal in generated file references
-- **Tests**: `test_security_path_traversal_prevention`
+- **Tests**: `test_security_path_traversal_prevention` (codegen.rs)
 - **Coverage**:
   - `../../../etc/passwd` patterns in contract names
   - Path traversal in query strings
@@ -156,7 +166,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Resource Exhaustion Protection
 - **Attack Vector**: DoS through resource-intensive code generation
-- **Tests**: `test_security_resource_exhaustion_protection`
+- **Tests**: `test_security_resource_exhaustion_protection` (codegen.rs)
 - **Coverage**:
   - Extremely large layouts (10,000 fields)
   - Very long strings (100,000 characters)
@@ -165,7 +175,7 @@ This document details the comprehensive security testing framework implemented f
 
 #### Numeric Overflow Protection
 - **Attack Vector**: Numeric overflow in slot values and calculations
-- **Tests**: `test_security_numeric_overflow_protection`
+- **Tests**: See Arithmetic Overflow Protection section
 - **Coverage**:
   - Maximum valid slot values
   - Overflow-inducing slot values (too long hex strings)
@@ -175,7 +185,9 @@ This document details the comprehensive security testing framework implemented f
 
 #### Concurrent Access Safety
 - **Attack Vector**: Race conditions and thread safety issues
-- **Tests**: `test_security_concurrent_access_safety`, `test_security_concurrent_code_generation`
+- **Tests**: 
+  - `test_security_concurrent_access_safety` (controller.rs)
+  - `test_security_concurrent_code_generation` (codegen.rs)
 - **Coverage**:
   - Concurrent witness creation (10 threads)
   - Concurrent code generation (10 threads)
@@ -184,17 +196,20 @@ This document details the comprehensive security testing framework implemented f
 
 #### Batch Processing Isolation
 - **Attack Vector**: Cross-witness contamination in batch processing
-- **Tests**: `test_security_batch_processing_isolation`
+- **Tests**: 
+  - `test_security_batch_processing_isolation` (circuit.rs)
+  - `test_security_solana_batch_processing_isolation` (controller.rs)
 - **Coverage**:
   - Invalid witnesses don't affect valid ones
   - Results properly isolated per witness
   - Correct result ordering maintained
+  - Cross-chain data isolation
 
 ### 7. Error Handling Security
 
 #### Information Leakage Prevention
 - **Attack Vector**: Sensitive information exposure through error messages
-- **Tests**: `test_security_error_information_leakage`
+- **Tests**: `test_security_error_information_leakage` (controller.rs)
 - **Coverage**:
   - Error messages don't contain `panic`, `unwrap`, or debug info
   - No array indices or hex data leaked
@@ -203,22 +218,57 @@ This document details the comprehensive security testing framework implemented f
 
 #### Field Index Bounds Checking
 - **Attack Vector**: Out-of-bounds array access through field indices
-- **Tests**: `test_security_witness_field_index_bounds`, `test_security_witness_field_index_validation`
+- **Tests**: `test_security_witness_field_index_bounds` (circuit.rs)
 - **Coverage**:
   - Valid field indices (0 to field_count-1)
   - Invalid field indices (out of bounds, u16::MAX)
   - Proper bounds checking prevents memory corruption
 
+### 8. Solana-Specific Security
+
+#### Solana Witness Generation Security
+- **Attack Vector**: Malicious witness generation for Solana accounts
+- **Tests**: `test_security_solana_witness_generation` (controller.rs)
+- **Coverage**:
+  - Address validation and parsing
+  - Account data extraction security
+  - Discriminator validation
+
+#### Solana Address Parsing
+- **Attack Vector**: Address injection and parsing attacks
+- **Tests**: `test_security_solana_address_parsing` (controller.rs)
+- **Coverage**:
+  - Base58 address validation
+  - Invalid address rejection
+  - Malformed address handling
+
+#### Solana Account Data Extraction
+- **Attack Vector**: Buffer overflow in account data field extraction
+- **Tests**: `test_security_solana_account_data_extraction` (controller.rs)
+- **Coverage**:
+  - Field offset validation
+  - Field size boundary checking
+  - Out-of-bounds access prevention
+
+#### Solana Cross-Chain Prevention
+- **Attack Vector**: Using Ethereum data in Solana witnesses
+- **Tests**: `test_security_solana_cross_chain_prevention` (controller.rs)
+- **Coverage**:
+  - Chain-specific data validation
+  - Cross-chain data rejection
+  - Format validation
+
 ## Attack Vector Coverage Summary
 
 | Attack Category | Vectors Tested | Test Count | Coverage |
 |----------------|----------------|------------|----------|
-| Input Validation | 15+ | 8 | ✅ Comprehensive |
-| Memory Safety | 10+ | 6 | ✅ Comprehensive |
-| Code Generation | 12+ | 8 | ✅ Comprehensive |
-| Concurrency | 4+ | 3 | ✅ Comprehensive |
-| Error Handling | 8+ | 4 | ✅ Comprehensive |
-| Replay Protection | 6+ | 3 | ✅ Comprehensive |
+| Input Validation | 15+ | 12 | Comprehensive |
+| Memory Safety | 10+ | 8 | Comprehensive |
+| Code Generation | 12+ | 8 | Comprehensive |
+| Concurrency | 4+ | 3 | Comprehensive |
+| Error Handling | 8+ | 2 | Comprehensive |
+| Replay Protection | 6+ | 2 | Comprehensive |
+| Solana-Specific | 8+ | 8 | Comprehensive |
 
 ## Security Properties Validated
 
@@ -302,4 +352,4 @@ These security tests align with the primary threat model:
 
 ## Conclusion
 
-The comprehensive security test suite provides strong confidence in the system's resilience against known attack vectors. The tests cover both implementation-specific vulnerabilities and general cryptographic system security properties. Regular execution of these tests as part of CI/CD ensures ongoing security assurance. 
+The comprehensive security test suite provides strong confidence in the system's resilience against known attack vectors. The tests cover both implementation-specific vulnerabilities and general cryptographic system security properties. Regular execution of these tests as part of CI/CD ensures ongoing security assurance.

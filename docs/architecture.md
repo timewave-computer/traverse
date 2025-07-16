@@ -7,7 +7,8 @@ Traverse is a ZK storage path generator designed for blockchain state verificati
 - **Deterministic**: All operations produce identical results across environments
 - **no_std Compatible**: Core functionality works in constrained WASM/RISC-V circuit environments
 - **Modular**: Clean separation between setup and execution phases
-- **Extensible**: Can be extended to support multiple chain backends
+- **Multi-ecosystem**: Supports Ethereum, Solana, and Cosmos blockchains
+- **Isolated Builds**: Each blockchain ecosystem builds independently due to dependency conflicts
 
 ## System Architecture
 
@@ -16,7 +17,7 @@ Traverse is a ZK storage path generator designed for blockchain state verificati
 ```mermaid
 graph TB
     subgraph "Layer 1: Layout Compilation"
-        ABI[Contract ABI/Layout] --> LC[Layout Compiler]
+        ABI[Contract ABI/IDL/Schema] --> LC[Layout Compiler]
         LC --> LI[Canonical LayoutInfo]
         LI --> COMMIT[Layout Commitment]
     end
@@ -30,7 +31,7 @@ graph TB
     
     subgraph "Layer 3: Proof Integration"
         KEY --> EXT[External Client]
-        EXT --> RPC[eth_getProof]
+        EXT --> RPC[Chain RPC]
         RPC --> PROOF[Storage Proof]
         PROOF --> WITNESS[ZK Witness]
     end
@@ -39,21 +40,23 @@ graph TB
 #### Layer 1: Layout Compilation
 Converts chain-specific contract layouts into canonical, deterministic format.
 
-**Implementation**:
-- `EthereumLayoutCompiler`: Processes Solidity storage layouts from `forge inspect`
+**Implementations**:
+- `EthereumLayoutCompiler`: Processes Solidity storage layouts from ABIs
+- `SolanaLayoutCompiler`: Processes Anchor IDL layouts
+- `CosmosLayoutCompiler`: Processes CosmWasm schema layouts
 - Generates `LayoutInfo` with normalized field information
 - Computes SHA256-based layout commitment for circuit safety
-- Supports packed storage fields with byte offsets
 
 **Output**: Canonical `LayoutInfo` with commitment hash for verification
 
 #### Layer 2: Path Resolution
 Generates deterministic storage keys from human-readable queries.
 
-**Implementation**:
-- `EthereumKeyResolver`: Ethereum-specific storage key derivation
+**Implementations**:
+- `EthereumKeyResolver`: Ethereum-specific storage key derivation (Keccak256)
+- `SolanaAccountResolver`: Solana account and offset resolution
+- `CosmosKeyResolver`: Cosmos storage key generation
 - Supports mappings, arrays, structs, and packed fields
-- Uses Keccak256 for Ethereum storage slot calculation
 - Produces `StaticKeyPath` with layout commitment verification
 
 **Output**: Storage keys ready for blockchain queries and ZK circuit verification
@@ -62,7 +65,7 @@ Generates deterministic storage keys from human-readable queries.
 Bridges between blockchain state and ZK circuit verification.
 
 **Implementation**:
-- CLI tools for external storage key generation
+- Chain-specific CLI tools for external storage key generation
 - `traverse-valence` crate for coprocessor integration
 - Controller, circuit, and domain helpers for witness creation
 - Support for batch operations and error handling
@@ -71,27 +74,70 @@ Bridges between blockchain state and ZK circuit verification.
 
 ## Crate Overview
 
-Traverse is organized into four specialized crates, each serving a distinct role in the storage proof generation pipeline:
+Traverse is organized into nine specialized crates, structured to handle the incompatible dependencies between blockchain ecosystems:
 
-### traverse-core
+### Core Crates
+
+#### traverse-core
 **Purpose**: Foundation types and traits for chain-independent storage operations  
 **Environment**: `no_std` compatible for circuit usage  
-**Key Responsibility**: Defines the core abstractions (`LayoutInfo`, `StaticKeyPath`, `Key`) that all other crates build upon  
+**Key Responsibility**: Defines the core abstractions (`LayoutInfo`, `StaticKeyPath`, `Key`, `ZeroSemantics`) that all other crates build upon  
 **Usage**: Included in ZK circuits where memory and dependencies are constrained  
 
-### traverse-ethereum  
+### Blockchain Implementation Crates
+
+#### traverse-ethereum  
 **Purpose**: Ethereum-specific implementations of core traits  
 **Environment**: Standard library with network access  
 **Key Responsibility**: Converts Solidity ABIs to canonical layouts, resolves storage queries to Ethereum storage keys using Keccak256  
+**Dependencies**: Uses lightweight Alloy integration to avoid heavy dependencies  
 **Usage**: Build tools and external clients that need to interact with Ethereum contracts  
 
-### traverse-cli
-**Purpose**: Command-line interface for storage key generation and proof fetching  
-**Environment**: Standard library with filesystem and network access  
-**Key Responsibility**: Provides developer tools for layout compilation, query resolution, and proof generation  
-**Usage**: Development workflows, CI/CD pipelines, and external client integration  
+#### traverse-solana
+**Purpose**: Solana-specific implementations of core traits  
+**Environment**: Standard library with network access  
+**Key Responsibility**: Converts Anchor IDLs to canonical layouts, resolves account data queries  
+**Dependencies**: Solana SDK, Anchor framework, SPL token  
+**Usage**: Build tools and external clients that need to interact with Solana programs  
 
-### traverse-valence
+#### traverse-cosmos
+**Purpose**: Cosmos-specific implementations of core traits  
+**Environment**: Standard library with network access  
+**Key Responsibility**: Converts CosmWasm schemas to canonical layouts, resolves storage queries  
+**Dependencies**: Cosmos SDK proto, CosmWasm std, ICS23  
+**Usage**: Build tools and external clients that need to interact with Cosmos contracts  
+
+### CLI Crates
+
+The CLI is split into multiple crates to handle incompatible dependencies between blockchain ecosystems:
+
+#### traverse-cli-core
+**Purpose**: Shared CLI functionality and traits  
+**Environment**: Standard library  
+**Key Responsibility**: Common command structures, error handling, and utilities  
+**Usage**: Foundation for ecosystem-specific CLI implementations  
+
+#### traverse-cli-ethereum
+**Purpose**: Ethereum-specific CLI commands  
+**Environment**: Standard library with filesystem and network access  
+**Key Responsibility**: Ethereum layout compilation, query resolution, and proof generation  
+**Usage**: Development workflows for Ethereum contracts  
+
+#### traverse-cli-solana
+**Purpose**: Solana-specific CLI commands  
+**Environment**: Standard library with filesystem and network access  
+**Key Responsibility**: Solana IDL processing, account queries, and proof generation  
+**Usage**: Development workflows for Solana programs  
+
+#### traverse-cli-cosmos
+**Purpose**: Cosmos-specific CLI commands  
+**Environment**: Standard library with filesystem and network access  
+**Key Responsibility**: CosmWasm schema processing, storage queries, and proof generation  
+**Usage**: Development workflows for Cosmos contracts  
+
+### Integration Crate
+
+#### traverse-valence
 **Purpose**: Integration layer for Valence coprocessor framework with full message type support  
 **Environment**: `no_std` compatible with optional `std` and `alloy` features  
 **Key Responsibility**: Bridges between Traverse's storage paths and Valence's three-tier architecture (controller/circuit/domain), provides ABI encoding for Valence Authorization contracts  
@@ -103,42 +149,84 @@ Traverse is organized into four specialized crates, each serving a distinct role
 graph TD
     TC[traverse-core<br/>no_std, foundational types] 
     TE[traverse-ethereum<br/>std, Ethereum-specific]
-    CLI[traverse-cli<br/>std, developer tools]
+    TS[traverse-solana<br/>std, Solana-specific]
+    TCO[traverse-cosmos<br/>std, Cosmos-specific]
+    TCC[traverse-cli-core<br/>std, shared CLI]
+    TCE[traverse-cli-ethereum<br/>std, Ethereum CLI]
+    TCS[traverse-cli-solana<br/>std, Solana CLI]
+    TCCO[traverse-cli-cosmos<br/>std, Cosmos CLI]
     TV[traverse-valence<br/>no_std, coprocessor integration]
     
     TE --> TC
-    CLI --> TC
-    CLI --> TE
+    TS --> TC
+    TCO --> TC
+    TCC --> TC
+    TCE --> TC
+    TCE --> TE
+    TCE --> TCC
+    TCS --> TC
+    TCS --> TS
+    TCS --> TCC
+    TCCO --> TC
+    TCCO --> TCO
+    TCCO --> TCC
     TV --> TC
     
     style TC fill:#e1f5fe
     style TV fill:#e8f5e8
     style TE fill:#fff3e0
-    style CLI fill:#fce4ec
+    style TS fill:#ffe0b2
+    style TCO fill:#f3e5f5
+    style TCC fill:#fce4ec
+    style TCE fill:#fff9c4
+    style TCS fill:#ffccbc
+    style TCCO fill:#f8bbd0
 ```
 
-The design ensures that circuit-compatible crates (`traverse-core`, `traverse-valence`) remain lightweight with minimal dependencies, while tool crates (`traverse-ethereum`, `traverse-cli`) can use the full standard library for complex operations.
+The design ensures that circuit-compatible crates (`traverse-core`, `traverse-valence`) remain lightweight with minimal dependencies, while tool crates can use the full standard library for complex operations. The split CLI architecture prevents dependency conflicts between blockchain ecosystems.
+
+## Why Split CLIs?
+
+The blockchain Rust ecosystem has incompatible cryptographic dependencies:
+
+| Ecosystem | k256 Version | secp256k1 Version |
+|-----------|--------------|-------------------|
+| Ethereum (Alloy) | `^0.14` | `^0.29` |
+| Solana SDK | `^0.13` | `^0.28` |
+
+These version conflicts make it impossible to include both Ethereum and Solana support in a single binary. The solution is separate CLI binaries for each ecosystem, with shared functionality in `traverse-cli-core`.
 
 ## File Structure
-
-### Core Crates
 
 ```
 traverse/
 ├── crates/
-│   ├── traverse-core/       # Core types and traits (no_std)
-│   ├── traverse-ethereum/   # Ethereum-specific implementation (std)
-│   ├── traverse-cli/        # CLI tools for key generation (std)
-│   └── traverse-valence/    # Valence coprocessor integration (no_std)
+│   ├── traverse-core/          # Core types and traits (no_std)
+│   ├── traverse-ethereum/      # Ethereum-specific implementation
+│   ├── traverse-solana/        # Solana-specific implementation
+│   ├── traverse-cosmos/        # Cosmos-specific implementation
+│   ├── traverse-cli-core/      # Shared CLI functionality
+│   ├── traverse-cli-ethereum/  # Ethereum CLI commands
+│   ├── traverse-cli-solana/    # Solana CLI commands
+│   ├── traverse-cli-cosmos/    # Cosmos CLI commands
+│   └── traverse-valence/       # Valence coprocessor integration (no_std)
+└── workspace-configs/          # Isolated workspace configurations
+    ├── Cargo.toml.core         # Core functionality only
+    ├── Cargo.toml.ethereum     # Ethereum + core
+    ├── Cargo.toml.solana       # Solana + core
+    └── Cargo.toml.cosmos       # Cosmos + core
 ```
 
-#### traverse-core
+## Core Components
+
+### traverse-core
+
 Core traits, types, and no_std-compatible functionality.
 
 **Key Components**:
 ```rust
 pub trait LayoutCompiler {
-    fn compile_layout(&self, abi_path: &Path) -> Result<LayoutInfo>;
+    fn compile_layout(&self, source: &str) -> Result<LayoutInfo>;
 }
 
 pub trait KeyResolver {
@@ -164,28 +252,20 @@ pub enum Key {
     Fixed([u8; 32]),      // Fixed-size storage keys
     Variable(Vec<u8>),    // Variable-length keys (future chains)
 }
+
+pub enum ZeroSemantics {
+    NeverWritten,
+    ExplicitlyZero,
+    Cleared,
+    ValidZero,
+}
 ```
 
 **Dependencies**: `serde`, `sha2`, `hex` (all no_std compatible)
 
+### Blockchain Implementations
+
 #### traverse-ethereum
-Ethereum-specific implementations and blockchain integration.
-
-**Key Components**:
-```rust
-pub struct EthereumLayoutCompiler;
-pub struct EthereumKeyResolver;
-pub struct EthereumProofFetcher;
-
-impl KeyResolver for EthereumKeyResolver {
-    fn resolve(&self, layout: &LayoutInfo, query: &str) -> Result<StaticKeyPath> {
-        // Parse query and derive storage slot using Keccak256
-        // Handle mappings: keccak256(pad(key) ++ pad(slot))
-        // Handle arrays: slot + index
-        // Handle structs: slot + field_offset
-    }
-}
-```
 
 **Storage Key Derivation**:
 
@@ -196,27 +276,39 @@ impl KeyResolver for EthereumKeyResolver {
 | **Structs** | `base_slot + field_offset` | Field byte offset within slot |
 | **Packed Fields** | `slot + byte_offset` | Multiple values in single storage word |
 
-**Dependencies**: `alloy`, `tiny-keccak`, `rlp`, `tokio`
+**Dependencies**: Lightweight Alloy integration, `tiny-keccak`, `rlp`
 
-#### traverse-cli
-Command-line interface for external storage key generation.
+#### traverse-solana
 
-**Commands**:
-- `compile-layout`: Convert ABI to canonical layout
+**Account Resolution**:
+- Parses Anchor IDL schemas
+- Resolves account data offsets
+- Handles Borsh serialization layouts
+- Supports SPL token accounts
+
+**Dependencies**: `solana-sdk`, `anchor-lang`, `spl-token`, `borsh`
+
+#### traverse-cosmos
+
+**Storage Key Generation**:
+- Parses CosmWasm schemas
+- Generates Cosmos store keys
+- Handles ICS23 proof formats
+- Supports nested message types
+
+**Dependencies**: `cosmos-sdk-proto`, `cosmwasm-std`, `ics23`
+
+### CLI Commands
+
+Each ecosystem-specific CLI provides:
+
+- `compile-layout`: Convert ABI/IDL/Schema to canonical layout
 - `resolve`: Generate single storage key with coprocessor JSON export
 - `resolve-all`: Generate all possible storage keys from layout
 - `batch-resolve`: Process multiple queries from file
-- `generate-proof`: Generate storage proofs (requires client feature for live proofs)
+- `generate-proof`: Generate storage proofs (requires client feature)
 
-**Coprocessor Integration**:
-```bash
-# Generate storage key for valence coprocessor
-traverse-cli resolve "_balances[0x742d35...]" \
-  --layout contract.json \
-  --format coprocessor-json > query.json
-```
-
-**Output Format**:
+**Example Output**:
 ```json
 {
   "query": "_balances[0x742d35Cc6aB8B23c0532C65C6b555f09F9d40894]",
@@ -227,64 +319,7 @@ traverse-cli resolve "_balances[0x742d35...]" \
 }
 ```
 
-#### traverse-valence
-Valence coprocessor integration with no_std compatibility and comprehensive Valence ecosystem support.
-
-**Purpose**: Integration layer for Valence coprocessor framework with full message type support  
-**Environment**: `no_std` compatible with optional `std` and `alloy` features  
-**Key Responsibility**: Bridges between Traverse's storage paths and Valence's three-tier architecture (controller/circuit/domain), provides ABI encoding for Valence Authorization contracts  
-**Usage**: ZK circuits and coprocessor applications that need storage proof verification with Valence ecosystem integration  
-
-**Architecture**:
-```rust
-// Controller helpers - Standard Valence entry point
-pub fn create_storage_witnesses(json_args: &Value) -> Result<Vec<Witness>, TraverseValenceError>;
-
-// Circuit helpers - Standard Valence entry point
-pub fn verify_storage_proofs_and_extract(witnesses: Vec<Witness>) -> Vec<u8>;
-
-// Individual value extraction
-pub fn extract_u64_value(witness: &Witness) -> Result<u64, TraverseValenceError>;
-pub fn extract_address_value(witness: &Witness) -> Result<[u8; 20], TraverseValenceError>;
-pub fn extract_raw_bytes(witness: &Witness) -> Result<[u8; 32], TraverseValenceError>;
-
-// Batch operations
-pub fn extract_multiple_u64_values(witnesses: &[Witness]) -> Result<Vec<u64>, TraverseValenceError>;
-pub fn extract_multiple_address_values(witnesses: &[Witness]) -> Result<Vec<[u8; 20]>, TraverseValenceError>;
-
-// Domain validation
-pub fn validate_ethereum_state_proof(storage_proof: &Value, block_header: &EthereumBlockHeader) -> Result<ValidatedStateProof, TraverseValenceError>;
-```
-
-**Valence Ecosystem Integration**:
-```rust
-// Message structures for Valence Authorization contracts
-pub struct ZkMessage {
-    pub registry: u64,
-    pub block_number: u64,
-    pub authorization_contract: String,
-    pub processor_message: ProcessorMessage,
-}
-
-pub struct SendMsgs {
-    pub execution_id: u64,
-    pub priority: Priority,
-    pub subroutine: Subroutine,
-    pub expiration_time: u64,
-    pub messages: Vec<Vec<u8>>,
-}
-
-// ABI encoding helpers (alloy feature)
-pub mod abi_encoding {
-    pub fn encode_zk_message(msg: &ZkMessage) -> Result<Vec<u8>, TraverseValenceError>;
-}
-
-// Helper functions for creating Valence-compatible messages
-pub fn create_storage_validation_message(
-    validation_result: StorageProofValidationResult,
-    execution_id: u64,
-) -> ZkMessage;
-```
+### traverse-valence Integration
 
 **Standard Valence Integration Pattern**:
 ```rust
@@ -304,158 +339,28 @@ pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
 ```
 
 **Witness Data Structure**:
-
-Each witness contains a structured format for storage proof verification:
-- **32 bytes**: Storage key (pre-computed by traverse-cli)
+- **32 bytes**: Storage key (pre-computed by CLI)
 - **32 bytes**: Layout commitment (for verification) 
-- **32 bytes**: Storage value (from eth_getProof)
+- **32 bytes**: Storage value (from chain RPC)
 - **4 bytes**: Proof data length (little-endian u32)
 - **N bytes**: Merkle proof data (variable length)
 
-This format enables both individual and batch verification operations while maintaining compatibility with Valence coprocessor patterns.
+## Security Model
 
-## Valence Coprocessor Integration
+### Layout Commitment System
 
-### Two-Phase Structure
-
-#### Setup Phase (External, std-compatible)
-This phase runs on developer machines, CI/CD systems, and external clients where the full standard library is available along with network access and file I/O capabilities.
-
-**Workflow**:
-1. **Layout Compilation**: Convert contract ABIs to canonical format
-2. **Storage Key Generation**: Use CLI tools to generate storage keys
-3. **External Proof Fetching**: 3rd party clients call `eth_getProof`
-4. **JSON Payload Creation**: Combine storage keys with proof data
-
-**Example**:
-```bash
-# 1. Compile contract layout
-traverse-cli compile-layout Token.abi.json > layout.json
-
-# 2. Generate storage keys
-traverse-cli resolve "_balances[0x742d35...]" --layout layout.json --format coprocessor-json
-
-# 3. External client combines with eth_getProof data
-# 4. Submit JSON payload to coprocessor
-```
-
-#### Execution Phase (Coprocessor, no_std)
-This phase runs within WASM runtimes and ZK circuits in constrained memory environments, operating with no_std compatibility, limited memory, and deterministic execution requirements.
-
-**Components**:
-
-1. **Controller** (WASM-compatible):
-   ```rust
-   pub fn get_witnesses(json_args: Value) -> Result<Vec<Witness>, anyhow::Error> {
-       let witnesses = controller::create_batch_storage_witnesses(&json_args)?;
-       Ok(witnesses)
-   }
-   ```
-
-2. **Circuit** (no_std, ZK-compatible):
-   ```rust
-   pub fn circuit(witnesses: Vec<Witness>) -> Vec<u8> {
-       circuit::verify_storage_proofs_and_extract(witnesses)
-   }
-   
-   // Custom extraction for specific applications
-   pub fn verify_and_extract_balances(witnesses: &[Witness]) -> Result<Vec<u64>, TraverseValenceError> {
-       let mut results = Vec::new();
-       for witness in witnesses {
-           let balance = circuit::extract_u64_value(witness)?;
-           results.push(balance);
-       }
-       Ok(results)
-   }
-   ```
-
-3. **Domain** (no_std, validation):
-   ```rust
-   pub fn validate_state_proofs(proofs: &[Value]) -> Result<bool, TraverseValenceError> {
-       for proof in proofs {
-           let header = domain::EthereumBlockHeader {
-               number: 0,
-               state_root: [0u8; 32],
-               hash: [0u8; 32],
-           };
-           let validated = domain::validate_ethereum_state_proof(proof, &header)?;
-           if !validated.is_valid { return Ok(false); }
-       }
-       Ok(true)
-   }
-   ```
-
-### Message Flow Integration
-
-**Production Valence Integration**: The traverse-valence crate now provides complete Valence ecosystem integration following the same patterns as valence-coprocessor-app. This includes:
-
-- **Standard Entry Points**: `get_witnesses()` and `circuit()` functions matching Valence conventions
-- **Message Structures**: Complete Valence message types (ZkMessage, SendMsgs, ProcessorMessage, etc.)
-- **ABI Encoding**: Alloy-based ABI encoding for Valence Authorization contracts
-- **Batch Operations**: Support for multiple storage proof verification in single coprocessor execution
-
-**Integration with Valence Authorization Contracts**: Applications can now generate ABI-encoded messages that integrate with the broader Valence ecosystem for complex contract execution flows.
-
-### Data Flow
-
-```mermaid
-sequenceDiagram
-    participant Dev as Developer
-    participant CLI as traverse-cli
-    participant Client as External Client
-    participant RPC as Ethereum RPC
-    participant Coproc as Coprocessor
-    participant Circuit as ZK Circuit
-    
-    Dev->>CLI: traverse-cli resolve query --format coprocessor-json
-    CLI->>Dev: storage_key + layout_commitment
-    
-    Client->>RPC: eth_getProof(contract, [storage_key], block)
-    RPC->>Client: storage_proof
-    
-    Client->>Coproc: JSON{storage_query, storage_proof}
-    Coproc->>Coproc: controller::create_storage_witnesses()
-    
-    Coproc->>Circuit: witnesses + layout_commitment
-    Circuit->>Circuit: circuit::verify_storage_proofs_and_extract()
-    Circuit->>Circuit: circuit::extract_u64_value() [optional]
-    Circuit->>Coproc: validation_result | extracted_values | abi_encoded_message
-    
-    Note over Circuit,Coproc: Can return JSON validation, typed values, or ABI-encoded Valence messages
-```
-
-## Traverse Phases
-
-The layout commitment system provides deterministic behavior where the same layout always produces the same commitment, while any layout change produces a different commitment for tamper detection. Commitments can be verified directly in ZK circuits and are cryptographically secure through SHA256-based collision resistance.
-
-#### 1. Commitment Computation
-
-The commitment acts as a "fingerprint" of the contract's storage structure. By hashing all the essential layout details together—variable names, storage slots, byte offsets, and type information—we create a unique identifier that changes if any aspect of the contract's storage layout is modified. 
-
-A contract's **storage layout** consists of:
-- **Variable names and positions**: Which storage variables exist (`_balances`, `_totalSupply`, etc.) and their assigned storage slots
-- **Data types and sizes**: Whether a field is `uint256`, `address`, `mapping`, etc., and how many bytes each occupies
-- **Packing and offsets**: How multiple smaller variables are packed into single 32-byte storage slots
-- **Mapping and array structures**: The key/value types for mappings and element types for arrays
-
-This ensures that a ZK circuit compiled for one contract version cannot accidentally (or maliciously) be used with a different contract layout, preventing bugs and attacks where storage slots might be misinterpreted. For example, if a contract upgrade changes a `uint128` field to `uint256`, or reorders storage variables, the commitment would change and alert the circuit to the layout mismatch.
-
-The commitment hash includes all layout-critical information:
+The commitment acts as a "fingerprint" of the contract's storage structure:
 
 ```rust
 impl LayoutInfo {
     pub fn commitment(&self) -> [u8; 32] {
-        // Deterministic hash of layout structure
         let mut hasher = Sha256::new();
         
         // Hash contract name with length prefix
         hasher.update((self.contract_name.len() as u32).to_le_bytes());
         hasher.update(self.contract_name.as_bytes());
         
-        // Hash number of storage entries
-        hasher.update((self.storage.len() as u32).to_le_bytes());
-        
-        // Hash each storage entry in order
+        // Hash storage entries
         for entry in &self.storage {
             hasher.update((entry.label.len() as u32).to_le_bytes());
             hasher.update(entry.label.as_bytes());
@@ -471,155 +376,20 @@ impl LayoutInfo {
 }
 ```
 
-#### 2. Compile-time Storage Layout Integration into the Circuit
-
-During the setup phase, `traverse-cli` generates compile-time constants that are baked into the circuit binary. These constants include the layout commitment (a cryptographic hash of the contract's storage structure) and pre-computed storage keys for specific queries. By embedding these as constants, the circuit avoids expensive runtime computation and ensures deterministic behavior - the same circuit will always work with the same contract layout.
-
-```rust
-pub mod precomputed_paths {
-    pub const MOCK_ERC20_LAYOUT_COMMITMENT: [u8; 32] = [
-        246, 220, 60, 74, 121, 233, 85, 101, 179, 207, 56, 153, 63, 26, 18, 12,
-        106, 107, 70, 119, 150, 38, 78, 127, 217, 169, 200, 103, 86, 22, 221, 122
-    ];
-    
-    pub const BALANCE_PATH_742D35: StaticKeyPath = StaticKeyPath {
-        name: "balances[0x742d35Cc6634C0532925a3b8D97C2e0D8b2D9C]",
-        key: Key::Fixed([/* pre-computed storage key */]),
-        layout_commitment: MOCK_ERC20_LAYOUT_COMMITMENT,
-    };
-}
-```
-
-#### 3. Runtime Verification
-
-At runtime, the circuit receives storage proof data from external clients and must verify it against the compile-time constants. The circuit performs three critical checks:
-1. Verify the layout commitment matches the layout in the compilation step.
-2. Confirm the storage key in the proof matches the pre-computed key for the query.
-3. Extract the actual value from the verified storage slot.
-
-This approach moves all the complex ABI parsing and storage key computation out of the circuit, leaving only simple verification and value extraction.
-
-```rust
-pub fn verify_erc20_balance(
-    path: &StaticKeyPath,
-    payload: &CircuitStorageProof,
-    expected_commitment: &[u8; 32],
-    min_balance: u64,
-) -> Result<bool, &'static str> {
-    // 1. Layout commitment verification (critical security check)
-    if &path.layout_commitment != expected_commitment {
-        return Err("Layout commitment mismatch");
-    }
-    
-    // 2. Storage key verification  
-    let storage_key = match &path.key {
-        Key::Fixed(key) => *key,
-        Key::Variable(_) => return Err("Expected fixed key"),
-    };
-    
-    if payload.key != storage_key {
-        return Err("Storage key mismatch");
-    }
-    
-    // 3. Extract and validate value
-    let balance = u64_from_be_bytes(&payload.value[24..32]);
-    Ok(balance >= min_balance)
-}
-```
-
-### Architectural Benefits
-
-#### Performance Advantages
-
-| Aspect | Commitment System | Circuit Deserialization |
-|--------|------------------|-------------------------|
-| **Circuit Memory** | ~64 bytes per path | ~10KB+ ABI data |
-| **Proving Time** | Fast (hash verification) | Slow (full parsing) |
-| **Determinism** | Compile-time constants | Runtime computation |
-| **Security** | Tamper-evident hashes | Trust external ABI |
-| **Complexity** | Simple verification | Complex parsing logic |
-
-#### Security Advantages
+### Security Advantages
 
 1. **ABI Substitution Protection**: Prevents attackers from providing modified contract layouts
 2. **Layout Tampering Detection**: Any change to storage structure invalidates the commitment
 3. **Circuit-Layout Alignment**: Ensures circuit was compiled with correct contract interface
 4. **Deterministic Verification**: Same layout always produces identical circuit behavior
 
-#### Commitment vs. Circuit Deserialization
+## Build System
 
-The commitment system fundamentally changes **where** and **when** layout processing happens, optimizing for circuit performance and security.
+Due to incompatible dependencies between blockchain ecosystems, Traverse uses isolated Nix builds:
 
-**In-circuit Deserialization Approach**:
-```rust
-// Circuit does everything - expensive and complex
-fn circuit_main() {
-    let layout = parse_abi_in_circuit(&abi_bytes);     // Expensive parsing
-    let storage_key = resolve_mapping(&layout, query); // Complex computation
-    let verified_value = verify_merkle_proof(&proof);  // Memory intensive
-    let balance = extract_value(&verified_value);
-}
-```
+- Each ecosystem has its own Cargo workspace in `workspace-configs/`
+- Dependencies are resolved independently per ecosystem
+- All `Cargo.lock` files are checked into version control
+- Nix automatically selects the correct workspace during builds
 
-**Traverse Commitment Approach**:
-```rust
-// Setup Phase (External)
-traverse-cli compile-layout Token.abi.json > layout.json
-traverse-cli resolve "_balances[0x742d...]" --layout layout.json
-
-// Circuit (Minimal)
-pub const BALANCE_PATH: StaticKeyPath = StaticKeyPath {
-    key: Key::Fixed([0x1a, 0x2b, ...]),        // Pre-computed
-    layout_commitment: [0xf6, 0xdc, ...],       // Expected hash
-};
-
-fn circuit_main() {
-    if path.layout_commitment != EXPECTED_COMMITMENT {
-        return Err("Layout mismatch");           // Simple hash check
-    }
-    let balance = extract_u64(&payload.value);  // Direct extraction
-}
-```
-
-### Storage Key Validation
-
-**Attack Vector**: Malicious storage keys targeting arbitrary contract state.
-
-**Defense**:
-```rust
-pub fn validate_storage_key_derivation(
-    query: &str,
-    derived_key: &[u8; 32],
-    layout: &LayoutInfo,
-) -> Result<bool, ValidationError> {
-    // Re-derive key from query and layout
-    let expected_key = derive_storage_key(query, layout)?;
-    Ok(derived_key == &expected_key)
-}
-```
-
-**Validation Layers**:
-The system employs multiple validation layers: query syntax validation against known field patterns, field allowlisting to restrict access to approved contract fields, derivation verification that re-derives and compares storage keys, and range checking to validate array indices and struct offsets.
-
-### Proof Verification
-
-**Critical Path**: All storage proofs must be cryptographically verified.
-
-**Implementation**:
-```rust
-pub fn verify_storage_proof(
-    proof: &StorageProof,
-    state_root: &[u8; 32],
-    account_address: &[u8; 20],
-) -> Result<bool, ProofError> {
-    // 1. Verify account proof against state root
-    // 2. Extract account storage root
-    // 3. Verify storage proof against storage root
-    // 4. Validate Merkle-Patricia trie inclusion
-    Ok(true) // Simplified for current implementation
-}
-```
-
-### Optimization Strategies
-
-The system employs several optimization strategies for production performance. Batch operations process multiple queries together for efficiency, while proof compression minimizes proof node storage overhead. Layout caching pre-computes layout commitments to avoid repeated calculations, and field-specific extraction functions provide optimized access patterns for common data types.
+See [Feature Flags documentation](feature_flags.md) for detailed build configuration.

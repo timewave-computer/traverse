@@ -4,7 +4,13 @@
 //! format used by the traverse system for ZK coprocessor integration.
 
 use crate::{contract::CosmWasmContract, CosmosError};
+
+#[cfg(feature = "std")]
 use std::path::Path;
+
+#[cfg(not(feature = "std"))]
+use alloc::{format, vec, string::String, vec::Vec};
+
 use traverse_core::{LayoutCompiler, LayoutInfo, StorageEntry, TraverseError, TypeInfo};
 
 /// CosmWasm layout compiler that converts contract schemas to canonical format
@@ -243,6 +249,7 @@ impl LayoutCompiler for CosmosLayoutCompiler {
     /// - `TraverseError::Io` - File cannot be read
     /// - `TraverseError::Serialization` - Invalid JSON format
     /// - `TraverseError::InvalidLayout` - Invalid CosmWasm schema
+    #[cfg(feature = "std")]
     fn compile_layout(&self, schema_path: &Path) -> Result<LayoutInfo, TraverseError> {
         // Try to parse as a combined schema file first
         let content = std::fs::read_to_string(schema_path)?;

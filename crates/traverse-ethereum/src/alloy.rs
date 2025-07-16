@@ -110,12 +110,22 @@ impl StorageProofResponse {
                     array
                 } else {
                     // Hash longer nodes to fit 32 bytes
-                    use tiny_keccak::{Hasher, Keccak};
-                    let mut keccak = Keccak::v256();
-                    keccak.update(&node_bytes);
-                    let mut array = [0u8; 32];
-                    keccak.finalize(&mut array);
-                    array
+                    #[cfg(feature = "ethereum")]
+                    {
+                        use tiny_keccak::{Hasher, Keccak};
+                        let mut keccak = Keccak::v256();
+                        keccak.update(&node_bytes);
+                        let mut array = [0u8; 32];
+                        keccak.finalize(&mut array);
+                        array
+                    }
+                    #[cfg(not(feature = "ethereum"))]
+                    {
+                        // Without ethereum feature, just truncate
+                        let mut array = [0u8; 32];
+                        array.copy_from_slice(&node_bytes[..32]);
+                        array
+                    }
                 }
             })
             .collect();
@@ -149,18 +159,27 @@ impl LightweightAbi {
     where
         T: SolValue + From<<T::SolType as SolType>::RustType>,
     {
-        T::abi_decode(data)
+        T::abi_decode(data, true)
             .map_err(|e| LightweightAlloyError::AbiError(format!("{}", e)))
     }
 
     /// Generate function selector for a function signature
     pub fn function_selector(signature: &str) -> [u8; 4] {
-        use tiny_keccak::{Hasher, Keccak};
-        let mut keccak = Keccak::v256();
-        keccak.update(signature.as_bytes());
-        let mut hash = [0u8; 32];
-        keccak.finalize(&mut hash);
-        [hash[0], hash[1], hash[2], hash[3]]
+        #[cfg(feature = "ethereum")]
+        {
+            use tiny_keccak::{Hasher, Keccak};
+            let mut keccak = Keccak::v256();
+            keccak.update(signature.as_bytes());
+            let mut hash = [0u8; 32];
+            keccak.finalize(&mut hash);
+            [hash[0], hash[1], hash[2], hash[3]]
+        }
+        #[cfg(not(feature = "ethereum"))]
+        {
+            // Without ethereum feature, return zeros
+            let _ = signature; // Suppress unused warning
+            [0u8; 4]
+        }
     }
 }
 
@@ -208,12 +227,21 @@ mod fallback {
     impl LightweightAbi {
         /// Generate function selector for a function signature
         pub fn function_selector(signature: &str) -> [u8; 4] {
-            use tiny_keccak::{Hasher, Keccak};
-            let mut keccak = Keccak::v256();
-            keccak.update(signature.as_bytes());
-            let mut hash = [0u8; 32];
-            keccak.finalize(&mut hash);
-            [hash[0], hash[1], hash[2], hash[3]]
+            #[cfg(feature = "ethereum")]
+            {
+                use tiny_keccak::{Hasher, Keccak};
+                let mut keccak = Keccak::v256();
+                keccak.update(signature.as_bytes());
+                let mut hash = [0u8; 32];
+                keccak.finalize(&mut hash);
+                [hash[0], hash[1], hash[2], hash[3]]
+            }
+            #[cfg(not(feature = "ethereum"))]
+            {
+                // Without ethereum feature, return zeros
+                let _ = signature; // Suppress unused warning
+                [0u8; 4]
+            }
         }
     }
 }
