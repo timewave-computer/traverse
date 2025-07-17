@@ -44,8 +44,8 @@ The traverse library uses testing approach combining synthetic test data, valida
 
 **Contracts Tested**:
 
-#### USDC Contract (Centre Coin)
-- **Address**: `0xA0b86a33E6d3c73C11b3E9B9a2c0EAc9AD8a4c4a`
+#### USDC Contract (Centre Coin)  
+- **Address**: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
 - **Block Height**: 18,500,000 (October 2023)
 - **Why Chosen**: 
   - Standard ERC20 implementation
