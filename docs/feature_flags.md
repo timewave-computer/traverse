@@ -105,20 +105,22 @@ Generate custom crates for specific storage layouts.
 ### ZK Circuit Integration
 ```toml
 [dependencies]
-traverse-core = { version = "0.1", features = ["no-std"] }
-traverse-valence = { version = "0.1", features = ["constrained"] }
+traverse-core = { git = "https://github.com/timewave-computer/traverse", features = ["no-std"] }
+traverse-valence = { git = "https://github.com/timewave-computer/traverse", features = ["constrained"] }
 ```
 
 ### Ethereum Application
 ```toml
 [dependencies]
-traverse = { version = "0.1", features = ["ethereum", "client"] }
+traverse-ethereum = { git = "https://github.com/timewave-computer/traverse", features = ["std"] }
+traverse-core = { git = "https://github.com/timewave-computer/traverse" }
 ```
 
 ### Solana Application
 ```toml
 [dependencies]
-traverse = { version = "0.1", features = ["solana", "client"], default-features = false }
+traverse-solana = { git = "https://github.com/timewave-computer/traverse", features = ["std"] }
+traverse-core = { git = "https://github.com/timewave-computer/traverse" }
 ```
 
 ## Building with Nix

@@ -18,7 +18,7 @@ Add to your valence app's `controller/Cargo.toml`:
 
 ```toml
 [dependencies]
-traverse-valence = { version = "0.1", default-features = false, features = ["controller"] }
+traverse-valence = { git = "https://github.com/timewave-computer/traverse", default-features = false, features = ["controller"] }
 valence-coprocessor = { git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13" }
 ```
 
@@ -26,7 +26,7 @@ Add to your valence app's `circuit/Cargo.toml`:
 
 ```toml
 [dependencies]
-traverse-valence = { version = "0.1", default-features = false, features = ["circuit", "constrained"] }
+traverse-valence = { git = "https://github.com/timewave-computer/traverse", default-features = false, features = ["circuit", "constrained"] }
 valence-coprocessor = { git = "https://github.com/timewave-computer/valence-coprocessor.git", tag = "v0.1.13" }
 ```
 
@@ -342,8 +342,8 @@ pub fn validate_results(results: Vec<u8>) -> Result<(), String> {
 
 ### Getting Help
 
-- Check the [examples](../examples/valence/) directory
-- Review test cases in `crates/traverse-valence/src/tests/`
+- Check the [valence examples](../examples/) directory for `valence_vault_storage.rs`
+- Review test cases in `crates/traverse-valence/tests/`
 - Open an issue with your use case
 
 ## Additional Resources

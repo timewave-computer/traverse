@@ -40,15 +40,15 @@ Choose one blockchain ecosystem due to dependency conflicts:
 ```toml
 # Ethereum only
 [dependencies]
-traverse = { version = "0.1", features = ["ethereum"] }
+traverse-ethereum = { git = "https://github.com/timewave-computer/traverse" }
 
 # Solana only  
 [dependencies]
-traverse = { version = "0.1", features = ["solana"], default-features = false }
+traverse-solana = { git = "https://github.com/timewave-computer/traverse" }
 
 # Cosmos only
 [dependencies]
-traverse = { version = "0.1", features = ["cosmos"], default-features = false }
+traverse-cosmos = { git = "https://github.com/timewave-computer/traverse" }
 ```
 
 See [Feature Flags documentation](docs/feature_flags.md) for details on dependency conflicts.
@@ -74,27 +74,42 @@ Traverse uses isolated Nix builds with separate Cargo workspaces per ecosystem t
 
 ### CLI Examples
 
-#### Ethereum Storage Proof
+#### Ethereum Storage Analysis
 ```bash
+# Compile storage layout from ABI
+traverse-ethereum compile-layout contract.abi.json --output layout.json
+
+# Resolve storage query
+traverse-ethereum resolve-query "_balances[0x742d35Cc...]" \
+  --layout layout.json
+
+# Generate storage proof
 traverse-ethereum generate-proof \
-  --contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
-  --slot 0x0000000000000000000000000000000000000000000000000000000000000001 \
-  --rpc https://eth-mainnet.g.alchemy.com/v2/YOUR-API-KEY \
-  --zero-means valid-zero
+  --address 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
+  --query "_balances[0x742d35Cc...]" \
+  --rpc https://eth-mainnet.g.alchemy.com/v2/YOUR-API-KEY
 ```
 
-#### Solana Account Proof
+#### Solana Account Analysis
 ```bash
+# Compile layout from IDL
+traverse-solana compile-layout program.idl.json --output layout.json
+
+# Generate account proof
 traverse-solana generate-proof \
   --account TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA \
   --rpc https://api.mainnet-beta.solana.com
 ```
 
-#### Cosmos Storage Proof
+#### Cosmos Storage Analysis
 ```bash
+# Compile layout from schema
+traverse-cosmos compile-layout contract.schema.json --output layout.json
+
+# Generate storage proof
 traverse-cosmos generate-proof \
   --contract osmo1qzsxd3t0p2ek0y2ysycfq3gm5qmfhsh32w6s9xrw4x2cmwlz3rjs5rrsnw \
-  --key "balances" \
+  --query "balances" \
   --rpc https://rpc.osmosis.zone
 ```
 
@@ -102,38 +117,41 @@ traverse-cosmos generate-proof \
 
 #### Ethereum
 ```rust
-use traverse_ethereum::{EthereumLayoutCompiler, EthereumProofFetcher};
+use traverse_ethereum::{EthereumLayoutCompiler, EthereumKeyResolver};
+use traverse_core::{LayoutCompiler, KeyResolver, ZeroSemantics};
 
 // Compile storage layout from ABI
-let layout = EthereumLayoutCompiler::compile_from_abi(&abi_json)?;
+let compiler = EthereumLayoutCompiler;
+let layout = compiler.compile_layout(abi_file_path)?;
 
-// Generate storage proof
-let fetcher = EthereumProofFetcher::new(rpc_url);
-let proof = fetcher.fetch_storage_proof(
-    &contract_address, 
-    &storage_slot,
-    ZeroSemantics::ValidZero
-).await?;
+// Resolve storage queries
+let resolver = EthereumKeyResolver;
+let path = resolver.resolve(&layout, "_balances[0x742d35Cc...]")?;
 ```
 
 #### Solana
 ```rust
-use traverse_solana::{SolanaLayoutCompiler, SolanaProofFetcher};
+use traverse_solana::{SolanaLayoutCompiler, SolanaKeyResolver};
+use traverse_core::{LayoutCompiler, KeyResolver};
 
 // Compile layout from IDL
-let layout = SolanaLayoutCompiler::compile_from_idl(&idl_json)?;
+let compiler = SolanaLayoutCompiler::new();
+let layout = compiler.compile_from_idl(&idl_content)?;
 
-// Generate account proof
-let fetcher = SolanaProofFetcher::new(rpc_url);
-let proof = fetcher.fetch_account_proof(&account_address).await?;
+// Resolve account queries
+let resolver = SolanaKeyResolver::new();
+let path = resolver.resolve_account_address(&query)?;
 ```
 
 #### ZK Circuit Integration
 ```rust
-use traverse_valence::{create_witness_from_request, StorageVerificationRequest};
+use traverse_valence::{controller, circuit};
 
-// Create witness for ZK circuit
-let witness = create_witness_from_request(&verification_request)?;
+// Create witnesses for ZK circuit
+let witnesses = controller::create_storage_witnesses(&args)?;
+
+// Verify in circuit
+let results = circuit::verify_storage_proofs_and_extract(witnesses);
 ```
 
 ## Semantic Zero Values

@@ -104,20 +104,12 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-traverse-valence = { git = "https://github.com/timewave-computer/traverse", features = ["no-std"] }
-traverse-core = { git = "https://github.com/timewave-computer/traverse", features = ["no-std"] }
+traverse-valence = { git = "https://github.com/timewave-computer/traverse", default-features = false, features = ["no-std"] }
+traverse-core = { git = "https://github.com/timewave-computer/traverse", default-features = false, features = ["no-std"] }
 reqwest = { version = "0.12", features = ["json"], optional = true }
-
-# For lightweight ABI encoding support
-[dependencies.traverse-valence-abi]
-package = "traverse-valence"
-git = "https://github.com/timewave-computer/traverse"
-features = ["lightweight-alloy"]
-optional = true
 
 [features]
 client = ["dep:reqwest"]
-abi = ["dep:traverse-valence-abi"]
 ```
 
 ### 3. Implement Controller with Semantic Business Logic
